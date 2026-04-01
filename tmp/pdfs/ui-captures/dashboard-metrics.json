@@ -1,0 +1,9 @@
+{
+  "title": "AASTHIX TALENT · Workspace Tracking System",
+  "h1": "Dashboard",
+  "h2": [
+    "HR Assistant"
+  ],
+  "textSample": "AASTHIX TALENT\nWorkspace Tracking System\n🔔\nV\nvamshi\nHOME\nCANDIDATES\nJOBS\nREQUISITIONS\nPIPELINE\nCLIENTS\nINTERVIEWS\nCHAT\nMORE\nDashboard\nAASTHIX TALENT overview metrics\nRefresh\nTotal jobs\n10\nTotal candidates\n63\nTotal applications\n17\nJOB HEALTH\nOpen: 9\nClosed: 1\nFUNNEL CONVERSION\n29%\nSelected / total applications\nINTERVIEW LOAD\n2\nCandidates currently in interview stage\nINTERVIEW ALERTS\nOngoing: 0\nUpcoming 1h: 0\nCandidates per stage\nBased on applications grouped by current stage\nApplied\n2\nScreening\n0\nScreening Failed\n0\nInterview\n2\nSelected\n5\nRejected\n8\nHR Assistant\n\nNL search · insights · charts · voice · exports\n\nClear chat\nHow many applications do I have by stage?\nGive me candidates with profile Java dev…\nList interviews in this month\nExecutive summary: counts across candida…\nWeekly trend of",
+  "href": "http://localhost:3002/dashboard"
+}

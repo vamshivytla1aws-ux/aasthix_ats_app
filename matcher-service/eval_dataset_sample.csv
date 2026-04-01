@@ -1,0 +1,7 @@
+"job_id,candidate_id,jd_text,resume_text,recruiter_label"
+"job_1,c1,""Need Node.js, PostgreSQL, AWS, Docker, 4+ years"",""Backend engineer with 5 years in Node.js, PostgreSQL, AWS, Docker, REST APIs"",""Proceed"""
+"job_1,c2,""Need Node.js, PostgreSQL, AWS, Docker, 4+ years"",""Frontend developer with React, CSS, HTML, some Node.js exposure"",""Reject"""
+"job_1,c3,""Need Node.js, PostgreSQL, AWS, Docker, 4+ years"",""Software engineer with Node.js, MySQL, Docker, AWS, 3 years experience"",""Hold"""
+"job_2,c4,""Need ETL, Informatica, Oracle, Unix, SQL, 5+ years"",""ETL developer with Informatica, Oracle, Unix, SQL, shell scripting, 6 years"",""Proceed"""
+"job_2,c5,""Need ETL, Informatica, Oracle, Unix, SQL, 5+ years"",""Data analyst with SQL, Tableau, Excel, 4 years"",""Reject"""
+"job_2,c6,""Need ETL, Informatica, Oracle, Unix, SQL, 5+ years"",""Database engineer with Oracle, SQL, Unix, ETL, 5 years"",""Hold"""

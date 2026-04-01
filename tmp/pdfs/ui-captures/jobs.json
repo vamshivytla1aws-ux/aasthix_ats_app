@@ -1,0 +1,9 @@
+{
+  "title": "AASTHIX TALENT · Workspace Tracking System",
+  "h1": "Jobs",
+  "h2": [
+    "Public careers portal"
+  ],
+  "textSample": "AASTHIX TALENT\nWorkspace Tracking System\n🔔\nV\nvamshi\nHOME\nCANDIDATES\nJOBS\nREQUISITIONS\nPIPELINE\nCLIENTS\nINTERVIEWS\nCHAT\nMORE\nJobs\n\nOpen requisitions, JD workflow, and hiring status — dense table with quick row actions.\n\n10 roles · 9 open\nComfortable\nCompact\nUltra\nMore filters\nRefresh\nAdd job\nPublic careers portal\n\nShare a branded hiring page with candidates. Set CAREERS_PUBLISHER_USER_ID in server env to your user id, run migration 0037, then open /careers (public, no login).\n\nPreview portal\nAll Jobs\nOpen Jobs\nClosed Jobs\nRecently Added\nExport\nColumns\nAll Employment Types\nFull Time\nPart Time\nContract\nInternship\nFreelance\nAll Status\nOpen\nClosed\nClear Filters\nTotal: 10\nOpen: 9\nClosed: 1\nJob Title\n\tCompany\n\tLocation\n\tOPEN POSITIONS\tEMPLOYMENT TYPE\tStatus\n\tCreated At\n\tACTIONS\nSenior Database A",
+  "href": "http://localhost:3002/jobs"
+}

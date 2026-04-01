@@ -1,0 +1,7 @@
+{
+  "title": "AASTHIX TALENT · Workspace Tracking System",
+  "h1": "Activity Center",
+  "h2": [],
+  "textSample": "AASTHIX TALENT\nWorkspace Tracking System\n🔔\nV\nvamshi\nHOME\nCANDIDATES\nJOBS\nREQUISITIONS\nPIPELINE\nCLIENTS\nINTERVIEWS\nCHAT\nMORE\nActivity Center\n\nLive queue: alerts, screening, interview follow-ups, and empty requisitions.\n\n3 items\nRefresh\nOpen pipeline\nWORK QUEUE\nACTIVITY\tTYPE\tCANDIDATE\tJOB\tOWNER\tWHEN\tPRIORITY\nInterview follow-up — capture feedback / next steps\tInterview\tKrishna Simha\tChief Executive Officer\tvamshi\t20 Mar 2026, 01:30 pm\tHigh\nNo applications yet — promote role or source candidates\tPipeline\t—\tSenior Data Engineer - GCP (GRC Consultant)\tvamshi\t24 Mar 2026, 04:11 pm\tLow\nNo applications yet — promote role or source candidates\tPipeline\t—\tSenior Database Administrator (TCS)\tvamshi\t25 Mar 2026, 08:27 pm\tLow\n© 2026 AASTHIX TALENT · Workspace Tracking System",
+  "href": "http://localhost:3002/activity-center"
+}

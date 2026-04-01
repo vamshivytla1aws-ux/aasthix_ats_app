@@ -1,0 +1,7 @@
+{
+  "title": "AASTHIX TALENT · Workspace Tracking System",
+  "h1": "Screening analytics",
+  "h2": [],
+  "textSample": "AASTHIX TALENT\nWorkspace Tracking System\n🔔\nV\nvamshi\nHOME\nCANDIDATES\nJOBS\nREQUISITIONS\nPIPELINE\nCLIENTS\nINTERVIEWS\nCHAT\nMORE\nScreening analytics\n\nPass rates, scores by job, pending queue, resends, and time-to-submit.\n\nRefresh\nPASS RATE\n50%\nSubmitted tests scoring ≥ 70\nAVG SCORE\n50.5\nAmong submitted\nAVG TIME TO SUBMIT\n4m\nFrom invite to submit\nRESENDS\n1\nRecruiter resent test links\nQueue\n1\nPENDING\n0\nEXPIRED\n2\nDONE\nBy job\nJOB\tTESTS\tPASS %\tAVG\nAutomation Tester\t2\t50%\t50.5\nSenior Software Engineer\t1\t—\t—\nPending tests (next to expire)\nDama\nSenior Software Engineer\nExpires 21/3/2026, 8:18:41 pm\n© 2026 AASTHIX TALENT · Workspace Tracking System",
+  "href": "http://localhost:3002/screening"
+}

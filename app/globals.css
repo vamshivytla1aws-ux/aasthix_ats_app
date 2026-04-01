@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Light SaaS surfaces — aligned with public careers polish, dashboard stays bright */
+  --ats-bg-page: #f8fafc;
+  --ats-bg-elevated: #ffffff;
+  --ats-border: #e2e8f0;
+  --ats-border-subtle: #f1f5f9;
+  --ats-text: #0f172a;
+  --ats-text-muted: #64748b;
+  --ats-primary: #4f46e5;
+  --ats-primary-hover: #4338ca;
+  --ats-accent: #7c3aed;
+  --ats-radius-lg: 1rem;
+  --ats-radius-xl: 1.25rem;
+  --ats-shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --ats-shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.06), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --ats-shadow-ring: 0 0 0 1px rgb(15 23 42 / 0.05);
+}
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+  body {
+    @apply antialiased text-slate-900;
+    background-color: var(--ats-bg-page);
+  }
+}
+
+/* Dashboard only: variables switch when .dark is on .dashboard-root */
+.dashboard-root {
+  --ats-bg-page: #f8fafc;
+  --ats-bg-elevated: #ffffff;
+  --ats-border: #e2e8f0;
+  --ats-border-subtle: #f1f5f9;
+  --ats-text: #0f172a;
+  --ats-text-muted: #64748b;
+  --ats-primary: #4f46e5;
+  --ats-primary-hover: #4338ca;
+  --ats-accent: #7c3aed;
+  --ats-shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --ats-shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.06), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --ats-shadow-ring: 0 0 0 1px rgb(15 23 42 / 0.05);
+  /* Enterprise shell (Oracle-style header) */
+  --enterprise-shell-from: #0b1f3f;
+  --enterprise-shell-via: #0f3566;
+  --enterprise-shell-to: #164a7e;
+  --enterprise-on-shell: #f8fafc;
+  --enterprise-nav-active: #1d4ed8;
+  --enterprise-surface: #ffffff;
+  --enterprise-surface-muted: #f1f5f9;
+  --enterprise-table-border: #e2e8f0;
+  --enterprise-table-header: #f8fafc;
+  --enterprise-row-hover: #f1f5f9;
+}
+
+.dashboard-root.dark {
+  color-scheme: dark;
+  --ats-bg-page: #020617;
+  --ats-bg-elevated: #0f172a;
+  --ats-border: #334155;
+  --ats-border-subtle: #1e293b;
+  --ats-text: #f1f5f9;
+  --ats-text-muted: #94a3b8;
+  --ats-primary: #818cf8;
+  --ats-primary-hover: #a5b4fc;
+  --ats-accent: #a78bfa;
+  --ats-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  --ats-shadow-md: 0 8px 24px -4px rgb(0 0 0 / 0.45);
+  --ats-shadow-ring: 0 0 0 1px rgb(148 163 184 / 0.12);
+  --enterprise-shell-from: #020617;
+  --enterprise-shell-via: #0f172a;
+  --enterprise-shell-to: #1e293b;
+  --enterprise-on-shell: #f1f5f9;
+  --enterprise-nav-active: #60a5fa;
+  --enterprise-surface: #0f172a;
+  --enterprise-surface-muted: #020617;
+  --enterprise-table-border: #334155;
+  --enterprise-table-header: #0f172a;
+  --enterprise-row-hover: #1e293b;
+}
+
+@layer utilities {
+  .ats-page-inner {
+    @apply mx-auto w-full max-w-7xl;
+  }
+}

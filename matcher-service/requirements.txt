@@ -1,0 +1,7 @@
+# Optional: FastAPI + Uvicorn (Python 3.10, 3.11, or 3.12 recommended).
+# On Python 3.14, pydantic-core may fail to build — use the stdlib server instead:
+#   python -m matcher_service.simple_server
+
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0

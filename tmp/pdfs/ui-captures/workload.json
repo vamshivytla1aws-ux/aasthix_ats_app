@@ -1,0 +1,7 @@
+{
+  "title": "AASTHIX TALENT · Workspace Tracking System",
+  "h1": "Recruiter workload",
+  "h2": [],
+  "textSample": "AASTHIX TALENT\nWorkspace Tracking System\n🔔\nV\nvamshi\nHOME\nCANDIDATES\nJOBS\nREQUISITIONS\nPIPELINE\nCLIENTS\nINTERVIEWS\nCHAT\nMORE\nRecruiter workload\n\nOverview of JD assignments, pipeline status, and activity per recruiter. Click a recruiter to drill into their JDs.\n\n1 recruiter\n9 active JDs\n17 applications\nRefresh\nRequisitions\nCopilot\nReset\nColumns\nExport CSV\nRecruiter\n\t\nJDs\n\t\nActive\n\t\nApps\n\t\nScreening\n\t\nInterview\n\t\nSelected\n\t\nInt. this week\n\t\nLast active\n\n\nvamshi\nvamshi@gmail.com\n\t10\t9\t17\t0\t2\t5\t0\t26 Mar 2026\n© 2026 AASTHIX TALENT · Workspace Tracking System",
+  "href": "http://localhost:3002/recruiter/workload"
+}
