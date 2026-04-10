@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { applicationAccessPredicate, hasJobTeamTable } from "@/lib/applicationVisibility";
-import { fetchApplicationCardRow } from "@/lib/applicationCard";
+import { fetchApplicationCardRow, fetchApplicationsRows } from "@/lib/applicationCard";
 import nodemailer from "nodemailer";
 import { createAndSendScreeningTest } from "@/lib/screeningWorkflow";
 import { logScreeningAudit } from "@/lib/screeningAudit";
@@ -100,51 +100,10 @@ export async function GET(request: Request) {
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
-    const result = await query(
-      `
-      SELECT
-        a.id,
-        a.candidate_id,
-        a.job_id,
-        a.stage,
-        a.updated_at,
-        a.interview_scheduled,
-        a.interview_datetime,
-        a.interview_reschedule_reason,
-        a.interview_cancel_reason,
-        a.interview_no_show,
-        a.current_interview_round_id,
-        a.current_interview_round_order,
-        a.interview_round_status,
-        a.rejected_in_round_order,
-        a.selected_after_rounds,
-        a.final_outcome,
-        COALESCE(a.source, 'UI') AS application_source,
-        a.assigned_recruiter_user_id,
-        ru.full_name AS assigned_recruiter_name,
-        jir.round_label AS current_interview_round_label,
-        COALESCE(jrc.round_count, 0) AS interview_round_total,
-        c.full_name AS candidate_full_name,
-        c.email AS candidate_email,
-        c.phone AS candidate_phone,
-        j.title AS job_title,
-        j.company AS job_company,
-        j.location AS job_location
-      FROM applications a
-      JOIN candidates c ON c.id = a.candidate_id
-      JOIN jobs j ON j.id = a.job_id
-      LEFT JOIN users ru ON ru.id = a.assigned_recruiter_user_id
-      LEFT JOIN job_interview_rounds jir ON jir.id = a.current_interview_round_id
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS round_count
-        FROM job_interview_rounds jr
-        WHERE jr.job_id = a.job_id
-      ) jrc ON true
-      ${whereSql}
-      ORDER BY a.updated_at DESC NULLS LAST, a.id DESC
-      `,
-      params
-    );
+    const result = await fetchApplicationsRows({
+      whereClause: `${whereSql} ORDER BY a.updated_at DESC NULLS LAST, a.id DESC`,
+      params,
+    });
 
     return NextResponse.json(result.rows);
   } catch (error) {
@@ -240,6 +199,7 @@ export async function PATCH(request: Request) {
       send_email,
       round_action,
       interview_decision,
+      interview_decision_audience,
       stage_change_reason,
       disposition_reason_id,
     } = body as {
@@ -254,9 +214,14 @@ export async function PATCH(request: Request) {
       send_email?: boolean;
       round_action?: "next" | "previous";
       interview_decision?: "next_round" | "final_selected" | "rejected";
+      /** When `internal`, progress emails for interview decisions are skipped (audit still recorded). */
+      interview_decision_audience?: "client" | "internal";
       stage_change_reason?: string | null;
       disposition_reason_id?: number;
     };
+
+    const decisionAudience: "client" | "internal" =
+      interview_decision_audience === "internal" ? "internal" : "client";
 
     const assigned_recruiter_user_id = (body as { assigned_recruiter_user_id?: number | null }).assigned_recruiter_user_id;
     const hasTeam = await hasJobTeamTable();
@@ -288,6 +253,7 @@ export async function PATCH(request: Request) {
       send_email === undefined &&
       round_action === undefined &&
       interview_decision === undefined &&
+      (body as { interview_decision_audience?: string }).interview_decision_audience === undefined &&
       stage_change_reason === undefined &&
       disposition_reason_id === undefined;
 
@@ -325,18 +291,35 @@ export async function PATCH(request: Request) {
     // Used to ensure scheduled email is only sent once on the transition to Interview+interview_scheduled=true.
     const prev = await query(
       `
-      SELECT stage, interview_scheduled, interview_datetime
-      FROM applications
-      WHERE id = $1 AND (${accessWhere2})
+      SELECT
+        a.stage,
+        a.interview_scheduled,
+        a.interview_datetime,
+        a.job_id AS prev_job_id,
+        a.current_interview_round_id AS prev_round_id,
+        a.current_interview_round_order AS prev_round_order,
+        jir.round_label AS prev_round_label
+      FROM applications a
+      LEFT JOIN job_interview_rounds jir ON jir.id = a.current_interview_round_id
+      WHERE a.id = $1 AND (${accessWhere2})
       `,
       [id, user.user_id]
     );
     if (prev.rowCount === 0) {
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
     }
-    const prevInterviewScheduled = Boolean(prev.rows?.[0]?.interview_scheduled);
-    const prevInterviewDatetime = (prev.rows?.[0]?.interview_datetime ?? null) as string | null;
-    const prevStage = (prev.rows?.[0]?.stage ?? null) as Stage | null;
+    const prevRow0 = prev.rows[0] as {
+      stage: string;
+      interview_scheduled: boolean;
+      interview_datetime: string | null;
+      prev_job_id: number;
+      prev_round_id: number | null;
+      prev_round_order: number | null;
+      prev_round_label: string | null;
+    };
+    const prevInterviewScheduled = Boolean(prevRow0.interview_scheduled);
+    const prevInterviewDatetime = (prevRow0.interview_datetime ?? null) as string | null;
+    const prevStage = (prevRow0.stage ?? null) as Stage | null;
 
     const willReject = stage === "Rejected" || interview_decision === "rejected";
     let validatedRejectionReasonId: number | null = null;
@@ -492,6 +475,7 @@ export async function PATCH(request: Request) {
     }
 
     // Only after we have a valid current round should we move to next/previous.
+    let roundStepRowCount = 0;
     if (updated.stage === "Interview" && (effectiveRoundAction === "next" || effectiveRoundAction === "previous")) {
       const op = effectiveRoundAction === "next" ? ">" : "<";
       const dir = effectiveRoundAction === "next" ? "ASC" : "DESC";
@@ -522,7 +506,102 @@ export async function PATCH(request: Request) {
         `,
         [updated.id, user.user_id]
       );
-      if (step.rowCount > 0) Object.assign(updated, step.rows[0]);
+      roundStepRowCount = step.rowCount ?? 0;
+      if (roundStepRowCount > 0) Object.assign(updated, step.rows[0]);
+    }
+
+    // "Client confirmed â€“ next round" at the last configured round (e.g. Final): add another round
+    // so recruiters can keep advancing until they explicitly mark selected.
+    if (
+      interview_decision === "next_round" &&
+      updated.stage === "Interview" &&
+      effectiveRoundAction === "next" &&
+      roundStepRowCount === 0
+    ) {
+      try {
+        const extend = await query(
+          `
+          WITH mx AS (
+            SELECT COALESCE(MAX(round_order), 0)::int AS m
+            FROM job_interview_rounds
+            WHERE job_id = $1
+          ),
+          ins AS (
+            INSERT INTO job_interview_rounds (job_id, round_key, round_label, round_order, is_final, created_by_user_id)
+            SELECT $1,
+                   'ext_' || replace(gen_random_uuid()::text, '-', ''),
+                   'Round ' || (mx.m + 1)::text,
+                   mx.m + 1,
+                   FALSE,
+                   $2
+            FROM mx
+            WHERE mx.m >= 1
+            RETURNING id, round_order
+          )
+          UPDATE applications a
+          SET current_interview_round_id = ins.id,
+              current_interview_round_order = ins.round_order,
+              interview_round_status = 'in_progress',
+              updated_at = NOW()
+          FROM ins
+          WHERE a.id = $3
+            AND (${accessWhereA2})
+          RETURNING a.*
+          `,
+          [updated.job_id, user.user_id, updated.id]
+        );
+        if (extend.rowCount && extend.rowCount > 0) Object.assign(updated, extend.rows[0]);
+      } catch (e: any) {
+        if (e?.code !== "42P01") throw e;
+      }
+    }
+
+    // Per-candidate interview round history
+    if (updated.stage === "Interview") {
+      const po = prevRow0.prev_round_order ?? null;
+      const pid = prevRow0.prev_round_id ?? null;
+      const pn = updated.current_interview_round_order ?? null;
+      const nid = updated.current_interview_round_id ?? null;
+      const roundChanged =
+        (po ?? -1) !== (pn ?? -1) || (pid ?? -1) !== (nid ?? -1);
+      if (roundChanged) {
+        try {
+          let newLabel: string | null = null;
+          if (nid) {
+            const lr = await query(`SELECT round_label FROM job_interview_rounds WHERE id = $1`, [nid]);
+            newLabel = (lr.rows[0] as { round_label?: string } | undefined)?.round_label ?? null;
+          }
+          let evType = "round_step";
+          if (interview_decision === "next_round") evType = "next_round";
+          else if (effectiveRoundAction === "previous") evType = "previous_round";
+          else if (effectiveRoundAction === "next") evType = "next_round";
+
+          await query(
+            `
+            INSERT INTO application_interview_round_events (
+              application_id, job_id,
+              previous_round_order, new_round_order,
+              previous_round_label, new_round_label,
+              event_type, audience, created_by_user_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            `,
+            [
+              updated.id,
+              updated.job_id,
+              po,
+              pn,
+              prevRow0.prev_round_label,
+              newLabel,
+              evType,
+              decisionAudience,
+              user.user_id,
+            ]
+          );
+        } catch (e: any) {
+          if (e?.code !== "42P01") throw e;
+        }
+      }
     }
 
     // Enterprise tracking: write timeline entry when a candidate first enters Interview.
@@ -753,7 +832,7 @@ export async function PATCH(request: Request) {
       </div>
 
       <div style="text-align:center;margin-top:12px;font-family:Arial,sans-serif;color:#6B7280;font-size:12px;">
-        © 2026 Aasthix Talent
+        Â© 2026 Aasthix Talent
       </div>
     </div>
   </body>
@@ -782,6 +861,7 @@ export async function PATCH(request: Request) {
 
     const shouldSendProgressEmail =
       send_email === true &&
+      decisionAudience === "client" &&
       (interview_decision === "next_round" ||
         interview_decision === "final_selected" ||
         interview_decision === "rejected");
@@ -845,6 +925,7 @@ export async function PATCH(request: Request) {
           to_stage: updated.stage,
           reason: typeof stage_change_reason === "string" ? stage_change_reason.slice(0, 2000) : null,
           interview_decision: interview_decision ?? null,
+          interview_decision_audience: decisionAudience,
           explicit_stage_in_request: stage !== undefined,
         },
       });
@@ -875,4 +956,3 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Failed to update application" }, { status: 500 });
   }
 }
-
