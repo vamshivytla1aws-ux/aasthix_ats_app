@@ -12,6 +12,8 @@ const client = new pg.Client({
   ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
+const baselineThrough = process.env.MIGRATIONS_BASELINE_THROUGH?.trim() || "";
+
 function normalizeSql(file, sql) {
   if (file !== "0004_applications_stage.sql") return sql;
   return `
@@ -37,11 +39,40 @@ COMMIT;
 }
 
 await client.connect();
+await client.query(`
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    file_name TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`);
+
+if (baselineThrough) {
+  const baselineFiles = files.filter((file) => file.localeCompare(baselineThrough) <= 0);
+  for (const file of baselineFiles) {
+    await client.query(
+      `
+      INSERT INTO schema_migrations (file_name)
+      VALUES ($1)
+      ON CONFLICT (file_name) DO NOTHING
+      `,
+      [file]
+    );
+  }
+}
+
+const appliedRes = await client.query(`SELECT file_name FROM schema_migrations`);
+const applied = new Set(appliedRes.rows.map((row) => String(row.file_name)));
+
 for (const file of files) {
+  if (applied.has(file)) {
+    process.stdout.write(`[migrate] skip ${file}\n`);
+    continue;
+  }
   const rawSql = await fs.readFile(path.join(migrationsDir, file), "utf8");
   const sql = normalizeSql(file, rawSql);
   process.stdout.write(`[migrate] ${file}\n`);
   await client.query(sql);
+  await client.query(`INSERT INTO schema_migrations (file_name) VALUES ($1)`, [file]);
 }
 await client.end();
 process.stdout.write('[migrate] complete\n');
