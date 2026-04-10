@@ -55,7 +55,14 @@ export async function GET(request: Request) {
     const candidates = wantCandidates
       ? await query(
           `SELECT c.id, c.full_name, c.email, c.location,
-                  CASE WHEN ${placedSql} THEN 'Placed' ELSE 'Active' END AS status
+                  CASE WHEN ${placedSql} THEN 'Placed' ELSE 'Active' END AS status,
+                  (
+                    SELECT a2.id
+                    FROM applications a2
+                    WHERE a2.candidate_id = c.id
+                    ORDER BY a2.updated_at DESC NULLS LAST, a2.id DESC
+                    LIMIT 1
+                  ) AS latest_application_id
            FROM candidates c
            WHERE ${candWhere}
              AND (

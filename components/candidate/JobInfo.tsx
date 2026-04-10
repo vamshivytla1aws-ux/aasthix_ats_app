@@ -4,6 +4,7 @@ type CandidateJobInfo = {
   status: "Active" | "Placed";
   current_interview_round_label?: string | null;
   current_interview_round_order?: number | null;
+  interview_round_total?: number | null;
 };
 
 type Density = "comfortable" | "compact" | "ultra";
@@ -20,6 +21,14 @@ export default function JobInfo({
   const rowPad = density === "comfortable" ? "py-1" : "py-0.5";
   const labelClass = density === "ultra" ? "text-[10px]" : "text-xs";
 
+  const roundPrimary =
+    candidate.current_interview_round_label ||
+    `Round ${candidate.current_interview_round_order ?? 1}`;
+  const total = candidate.interview_round_total;
+  const order = candidate.current_interview_round_order ?? 1;
+  const completed =
+    typeof total === "number" && total > 0 ? Math.max(0, order - 1) : null;
+
   return (
     <div className={["border-b border-gray-200", rootPad].join(" ")}>
       <p className={["mb-0.5 font-medium text-gray-700", titleClass].join(" ")}>Job Info</p>
@@ -32,11 +41,27 @@ export default function JobInfo({
           <span className={[labelClass, "text-gray-500"].join(" ")}>Pipeline Stage</span>
           <span className="font-medium text-gray-800">{candidate.stage || "—"}</span>
         </div>
-        <div className={["flex items-center justify-between gap-2 hover:bg-gray-50 transition", rowPad].join(" ")}>
-          <span className={[labelClass, "text-gray-500"].join(" ")}>Interview Round</span>
-          <span className="font-medium text-gray-800">
-            {candidate.current_interview_round_label || `Round ${candidate.current_interview_round_order ?? 1}`}
-          </span>
+        <div className={["hover:bg-gray-50 transition", rowPad].join(" ")}>
+          <div className="flex items-start justify-between gap-2">
+            <span className={[labelClass, "shrink-0 text-gray-500"].join(" ")}>Interview Round</span>
+            <div className="min-w-0 text-right font-medium text-gray-800">
+              {candidate.stage === "Interview" ? (
+                <>
+                  <span className="text-indigo-700">
+                    {roundPrimary}
+                    {completed !== null && typeof total === "number" ? ` (${completed}/${total}) completed` : null}
+                  </span>
+                  {candidate.current_interview_round_order != null && candidate.current_interview_round_order > 1 ? (
+                    <span className="mt-0.5 block text-[11px] font-semibold text-indigo-700/90">
+                      Round {candidate.current_interview_round_order - 1} completed
+                    </span>
+                  ) : null}
+                </>
+              ) : (
+                <span>{roundPrimary}</span>
+              )}
+            </div>
+          </div>
         </div>
         <div className={["flex items-center justify-between gap-2 hover:bg-gray-50 transition", rowPad].join(" ")}>
           <span className={[labelClass, "text-gray-500"].join(" ")}>Status</span>
@@ -46,4 +71,3 @@ export default function JobInfo({
     </div>
   );
 }
-

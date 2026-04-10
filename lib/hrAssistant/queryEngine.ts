@@ -310,6 +310,10 @@ async function queryApplications(
     params.push(filters.candidate_id);
     where.push(`a.candidate_id = $${params.length}`);
   }
+  if (typeof filters.application_id === "number" && filters.application_id > 0) {
+    params.push(filters.application_id);
+    where.push(`a.id = $${params.length}`);
+  }
   if (interviewsOnly && (filters.date_from || filters.date_to)) {
     addInterviewCalendarWindow(filters, params, where);
   } else {
@@ -321,12 +325,28 @@ async function queryApplications(
     : "a.updated_at DESC NULLS LAST";
 
   const sql = `
-    SELECT a.id AS application_id, a.stage, a.interview_datetime, a.interview_scheduled,
-           c.id AS candidate_id, c.full_name AS candidate_name,
-           j.id AS job_id, j.title AS job_title, a.created_at
+    SELECT
+      a.id AS application_id,
+      a.stage,
+      a.status AS application_status,
+      COALESCE(a.source, '') AS application_source,
+      a.interview_datetime,
+      a.interview_scheduled,
+      a.created_at,
+      a.updated_at,
+      c.id AS candidate_id,
+      c.full_name AS candidate_name,
+      j.id AS job_id,
+      j.title AS job_title,
+      u_ar.full_name AS assigned_recruiter_name,
+      u_ar.email AS assigned_recruiter_email,
+      u_cb.full_name AS created_by_name,
+      u_cb.email AS created_by_email
     FROM applications a
     JOIN candidates c ON c.id = a.candidate_id
     JOIN jobs j ON j.id = a.job_id
+    LEFT JOIN users u_ar ON u_ar.id = a.assigned_recruiter_user_id
+    LEFT JOIN users u_cb ON u_cb.id = a.created_by_user_id
     WHERE ${where.join(" AND ")}
     ORDER BY ${orderSql}
     LIMIT ${MAX_ROWS}
@@ -337,13 +357,20 @@ async function queryApplications(
     columns: [
       "application_id",
       "stage",
+      "application_status",
+      "application_source",
       "interview_datetime",
       "interview_scheduled",
+      "created_at",
+      "updated_at",
       "candidate_id",
       "candidate_name",
       "job_id",
       "job_title",
-      "created_at",
+      "assigned_recruiter_name",
+      "assigned_recruiter_email",
+      "created_by_name",
+      "created_by_email",
     ],
     rows: res.rows as Record<string, unknown>[],
   };

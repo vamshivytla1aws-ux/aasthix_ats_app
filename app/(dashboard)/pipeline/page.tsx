@@ -1,17 +1,19 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ChevronDown, ChevronUp, SlidersHorizontal, UserPlus } from "lucide-react";
 import AssignApplicationForm from "@/components/AssignApplicationForm";
 import PipelineBoard from "@/components/PipelineBoard";
-import { apiFetchJson } from "@/lib/apiClient";
+import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import { useDensity } from "@/lib/useDensity";
 import DensityToggle from "@/components/ui/DensityToggle";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import ContextualCopilotPanel from "@/components/enterprise/ContextualCopilotPanel";
 import FilterDrawer from "@/components/enterprise/FilterDrawer";
 
 type Stage = "Applied" | "Screening" | "Screening Failed" | "Interview" | "Selected" | "Rejected";
@@ -44,11 +46,27 @@ type ApplicationRow = {
   interview_round_status?: string | null;
   rejected_in_round_order?: number | null;
   selected_after_rounds?: number | null;
+  interview_round_history?: Array<{
+    previous_round_order?: number | null;
+    new_round_order?: number | null;
+    previous_round_label?: string | null;
+    new_round_label?: string | null;
+    event_type?: string | null;
+    audience?: string | null;
+    created_at?: string | null;
+  }> | null;
 };
 
 type RecruiterOption = { id: number; full_name: string; email?: string | null };
 
-export default function PipelinePage() {
+function PipelinePageContent() {
+  const searchParams = useSearchParams();
+  const appFromUrl = useMemo(() => {
+    const raw = searchParams.get("app") ?? searchParams.get("application"); 
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [searchParams]);
+
   const { density, setDensity } = useDensity("ats:pipeline-density", "compact");
   const [error, setError] = useState<string | null>(null);
   const [canManage, setCanManage] = useState(true);
@@ -58,15 +76,38 @@ export default function PipelinePage() {
   const [jobId, setJobId] = useState<string>("");
   /** "" = all owners, "me" = my queue (assigned_recruiter = current user) */
   const [assignedTo, setAssignedTo] = useState<string>("");
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [selectedAppIds, setSelectedAppIds] = useState<Set<number>>(() => new Set());
+  const [viewNameDraft, setViewNameDraft] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkToast, setBulkToast] = useState<string | null>(null);
+  const [bulkStage, setBulkStage] = useState<Stage | "">("");
+  const [bulkDispositionId, setBulkDispositionId] = useState<string>("");
+  const [bulkAssignUserId, setBulkAssignUserId] = useState<string>("");
 
   const [debouncedQ, setDebouncedQ] = useState(q);
   const [assignOpen, setAssignOpen] = useState(true);
   const [filterDrawer, setFilterDrawer] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(q), 250);
     return () => clearTimeout(t);
   }, [q]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable)) {
+        return;
+      }
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const applicationsKey = useMemo(() => {
     const params = new URLSearchParams();
@@ -82,6 +123,7 @@ export default function PipelinePage() {
     data: applications = [],
     error: swrError,
     isLoading,
+    isValidating,
     mutate: mutateApplications,
   } = useSWR<ApplicationRow[]>(applicationsKey, dashboardFetcher, {
     refreshInterval: 60_000,
@@ -104,7 +146,55 @@ export default function PipelinePage() {
     { refreshInterval: 120_000 }
   );
 
+  const { data: savedViewsData, mutate: mutateSavedViews } = useSWR<{ views: { id: number; name: string; filters: Record<string, unknown> }[] }>(
+    "/api/user/saved-views?page=pipeline",
+    dashboardFetcher,
+    { refreshInterval: 120_000 }
+  );
+
+  const { data: rejectReasonData } = useSWR<{ reasons: { id: number; label: string }[] }>(
+    bulkStage === "Rejected" ? "/api/disposition-reasons?category=reject" : null,
+    dashboardFetcher
+  );
+  const rejectReasonRows = rejectReasonData?.reasons ?? [];
+
+  const numericJobId = useMemo(() => {
+    const n = Number(jobId);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [jobId]);
+
+  const { data: activeJob } = useSWR<{ pipeline_wip_limits?: Record<string, number> | null }>(
+    numericJobId ? `/api/jobs/${numericJobId}` : null,
+    dashboardFetcher,
+    { refreshInterval: 120_000 }
+  );
+
+  const wipLimitsOverride = useMemo(() => {
+    const raw = activeJob?.pipeline_wip_limits;
+    if (!raw || typeof raw !== "object") return undefined;
+    const out: Partial<Record<Stage, number>> = {};
+    for (const s of STAGES) {
+      const v = raw[s];
+      if (typeof v === "number" && Number.isFinite(v) && v >= 1) out[s] = Math.trunc(v);
+    }
+    return Object.keys(out).length ? out : undefined;
+  }, [activeJob?.pipeline_wip_limits]);
+
+  const { data: pipeAnalytics } = useSWR<{
+    bottlenecks: Array<{ stage: string; reason: string; severity: string }>;
+    avg_time_in_stage: Record<string, number>;
+  }>("/api/analytics/pipeline", dashboardFetcher, { refreshInterval: 120_000 });
+
   const loading = isLoading && applications.length === 0;
+
+  const toggleAppSelect = useCallback((id: number) => {
+    setSelectedAppIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +219,89 @@ export default function PipelinePage() {
       (prev) => (prev ?? []).map((a) => (a.id === updated.id ? { ...a, ...updated } : a)),
       { revalidate: false }
     );
+  }
+
+  function applySavedView(f: Record<string, unknown>) {
+    setQ(String(f.q ?? ""));
+    setStage(String(f.stage ?? ""));
+    setJobId(String(f.job_id ?? ""));
+    setAssignedTo(String(f.assigned_to ?? ""));
+  }
+
+  async function savePipelineView() {
+    const name = viewNameDraft.trim() || "My filters";
+    try {
+      await apiFetchJson("/api/user/saved-views", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          page: "pipeline",
+          name,
+          filters: { q: debouncedQ, stage, job_id: jobId, assigned_to: assignedTo },
+        }),
+      });
+      setBulkToast(`Saved “${name}”.`);
+      void mutateSavedViews();
+    } catch (e: any) {
+      setBulkToast(e?.message || "Save failed");
+    }
+  }
+
+  async function runBulkAssign() {
+    const uid = bulkAssignUserId === "" ? null : Number(bulkAssignUserId);
+    if (bulkAssignUserId !== "" && (!Number.isFinite(uid) || (uid as number) <= 0)) {
+      setBulkToast("Pick a valid owner or leave empty to clear.");
+      return;
+    }
+    setBulkBusy(true);
+    setBulkToast(null);
+    try {
+      await apiFetchJson("/api/applications/bulk-assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          application_ids: Array.from(selectedAppIds),
+          assigned_recruiter_user_id: uid,
+        }),
+      });
+      setBulkToast(`Updated owner on ${selectedAppIds.size} card(s).`);
+      setSelectedAppIds(new Set());
+      void mutateApplications();
+    } catch (e: any) {
+      const msg = e instanceof ApiError && e.status === 403 ? `${e.message} — pipeline.manage required.` : e?.message || "Failed";
+      setBulkToast(msg);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function runBulkStage() {
+    if (!bulkStage) {
+      setBulkToast("Choose a target stage.");
+      return;
+    }
+    setBulkBusy(true);
+    setBulkToast(null);
+    try {
+      await apiFetchJson("/api/applications/bulk-stage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          application_ids: Array.from(selectedAppIds),
+          stage: bulkStage,
+          disposition_reason_id: bulkStage === "Rejected" ? Number(bulkDispositionId) : undefined,
+        }),
+      });
+      setBulkToast(`Moved ${selectedAppIds.size} application(s).`);
+      setSelectedAppIds(new Set());
+      setBulkStage("");
+      setBulkDispositionId("");
+      void mutateApplications();
+    } catch (e: any) {
+      setBulkToast(e?.message || "Bulk stage failed");
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   const stageCounts = STAGES.reduce<Record<Stage, number>>(
@@ -281,6 +454,9 @@ export default function PipelinePage() {
         }
       >
       <div className="space-y-4">
+      {appFromUrl ? (
+        <ContextualCopilotPanel scope="application" entityId={appFromUrl} subtitle={`Application #${appFromUrl}`} />
+      ) : null}
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md shadow-slate-200/40 ring-1 ring-slate-100">
         <button
@@ -324,16 +500,77 @@ export default function PipelinePage() {
         ) : null}
       </div>
 
+      <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/40">
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="block text-[10px] font-bold uppercase text-slate-400">Saved view</label>
+            <select
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900"
+              defaultValue=""
+              onChange={(e) => {
+                const id = Number(e.target.value);
+                if (!Number.isFinite(id) || id <= 0) return;
+                const v = savedViewsData?.views?.find((x) => x.id === id);
+                if (v?.filters) applySavedView(v.filters as Record<string, unknown>);
+                e.target.value = "";
+              }}
+            >
+              <option value="">Load…</option>
+              {savedViewsData?.views?.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <input
+            placeholder="Name this filter set"
+            value={viewNameDraft}
+            onChange={(e) => setViewNameDraft(e.target.value)}
+            className="min-w-[160px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900"
+          />
+          <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => void savePipelineView()}>
+            Save view
+          </button>
+          <button
+            type="button"
+            className={[
+              UI.secondaryButton + " py-1.5 text-xs",
+              bulkSelectMode ? " ring-2 ring-blue-500 ring-offset-1" : "",
+            ].join(" ")}
+            onClick={() => {
+              setBulkSelectMode((v) => !v);
+              setSelectedAppIds(new Set());
+            }}
+          >
+            {bulkSelectMode ? "Exit bulk select" : "Bulk select"}
+          </button>
+        </div>
+        {bulkToast ? <div className="mt-2 text-xs text-amber-900 dark:text-amber-200">{bulkToast}</div> : null}
+      </div>
+
       <p className="text-sm text-slate-600 dark:text-slate-400">
         <span className="font-semibold text-slate-800 dark:text-slate-200">Step 2:</span> Drag cards between columns or reorder within a column; use the
         row ⋮ menu for interview scheduling and stage moves.
       </p>
 
       <div className="sticky top-[4.75rem] z-30 rounded-xl border border-slate-200/90 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/90 lg:top-[7.25rem]">
+        {pipeAnalytics?.bottlenecks && pipeAnalytics.bottlenecks.length > 0 ? (
+          <div className="mb-2 rounded-lg border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
+            <span className="font-semibold">Pipeline signals: </span>
+            {pipeAnalytics.bottlenecks.slice(0, 2).map((b) => b.reason).join(" · ")}
+            {typeof pipeAnalytics.avg_time_in_stage?.Interview === "number" ? (
+              <span className="ml-1 opacity-90">
+                · Interview avg {pipeAnalytics.avg_time_in_stage.Interview.toFixed(1)}d in stage
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <input
+            ref={searchInputRef}
             className="min-w-[240px] flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm outline-none transition focus:ring-2 focus:ring-indigo-500/30"
-            placeholder="Quick search candidate..."
+            placeholder="Quick search (press /)"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -411,24 +648,27 @@ export default function PipelinePage() {
       )}
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="rounded-xl border bg-white shadow-sm p-4">
-              <div className="h-4 w-24 bg-slate-200 rounded animate-pulse" />
-              <div className="mt-4 space-y-3">
-                {Array.from({ length: 3 }).map((__, j) => (
-                  <div key={j} className="rounded-xl border p-4">
-                    <div className="h-3 w-32 bg-slate-200 rounded animate-pulse" />
-                    <div className="mt-2 h-3 w-24 bg-slate-200 rounded animate-pulse" />
-                    <div className="mt-4 flex gap-2">
-                      <div className="h-6 w-14 bg-slate-200 rounded animate-pulse" />
-                      <div className="h-6 w-14 bg-slate-200 rounded animate-pulse" />
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/50">
+          <div className="grid min-w-[1080px] grid-cols-3 gap-3 md:min-w-[1200px]">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="rounded-2xl border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-700 dark:bg-slate-900/40"
+              >
+                <div className="h-10 rounded-lg bg-slate-200/90 animate-pulse dark:bg-slate-700" />
+                <div className="mt-3 space-y-2">
+                  {Array.from({ length: 2 }).map((__, j) => (
+                    <div key={j} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-600 dark:bg-slate-800/80">
+                      <div className="h-3 w-32 rounded bg-slate-200 animate-pulse dark:bg-slate-600" />
+                      <div className="mt-2 h-3 w-24 rounded bg-slate-200 animate-pulse dark:bg-slate-600" />
+                      <div className="mt-3 h-8 w-8 rounded-lg bg-slate-200 animate-pulse dark:bg-slate-600" />
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <p className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">Loading pipeline…</p>
         </div>
       ) : (
         <>
@@ -442,15 +682,102 @@ export default function PipelinePage() {
               ) : null}
             </div>
           ) : null}
-          <PipelineBoard
-            density={density}
-            applications={applications}
-            onStageUpdated={handleStageUpdated}
-            onApplicationRemoved={() => void mutateApplications()}
-            canManage={canManage}
-            recruiters={recruiters}
-            currentUserId={currentUserId}
-          />
+          {selectedAppIds.size > 0 && canManage ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm shadow-sm dark:border-amber-900/50 dark:bg-amber-950/40">
+              <div className="font-semibold text-amber-950 dark:text-amber-100">
+                {selectedAppIds.size} selected — bulk actions
+              </div>
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-amber-800/80 dark:text-amber-300/90">Assign owner</label>
+                  <select
+                    className="rounded-lg border border-amber-200/80 bg-white px-2 py-1.5 text-xs dark:border-amber-800 dark:bg-slate-900"
+                    value={bulkAssignUserId}
+                    onChange={(e) => setBulkAssignUserId(e.target.value)}
+                  >
+                    <option value="">Clear owner</option>
+                    {recruiters.map((r) => (
+                      <option key={r.id} value={String(r.id)}>
+                        {r.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  disabled={bulkBusy}
+                  className={UI.primaryButton + " py-1.5 text-xs"}
+                  onClick={() => void runBulkAssign()}
+                >
+                  Apply owner
+                </button>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-amber-800/80 dark:text-amber-300/90">Move to stage</label>
+                  <select
+                    className="rounded-lg border border-amber-200/80 bg-white px-2 py-1.5 text-xs dark:border-amber-800 dark:bg-slate-900"
+                    value={bulkStage}
+                    onChange={(e) => setBulkStage((e.target.value || "") as Stage | "")}
+                  >
+                    <option value="">Choose…</option>
+                    {STAGES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {bulkStage === "Rejected" ? (
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-amber-800/80">Reason</label>
+                    <select
+                      className="rounded-lg border border-amber-200/80 bg-white px-2 py-1.5 text-xs dark:border-amber-800 dark:bg-slate-900"
+                      value={bulkDispositionId}
+                      onChange={(e) => setBulkDispositionId(e.target.value)}
+                    >
+                      <option value="">Select…</option>
+                      {rejectReasonRows.map((r) => (
+                        <option key={r.id} value={String(r.id)}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={bulkBusy || !bulkStage}
+                  className={UI.primaryButton + " py-1.5 text-xs"}
+                  onClick={() => void runBulkStage()}
+                >
+                  Apply stage
+                </button>
+                <button
+                  type="button"
+                  className={UI.secondaryButton + " py-1.5 text-xs"}
+                  onClick={() => setSelectedAppIds(new Set())}
+                >
+                  Clear selection
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {applications.length > 0 ? (
+            <PipelineBoard
+              density={density}
+              applications={applications}
+              onStageUpdated={handleStageUpdated}
+              onApplicationRemoved={() => void mutateApplications()}
+              canManage={canManage}
+              recruiters={recruiters}
+              currentUserId={currentUserId}
+              bulkSelectMode={bulkSelectMode}
+              selectedApplicationIds={selectedAppIds}
+              onToggleApplicationSelected={toggleAppSelect}
+              wipLimitsOverride={wipLimitsOverride}
+              staleDaysThreshold={7}
+              isRefreshing={Boolean(isValidating && applications.length > 0)}
+            />
+          ) : null}
         </>
       )}
       </div>
@@ -459,3 +786,16 @@ export default function PipelinePage() {
   );
 }
 
+export default function PipelinePage() {
+  return (
+    <Suspense
+      fallback={
+        <AccessGate permissionKey="pipeline.view">
+          <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Loading pipeline…</div>
+        </AccessGate>
+      }
+    >
+      <PipelinePageContent />
+    </Suspense>
+  );
+}

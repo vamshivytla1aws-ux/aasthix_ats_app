@@ -8,7 +8,14 @@ import { apiFetchJson } from "@/lib/apiClient";
 
 type Props = { variant?: "shell" | "panel" };
 
-type CandidateResult = { id: number; full_name: string; email: string; location: string; status: string };
+type CandidateResult = {
+  id: number;
+  full_name: string;
+  email: string;
+  location: string;
+  status: string;
+  latest_application_id?: number | null;
+};
 type JobResult = { id: number; title: string; company: string; status: string; location: string };
 type AppResult = {
   id: number;
@@ -349,14 +356,19 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
                 <>
                   {results.candidates?.length > 0 && (
                     <ResultSection title="Candidates" icon={<User className="h-3.5 w-3.5" />}>
-                      {results.candidates.map((c) => (
+                      {results.candidates.map((c) => {
+                        const candHref =
+                          c.latest_application_id != null
+                            ? `/candidates/${c.id}?application=${c.latest_application_id}`
+                            : `/candidates/${c.id}`;
+                        return (
                         <ResultItem
                           key={`c-${c.id}`}
-                          href={`/candidates/${c.id}`}
+                          href={candHref}
                           onNavigate={() => {
                             pushRecent({
                               kind: "candidate",
-                              href: `/candidates/${c.id}`,
+                              href: candHref,
                               primary: c.full_name,
                               secondary: [c.email, c.location].filter(Boolean).join(" · "),
                             });
@@ -369,7 +381,8 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
                             c.status === "Placed" ? "indigo" : c.status === "Active" ? "emerald" : "slate"
                           }
                         />
-                      ))}
+                        );
+                      })}
                     </ResultSection>
                   )}
 
@@ -405,14 +418,16 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
 
                   {results.applications?.length > 0 && (
                     <ResultSection title="Applications" icon={<FileText className="h-3.5 w-3.5" />}>
-                      {results.applications.map((a) => (
+                      {results.applications.map((a) => {
+                        const appHref = `/candidates/${a.candidate_id}?application=${a.id}`;
+                        return (
                         <ResultItem
                           key={`a-${a.id}`}
-                          href={`/pipeline`}
+                          href={appHref}
                           onNavigate={() => {
                             pushRecent({
                               kind: "application",
-                              href: `/pipeline`,
+                              href: appHref,
                               primary: a.candidate_name,
                               secondary: `${a.job_title} · ${a.stage}${a.assigned_recruiter_name ? ` · ${a.assigned_recruiter_name}` : ""}`,
                             });
@@ -431,7 +446,8 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
                                   : "indigo"
                           }
                         />
-                      ))}
+                        );
+                      })}
                     </ResultSection>
                   )}
 

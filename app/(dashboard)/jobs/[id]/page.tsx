@@ -7,9 +7,11 @@ import useSWR from "swr";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import JobMatchHubModal from "@/components/JobMatchHubModal";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import ContextualCopilotPanel from "@/components/enterprise/ContextualCopilotPanel";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import ApprovalPanel from "@/components/enterprise/ApprovalPanel";
 import JobTeamPanel from "@/components/enterprise/JobTeamPanel";
+import JobInterviewRoundsPanel from "@/components/JobInterviewRoundsPanel";
 import DispositionReasonModal from "@/components/DispositionReasonModal";
 import Toast from "@/components/Toast";
 import { jobStatusRequiresDispositionReason } from "@/lib/dispositionRules";
@@ -28,6 +30,7 @@ type Job = {
   open_positions?: number | null;
   employment_type?: string | null;
   experience_requirement?: string | null;
+  pipeline_wip_limits?: Record<string, number> | null;
 };
 type JobQuestion = {
   id?: number;
@@ -364,9 +367,19 @@ export default function JobDetailPage() {
 
         <HybridMatchSummaryCard jobId={jobId} />
 
+        <ContextualCopilotPanel scope="job" entityId={jobId} subtitle={`${job.title} · ${job.company}`} />
+
         <JobTeamPanel
           jobId={jobId}
           canManage={canManage}
+          onToast={(msg, v) => setToast({ message: msg, variant: v })}
+        />
+
+        <JobInterviewRoundsPanel
+          jobId={jobId}
+          canManage={canManage}
+          pipelineWipLimits={job.pipeline_wip_limits ?? null}
+          onSavedWip={() => void mutateJob()}
           onToast={(msg, v) => setToast({ message: msg, variant: v })}
         />
 

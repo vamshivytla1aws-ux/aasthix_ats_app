@@ -27,7 +27,8 @@ Schema:
     "date_from": string | null,
     "date_to": string | null,
     "job_id": number | null,
-    "candidate_id": number | null
+    "candidate_id": number | null,
+    "application_id": number | null
   },
   "analytics": { "metric": "count" | "group_by_stage" | "trend_weekly_applications" | "board_totals" } | null,
   "action": {
@@ -98,6 +99,7 @@ export function coercePlan(raw: Record<string, unknown>): HrAssistantPlan {
     date_to: f.date_to != null ? String(f.date_to) : undefined,
     job_id: typeof f.job_id === "number" ? f.job_id : undefined,
     candidate_id: typeof f.candidate_id === "number" ? f.candidate_id : undefined,
+    application_id: typeof f.application_id === "number" ? f.application_id : undefined,
   };
 
   const analyticsRaw = raw.analytics as Record<string, unknown> | null | undefined;

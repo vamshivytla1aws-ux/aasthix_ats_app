@@ -762,7 +762,7 @@ export default function InterviewsPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              href="/pipeline"
+              href="/pipeline?stage=Interview"
               className={UI.secondaryButton + " inline-flex items-center gap-1 py-2 text-xs no-underline"}
             >
               Pipeline
@@ -1131,7 +1131,20 @@ export default function InterviewsPage() {
                       }
                     />
                   </td>
-                  {columns.candidate ? <td className={[rowPadClass, "font-semibold text-slate-900"].join(" ")}>{r.candidate_full_name}</td> : null}
+                  {columns.candidate ? (
+                    <td className={[rowPadClass, "font-semibold text-slate-900"].join(" ")}>
+                      {r.candidate_id ? (
+                        <Link
+                          href={`/candidates/${r.candidate_id}?application=${r.id}`}
+                          className="text-indigo-700 hover:underline dark:text-indigo-400"
+                        >
+                          {r.candidate_full_name}
+                        </Link>
+                      ) : (
+                        r.candidate_full_name
+                      )}
+                    </td>
+                  ) : null}
                   {columns.jobTitle ? <td className={[rowPadClass, "text-slate-700"].join(" ")}>{r.job_title}</td> : null}
                   {columns.company ? <td className={[rowPadClass, "text-slate-700"].join(" ")}>{r.job_company ?? "—"}</td> : null}
                   {columns.scheduled ? <td className={[rowPadClass, "whitespace-nowrap"].join(" ")}>

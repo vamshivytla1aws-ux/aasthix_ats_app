@@ -1,9 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import DispositionReasonModal from "@/components/DispositionReasonModal";
 import { jobStatusRequiresDispositionReason } from "@/lib/dispositionRules";
-import { ArrowDownAZ, ArrowUpAZ, Download, FileText, Search, X } from "lucide-react";
+import { ArrowDownAZ, ArrowUpAZ, Download, Search, Trash2, X } from "lucide-react";
 import type { Density } from "@/lib/useDensity";
-import { apiFetchJson } from "@/lib/apiClient";
+import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import JobMatchHubModal from "@/components/JobMatchHubModal";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import RowActionsMenu, { type RowActionItem } from "@/components/enterprise/RowActionsMenu";
@@ -32,6 +32,8 @@ type JobQuestion = {
 
 type Props = {
   jobs: Job[];
+  /** When true, show row checkboxes and bulk delete (requires jobs.manage). */
+  canManageJobs?: boolean;
   onView: (job: Job) => void;
   onEdit: (job: Job) => void;
   onDelete: (job: Job) => Promise<void>;
@@ -40,7 +42,15 @@ type Props = {
   onJobsRefresh?: () => void;
 };
 
-export function JobList({ jobs, onView: _onView, onEdit, onDelete, density = "compact", onJobsRefresh }: Props) {
+export function JobList({
+  jobs,
+  canManageJobs = false,
+  onView: _onView,
+  onEdit,
+  onDelete,
+  density = "compact",
+  onJobsRefresh,
+}: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | "Open" | "Closed">("");
   const [employmentTypeFilter, setEmploymentTypeFilter] = useState<string>("");
@@ -73,6 +83,20 @@ export function JobList({ jobs, onView: _onView, onEdit, onDelete, density = "co
   const [questionsJob, setQuestionsJob] = useState<Job | null>(null);
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questions, setQuestions] = useState<JobQuestion[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+  const pageSelectAllRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const valid = new Set(jobs.map((j) => j.id));
+    setSelectedIds((prev) => {
+      const next = new Set<number>();
+      for (const id of prev) {
+        if (valid.has(id)) next.add(id);
+      }
+      return next;
+    });
+  }, [jobs]);
 
   const hasActiveFilters = search.trim().length > 0 || Boolean(statusFilter) || Boolean(employmentTypeFilter);
   const hasCustomView = statusFilter !== "" || sortField !== "created_at" || sortOrder !== "desc";
@@ -127,6 +151,14 @@ export function JobList({ jobs, onView: _onView, onEdit, onDelete, density = "co
     const start = (safePage - 1) * pageSize;
     return sorted.slice(start, start + pageSize);
   }, [sorted, page, pageSize, totalPages]);
+
+  useEffect(() => {
+    const el = pageSelectAllRef.current;
+    if (!el || !canManageJobs) return;
+    const some = paged.some((j) => selectedIds.has(j.id));
+    const all = paged.length > 0 && paged.every((j) => selectedIds.has(j.id));
+    el.indeterminate = some && !all;
+  }, [canManageJobs, paged, selectedIds]);
 
   function onSort(field: "title" | "company" | "location" | "status" | "created_at") {
     setPage(1);
@@ -185,6 +217,30 @@ export function JobList({ jobs, onView: _onView, onEdit, onDelete, density = "co
     setStatusFilter("");
     setSortField("created_at");
     setSortOrder("desc");
+  }
+
+  async function handleBulkDelete() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    const ok = window.confirm(
+      `Delete ${ids.length} job${ids.length === 1 ? "" : "s"}? Related applications and data for these jobs will be removed. This cannot be undone.`
+    );
+    if (!ok) return;
+    setBulkDeleteBusy(true);
+    try {
+      await apiFetchJson<{ deleted_count?: number }>("/api/jobs/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      setSelectedIds(new Set());
+      onJobsRefresh?.();
+    } catch (e: unknown) {
+      const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Bulk delete failed";
+      window.alert(msg);
+    } finally {
+      setBulkDeleteBusy(false);
+    }
   }
 
   function exportCsv() {
@@ -396,6 +452,26 @@ export function JobList({ jobs, onView: _onView, onEdit, onDelete, density = "co
             ) : null}
           </div>
         </div>
+        {canManageJobs && sorted.length > 0 ? (
+          <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set(sorted.map((j) => j.id)))}
+              className="font-semibold text-blue-700 hover:underline dark:text-blue-400"
+            >
+              Select all {sorted.length} in current view
+            </button>
+            {selectedIds.size > 0 ? (
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="font-semibold text-slate-600 hover:underline dark:text-slate-300"
+              >
+                Clear selection ({selectedIds.size})
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex w-full max-w-3xl flex-wrap items-center gap-3">
             <div className="relative w-full min-w-[220px] flex-1">
@@ -462,11 +538,66 @@ export function JobList({ jobs, onView: _onView, onEdit, onDelete, density = "co
       </div>
 
       <div className={`${UI.enterprise.elevatedCard} overflow-hidden shadow-sm`}>
+        {canManageJobs && selectedIds.size > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2.5 dark:border-rose-900/50 dark:bg-rose-950/40">
+            <span className="text-sm font-semibold text-rose-900 dark:text-rose-100">
+              {selectedIds.size} job{selectedIds.size === 1 ? "" : "s"} selected
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-900 hover:bg-rose-100 dark:border-rose-800 dark:bg-slate-900 dark:text-rose-100 dark:hover:bg-rose-950"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                disabled={bulkDeleteBusy}
+                onClick={() => void handleBulkDelete()}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {bulkDeleteBusy ? (
+                  "Deleting…"
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete selected
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="max-h-[72vh] overflow-y-auto">
           <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-gray-50 dark:bg-slate-900">
               <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                {canManageJobs ? (
+                  <th className={[headerCellClass, "w-10"].join(" ")}>
+                    <input
+                      ref={pageSelectAllRef}
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                      checked={paged.length > 0 && paged.every((j) => selectedIds.has(j.id))}
+                      onChange={() => {
+                        const allOnPage = paged.every((j) => selectedIds.has(j.id));
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          if (allOnPage) {
+                            for (const j of paged) next.delete(j.id);
+                          } else {
+                            for (const j of paged) next.add(j.id);
+                          }
+                          return next;
+                        });
+                      }}
+                      title="Select all on this page"
+                      aria-label="Select all jobs on this page"
+                    />
+                  </th>
+                ) : null}
                 {columns.title ? <th className={headerCellClass}>
                   <button type="button" onClick={() => onSort("title")} className="inline-flex items-center gap-1">
                     Job Title {sortIcon("title")}
@@ -500,6 +631,24 @@ export function JobList({ jobs, onView: _onView, onEdit, onDelete, density = "co
             <tbody>
               {paged.map((job) => (
                 <tr key={job.id} className="border-b border-gray-100 transition hover:bg-gray-50 dark:border-slate-800 dark:hover:bg-slate-800/50">
+                  {canManageJobs ? (
+                    <td className={[rowCellClass, "w-10"].join(" ")} onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                        checked={selectedIds.has(job.id)}
+                        onChange={() => {
+                          setSelectedIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(job.id)) next.delete(job.id);
+                            else next.add(job.id);
+                            return next;
+                          });
+                        }}
+                        aria-label={`Select ${job.title}`}
+                      />
+                    </td>
+                  ) : null}
                   {columns.title ? (
                     <td className={[rowCellClass, "font-medium text-slate-900 dark:text-slate-100"].join(" ")}>
                       <button
@@ -578,7 +727,13 @@ export function JobList({ jobs, onView: _onView, onEdit, onDelete, density = "co
               ))}
               {paged.length === 0 ? (
                 <tr>
-                  <td colSpan={Math.max(1, Object.values(columns).filter(Boolean).length)} className="px-6 py-10 text-center text-slate-500 dark:text-slate-400">
+                  <td
+                    colSpan={Math.max(
+                      1,
+                      Object.values(columns).filter(Boolean).length + (canManageJobs ? 1 : 0)
+                    )}
+                    className="px-6 py-10 text-center text-slate-500 dark:text-slate-400"
+                  >
                     No jobs found for the selected filters.
                   </td>
                 </tr>

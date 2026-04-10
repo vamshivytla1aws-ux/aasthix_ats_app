@@ -41,6 +41,8 @@ export type HrFilters = {
   date_to?: string;
   job_id?: number;
   candidate_id?: number;
+  /** Single pipeline / application row by primary key */
+  application_id?: number;
 };
 
 export type HrActionType =

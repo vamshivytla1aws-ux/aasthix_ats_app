@@ -1,5 +1,22 @@
 import type { HrAssistantPlan } from "./types";
 
+/** Parse "application 12", "app #34", "ref 88" → numeric id */
+function extractApplicationIdFromMessage(m: string): number | undefined {
+  const patterns = [
+    /\bapplication\s*(?:#|id|number)?\s*[:#]?\s*(\d+)\b/i,
+    /\bapp\s*(?:#|id)?\s*[:#]?\s*(\d+)\b/i,
+    /\b(?:ref|reference)\s*[:#]?\s*(\d+)\b/i,
+  ];
+  for (const p of patterns) {
+    const x = m.match(p);
+    if (x?.[1]) {
+      const n = Number(x[1]);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  return undefined;
+}
+
 /** User is clearly asking for the interview board, not generic applications. */
 function isInterviewListingIntent(userMessage: string) {
   const u = userMessage.toLowerCase();
@@ -61,6 +78,27 @@ export function alignPlanWithUserMessage(plan: HrAssistantPlan, userMessage: str
         };
       }
     }
+  }
+
+  const appIdFromText = extractApplicationIdFromMessage(userMessage);
+  if (
+    appIdFromText &&
+    next.kind === "query" &&
+    (next.entity === "applications" ||
+      next.entity === "interviews" ||
+      next.entity === "offers" ||
+      next.entity === null ||
+      /\b(application|app|pipeline|ref|reference|who\s+is|assigned|owner)\b/i.test(userMessage))
+  ) {
+    const keepInterviews = next.entity === "interviews" && isInterviewListingIntent(userMessage);
+    next = {
+      ...next,
+      entity: keepInterviews ? "interviews" : next.entity === "offers" ? "offers" : "applications",
+      filters: {
+        ...next.filters,
+        application_id: appIdFromText,
+      },
+    };
   }
 
   return next;

@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronDown, LogOut, Settings, Shield, User, Keyboard,
-  HelpCircle, BarChart3, Bell, MessageSquare, Tag,
+  HelpCircle, BarChart3, Bell, MessageSquare, Tag, StickyNote,
 } from "lucide-react";
 import { apiFetchJson } from "@/lib/apiClient";
 import { APP_CONFIG } from "@/lib/config";
@@ -91,6 +91,10 @@ export default function MegaMenuNavbar() {
     () => isNavItemVisible({ permissionKey: "chat.view" }, role, permissions),
     [role, permissions]
   );
+  const canViewNotes = useMemo(
+    () => isNavItemVisible({ permissionKey: "pipeline.view" }, role, permissions),
+    [role, permissions]
+  );
 
   const logoMark = APP_CONFIG.brandInitials || "AT";
   const brandLogo = APP_CONFIG.brandLogoSrc?.trim();
@@ -135,6 +139,16 @@ export default function MegaMenuNavbar() {
             {userName ? (
               <>
                 {canViewChat ? <ChatBadge variant="shell" /> : null}
+                {canViewNotes ? (
+                  <Link
+                    href="/notes"
+                    className="relative rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-white transition hover:bg-white/25"
+                    title="Team notes"
+                    aria-label="Team notes"
+                  >
+                    <StickyNote className="h-4 w-4" />
+                  </Link>
+                ) : null}
                 <AlertBell variant="shell" />
 
                 {/* Profile dropdown */}
@@ -202,6 +216,14 @@ export default function MegaMenuNavbar() {
                             icon={<MessageSquare className="h-4 w-4" />}
                             label="Chat"
                             href="/chat"
+                            onClick={() => setProfileOpen(false)}
+                          />
+                        ) : null}
+                        {canViewNotes ? (
+                          <ProfileMenuItem
+                            icon={<StickyNote className="h-4 w-4" />}
+                            label="Notes"
+                            href="/notes"
                             onClick={() => setProfileOpen(false)}
                           />
                         ) : null}

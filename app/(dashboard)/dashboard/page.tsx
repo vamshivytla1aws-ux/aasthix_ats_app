@@ -137,6 +137,12 @@ export default function DashboardPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [alerts, setAlerts] = useState<InterviewAlert[]>([]);
+  const [sla, setSla] = useState<{
+    stale_in_stage_over_days: number;
+    stale_days_threshold: number;
+    interview_overdue_after_hours: number;
+    interview_stale_hours_threshold: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,14 +150,21 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [jData, cData, aData] = await Promise.all([
+      const [jData, cData, aData, slaData] = await Promise.all([
         apiFetchJson<Job[]>("/api/jobs"),
         apiFetchJson<Candidate[]>("/api/candidates"),
         apiFetchJson<Application[]>("/api/applications"),
+        apiFetchJson<{
+          stale_in_stage_over_days: number;
+          stale_days_threshold: number;
+          interview_overdue_after_hours: number;
+          interview_stale_hours_threshold: number;
+        }>("/api/dashboard/sla").catch(() => null),
       ]);
       setJobs(jData as Job[]);
       setCandidates(cData as Candidate[]);
       setApplications(aData as Application[]);
+      setSla(slaData);
     } catch (err: any) {
       setError(err.message || "Something went wrong");
     } finally {
@@ -289,6 +302,30 @@ export default function DashboardPage() {
               <div className="text-sm text-slate-700">Upcoming 1h: <span className="font-semibold">{alertSummary.upcoming}</span></div>
             </div>
           </div>
+
+          {sla ? (
+            <div className="rounded-2xl border border-amber-200/90 bg-amber-50/50 p-4 shadow-ats-sm dark:border-amber-900/50 dark:bg-amber-950/20">
+              <div className="text-xs font-bold uppercase tracking-wide text-amber-900 dark:text-amber-200">SLA-style signals</div>
+              <p className="mt-1 text-xs text-amber-900/80 dark:text-amber-200/90">
+                Non-terminal applications with no stage update in {sla.stale_days_threshold}+ days, and scheduled interviews whose start time is more than{" "}
+                {sla.interview_stale_hours_threshold} hours ago.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-6 text-sm text-amber-950 dark:text-amber-100">
+                <span>
+                  Time-in-stage stale: <strong className="font-semibold">{sla.stale_in_stage_over_days}</strong>
+                </span>
+                <span>
+                  Stale interview slots: <strong className="font-semibold">{sla.interview_overdue_after_hours}</strong>
+                </span>
+                <Link href="/pipeline" className="font-semibold text-blue-700 hover:underline dark:text-blue-400">
+                  Review pipeline →
+                </Link>
+                <Link href="/alerts" className="font-semibold text-blue-700 hover:underline dark:text-blue-400">
+                  Alerts →
+                </Link>
+              </div>
+            </div>
+          ) : null}
 
           <div className="rounded-2xl border border-slate-200/90 bg-white shadow-ats-sm shadow-ats-ring p-5">
             <div className="flex items-center justify-between">

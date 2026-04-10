@@ -81,6 +81,10 @@ export default function AlertBell({ variant = "default" }: { variant?: "default"
       setDismissedIds((prev) =>
         prev.filter((did) => next.some((a) => normalizeAlertId(a.id) === did))
       );
+    } catch (err) {
+      // Network/offline, dev server down, or blocked request — do not crash the shell.
+      console.warn("AlertBell: could not load alerts", err);
+      setAlerts([]);
     } finally {
       setLoading(false);
     }

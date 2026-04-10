@@ -15,6 +15,7 @@ import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import FilterDrawer from "@/components/enterprise/FilterDrawer";
 import { UI } from "@/lib/ui";
 import { apiFetchJson } from "@/lib/apiClient";
+import { dashboardFetcher } from "@/lib/swrFetcher";
 
 type Job = {
   id: number;
@@ -48,6 +49,12 @@ export default function JobsPage() {
   const router = useRouter();
   const { density, setDensity } = useDensity("ats:list-density", "compact");
   const { data: jobs = [], error, isLoading, mutate } = useSWR<Job[]>("/api/jobs");
+  const { data: meData } = useSWR<{ user?: { role?: string }; permissions?: Record<string, boolean> }>(
+    "/api/auth/me",
+    dashboardFetcher
+  );
+  const canManageJobs =
+    meData?.user?.role === "admin" || meData?.permissions?.["jobs.manage"] === true;
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
@@ -175,6 +182,7 @@ export default function JobsPage() {
           <JobList
             jobs={jobs}
             density={density}
+            canManageJobs={canManageJobs}
             onView={(job) => router.push(`/jobs/${job.id}`)}
             onEdit={(job) => {
               setEditingJob(job);

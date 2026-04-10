@@ -35,6 +35,7 @@ export async function GET(
         j.description,
         j.created_at,
         j.vendor_id,
+        j.pipeline_wip_limits,
         v.name AS vendor_name
       FROM jobs j
       LEFT JOIN vendors v ON v.id = j.vendor_id
@@ -198,10 +199,12 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { status, open_positions, disposition_reason_id } = body as {
+    const { status, open_positions, disposition_reason_id, pipeline_wip_limits } = body as {
       status?: string;
       open_positions?: number;
       disposition_reason_id?: number;
+      /** Per-stage caps, e.g. { "Interview": 8, "Screening": 12 } */
+      pipeline_wip_limits?: Record<string, number | null> | null;
     };
 
     const prevRes = await query(`SELECT status FROM jobs WHERE id = $1 LIMIT 1`, [id]);
@@ -259,6 +262,21 @@ export async function PATCH(
       }
     }
 
+    if (pipeline_wip_limits !== undefined) {
+      if (pipeline_wip_limits === null) {
+        vals.push(null);
+        sets.push(`pipeline_wip_limits = $${vals.length}`);
+      } else if (typeof pipeline_wip_limits === "object" && pipeline_wip_limits !== null) {
+        const cleaned: Record<string, number> = {};
+        for (const [k, v] of Object.entries(pipeline_wip_limits)) {
+          if (typeof v !== "number" || !Number.isFinite(v) || v < 1) continue;
+          cleaned[String(k)] = Math.min(500, Math.trunc(v));
+        }
+        vals.push(JSON.stringify(cleaned));
+        sets.push(`pipeline_wip_limits = $${vals.length}::jsonb`);
+      }
+    }
+
     if (sets.length === 0) {
       return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
     }
@@ -271,7 +289,7 @@ export async function PATCH(
       UPDATE jobs
       SET ${sets.join(", ")}, updated_at = NOW()
       WHERE id = ${idPh}
-      RETURNING id, title, company, location, status, open_positions, employment_type, experience_requirement, description, created_at, vendor_id
+      RETURNING id, title, company, location, status, open_positions, employment_type, experience_requirement, description, created_at, vendor_id, pipeline_wip_limits
       `,
       vals
     );

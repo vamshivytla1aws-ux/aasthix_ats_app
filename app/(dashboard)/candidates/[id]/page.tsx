@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Download, Mail, Phone } from "lucide-react";
 import CandidateHeader from "@/components/candidate/CandidateHeader";
 import Timeline from "@/components/candidate/Timeline";
@@ -10,6 +10,7 @@ import NotesSection from "@/components/candidate/NotesSection";
 import JobInfo from "@/components/candidate/JobInfo";
 import { apiFetchJson } from "@/lib/apiClient";
 import EnterpriseTabs from "@/components/enterprise/EnterpriseTabs";
+import ContextualCopilotPanel from "@/components/enterprise/ContextualCopilotPanel";
 import { UI } from "@/lib/ui";
 import { useDensity } from "@/lib/useDensity";
 import DensityToggle from "@/components/ui/DensityToggle";
@@ -30,6 +31,11 @@ type Candidate = {
   resume_url: string | null;
   job_title: string | null;
   stage: string | null;
+  current_interview_round_order?: number | null;
+  current_interview_round_label?: string | null;
+  interview_round_total?: number | null;
+  interview_round_status?: string | null;
+  latest_application_id?: number | null;
 };
 
 type TimelineItem = {
@@ -70,6 +76,31 @@ type CandidateProfileResponse = {
       answer_text: string;
     }>;
   } | null;
+  interviewRubricFeedback?: Array<{
+    question_id: number;
+    question: string;
+    category: string;
+    asked: boolean;
+    notes: string | null;
+    rating?: number | null;
+  }>;
+  dispositionFeedback?: Array<{
+    id: number;
+    label: string;
+    notes: string | null;
+    created_at: string;
+    job_title: string | null;
+  }>;
+  similarJobMatches?: Array<{
+    job_id: number;
+    title: string;
+    company: string | null;
+    location: string | null;
+    match_score: number;
+    already_applied: boolean;
+    application_stage: string | null;
+    match_source?: "table" | "embedding";
+  }>;
 };
 
 const TABS = [
@@ -82,8 +113,9 @@ const TABS = [
   { id: "similar", label: "Similar" },
 ] as const;
 
-export default function CandidateProfilePage() {
+function CandidateProfilePageContent() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const candidateId = Number(params?.id);
   const { density, setDensity } = useDensity("candidate_profile_density", "compact");
 
@@ -91,8 +123,20 @@ export default function CandidateProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<CandidateProfileResponse | null>(null);
   const [tab, setTab] = useState<string>("details");
+  const [canManageCandidate, setCanManageCandidate] = useState(false);
+  const [gdprBusy, setGdprBusy] = useState(false);
+  const router = useRouter();
 
   const isValidId = useMemo(() => Number.isFinite(candidateId), [candidateId]);
+
+  /** Align Job info with pipeline when opened via ?application= or ?job_id= */
+  const scopeQs = useMemo(() => {
+    const app = searchParams.get("application") ?? searchParams.get("app");
+    const jobId = searchParams.get("job_id");
+    if (app != null && /^\d+$/.test(app.trim())) return `?application=${encodeURIComponent(app.trim())}`;
+    if (jobId != null && /^\d+$/.test(jobId.trim())) return `?job_id=${encodeURIComponent(jobId.trim())}`;
+    return "";
+  }, [searchParams]);
 
   useEffect(() => {
     async function load() {
@@ -105,7 +149,7 @@ export default function CandidateProfilePage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await apiFetchJson<CandidateProfileResponse>(`/api/candidates/${candidateId}`);
+        const res = await apiFetchJson<CandidateProfileResponse>(`/api/candidates/${candidateId}${scopeQs}`);
         setData(res);
       } catch (err: any) {
         setError(err.message || "Failed to load candidate profile");
@@ -114,7 +158,21 @@ export default function CandidateProfilePage() {
       }
     }
     load();
-  }, [candidateId, isValidId]);
+  }, [candidateId, isValidId, scopeQs]);
+
+  useEffect(() => {
+    let alive = true;
+    apiFetchJson<{ user?: { role?: string }; permissions?: Record<string, boolean> }>("/api/auth/me")
+      .then((me) => {
+        if (!alive) return;
+        const admin = (me.user?.role || "").toLowerCase() === "admin";
+        setCanManageCandidate(admin || me.permissions?.["candidates.manage"] !== false);
+      })
+      .catch(() => setCanManageCandidate(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const sectionPad = density === "comfortable" ? "py-3" : density === "compact" ? "py-2" : "py-1.5";
   const titleClass = density === "ultra" ? "text-[10px]" : "text-xs";
@@ -250,6 +308,172 @@ export default function CandidateProfilePage() {
       <p className="text-sm text-slate-500 dark:text-slate-400">No screening evaluation yet.</p>
     );
 
+  const rubricRaw = data.interviewRubricFeedback ?? [];
+  const rubric = rubricRaw.filter(
+    (row) =>
+      row.asked ||
+      (row.notes && row.notes.trim() !== "") ||
+      (row.rating != null && row.rating >= 1 && row.rating <= 5)
+  );
+  const ratedOnly = rubricRaw.filter((r) => r.rating != null && r.rating >= 1 && r.rating <= 5);
+  const scorecardAvg =
+    ratedOnly.length > 0 ? ratedOnly.reduce((s, r) => s + (r.rating || 0), 0) / ratedOnly.length : null;
+  const dispositions = data.dispositionFeedback ?? [];
+  const hasScreeningFeedback =
+    Boolean(data.screeningEvaluation?.feedback?.trim()) ||
+    Boolean(data.screeningEvaluation?.strengths?.trim()) ||
+    Boolean(data.screeningEvaluation?.weaknesses?.trim());
+  const feedbackPanel = (
+    <div className="space-y-6 text-sm text-slate-700 dark:text-slate-200">
+      {hasScreeningFeedback || data.screeningEvaluation ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-600 dark:bg-slate-950/40">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Screening</div>
+            <button
+              type="button"
+              onClick={() => setTab("screening")}
+              className="text-xs font-semibold text-blue-700 hover:underline dark:text-blue-400"
+            >
+              Open screening tab →
+            </button>
+          </div>
+          {data.screeningEvaluation?.job_title ? (
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{data.screeningEvaluation.job_title}</div>
+          ) : null}
+          {data.screeningEvaluation?.feedback ? (
+            <p className="mt-2 whitespace-pre-wrap text-slate-700 dark:text-slate-200">{data.screeningEvaluation.feedback}</p>
+          ) : null}
+          {data.screeningEvaluation?.strengths ? (
+            <p className="mt-2 text-xs text-emerald-800 dark:text-emerald-300">
+              <span className="font-semibold">Strengths: </span>
+              {data.screeningEvaluation.strengths}
+            </p>
+          ) : null}
+          {data.screeningEvaluation?.weaknesses ? (
+            <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
+              <span className="font-semibold">Gaps: </span>
+              {data.screeningEvaluation.weaknesses}
+            </p>
+          ) : null}
+          {!hasScreeningFeedback && data.screeningEvaluation ? (
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">See the Screening tab for scores and answers.</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {scorecardAvg != null ? (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50/80 px-4 py-3 text-sm dark:border-indigo-900/50 dark:bg-indigo-950/30">
+          <span className="font-semibold text-indigo-900 dark:text-indigo-100">Rubric average: </span>
+          <span className="text-indigo-800 dark:text-indigo-200">{scorecardAvg.toFixed(1)} / 5</span>
+          <span className="text-xs text-indigo-700/80 dark:text-indigo-300/90"> ({ratedOnly.length} scored)</span>
+        </div>
+      ) : null}
+
+      {rubric.length > 0 ? (
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Interview scorecard</div>
+          <ul className="space-y-3">
+            {rubric.map((row) => (
+              <li
+                key={row.question_id}
+                className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-600 dark:bg-slate-900/40"
+              >
+                <div className="text-[10px] font-semibold uppercase text-slate-400 dark:text-slate-500">{row.category}</div>
+                <div className="font-medium text-slate-900 dark:text-slate-100">{row.question}</div>
+                <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  {row.rating != null && row.rating >= 1 ? (
+                    <span className={chipClass}>
+                      {row.rating}/5
+                    </span>
+                  ) : null}
+                  {row.asked ? <span className={chipClass}>Asked</span> : null}
+                  {row.notes ? <span className="whitespace-pre-wrap text-slate-700 dark:text-slate-300">{row.notes}</span> : null}
+                  {!row.asked && !row.notes && (row.rating == null || row.rating < 1) ? (
+                    <span className="italic">No notes yet</span>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {dispositions.length > 0 ? (
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Disposition & outcomes</div>
+          <ul className="space-y-2">
+            {dispositions.map((d) => (
+              <li key={d.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-600">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="font-medium text-slate-900 dark:text-slate-100">{d.label}</span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                    {new Date(d.created_at).toLocaleString()}
+                  </span>
+                </div>
+                {d.job_title ? <div className="text-xs text-slate-500 dark:text-slate-400">{d.job_title}</div> : null}
+                {d.notes ? <p className="mt-1 whitespace-pre-wrap text-slate-600 dark:text-slate-300">{d.notes}</p> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {!hasScreeningFeedback &&
+      !data.screeningEvaluation &&
+      rubric.length === 0 &&
+      dispositions.length === 0 ? (
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          No structured feedback yet. Screening scores, interview rubric notes, and disposition reasons appear here when recorded.
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const similar = data.similarJobMatches ?? [];
+  const similarPanel =
+    similar.length > 0 ? (
+      <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+        {similar.map((m) => (
+          <li key={m.job_id} className="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0">
+            <div className="min-w-0">
+              <Link
+                href={`/jobs/${m.job_id}`}
+                className="font-medium text-blue-700 hover:underline dark:text-blue-400"
+              >
+                {m.title}
+              </Link>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {[m.company, m.location].filter(Boolean).join(" · ") || "—"}
+              </div>
+              {m.already_applied ? (
+                <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                  Applied{m.application_stage ? ` · ${m.application_stage}` : ""}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <span className={chipClass}>Match {m.match_score}%</span>
+              {m.match_source === "embedding" ? (
+                <span className="text-[10px] text-slate-400 dark:text-slate-500">Semantic (embedding)</span>
+              ) : m.match_source === "table" ? (
+                <span className="text-[10px] text-slate-400 dark:text-slate-500">Saved match</span>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <div className="text-sm text-slate-500 dark:text-slate-400">
+        <p>
+          No suggestions yet. Run job matching to populate scores, or ensure resume embeddings exist — we also surface semantic
+          similar roles when vectors are available.
+        </p>
+        <Link href="/jobs" className="mt-3 inline-flex font-semibold text-blue-700 hover:underline dark:text-blue-400">
+          Browse jobs →
+        </Link>
+      </div>
+    );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -258,6 +482,8 @@ export default function CandidateProfilePage() {
         </Link>
         <DensityToggle density={density} onChange={setDensity} />
       </div>
+
+      <ContextualCopilotPanel scope="candidate" entityId={c.id} subtitle={c.name} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
         {/* Left summary — sticky on large screens */}
@@ -297,6 +523,67 @@ export default function CandidateProfilePage() {
               {c.stage ? <span className={chipClass}>{c.stage}</span> : null}
             </div>
           </div>
+          {canManageCandidate ? (
+            <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-600">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Data compliance
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                JSON export for portability; erasure removes the candidate and related applications. Obtain legal review before use in production.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={gdprBusy}
+                  className={btnClass}
+                  onClick={async () => {
+                    setGdprBusy(true);
+                    try {
+                      const payload = await apiFetchJson<Record<string, unknown>>(`/api/candidates/${c.id}/gdpr`);
+                      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `candidate-${c.id}-export.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } catch {
+                      /* toast optional */
+                    } finally {
+                      setGdprBusy(false);
+                    }
+                  }}
+                >
+                  Download JSON export
+                </button>
+                <button
+                  type="button"
+                  disabled={gdprBusy}
+                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-800 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200"
+                  onClick={async () => {
+                    if (!window.confirm("This permanently deletes this candidate and their applications. Continue?")) return;
+                    const typed = window.prompt('Type the word ERASE to confirm permanent deletion.');
+                    if (typed !== "ERASE") return;
+                    setGdprBusy(true);
+                    try {
+                      await apiFetchJson(`/api/candidates/${c.id}/gdpr`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ confirm: "ERASE" }),
+                      });
+                      router.push("/candidates");
+                    } catch {
+                      /* */
+                    } finally {
+                      setGdprBusy(false);
+                    }
+                  }}
+                >
+                  Erase candidate
+                </button>
+              </div>
+            </div>
+          ) : null}
         </aside>
 
         {/* Right workspace */}
@@ -316,16 +603,32 @@ export default function CandidateProfilePage() {
                   </Link>
                 </div>
               ) : null}
-              {tab === "feedback" ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">Structured feedback forms — coming soon.</p>
-              ) : null}
-              {tab === "similar" ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">Similar candidate suggestions — coming soon.</p>
-              ) : null}
+              {tab === "feedback" ? feedbackPanel : null}
+              {tab === "similar" ? similarPanel : null}
             </div>
           </div>
         </section>
       </div>
     </div>
+  );
+}
+
+export default function CandidateProfilePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <div className={`${UI.enterprise.elevatedCard} p-6`}>
+            <div className="text-sm text-slate-500 dark:text-slate-400">Loading candidate profile…</div>
+            <div className="mt-4 grid gap-2 lg:grid-cols-12">
+              <div className="h-40 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800 lg:col-span-4" />
+              <div className="h-40 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800 lg:col-span-8" />
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <CandidateProfilePageContent />
+    </Suspense>
   );
 }

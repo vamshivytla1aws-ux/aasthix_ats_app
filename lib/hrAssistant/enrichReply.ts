@@ -100,6 +100,17 @@ export function enrichQueryReply(plan: HrAssistantPlan, result: HrQueryResult): 
   ) {
     if (n > 0) {
       insights = insights ?? `**${n}** pipeline row(s). Use quick actions or open Pipeline for bulk moves.`;
+      if (result.columns.includes("assigned_recruiter_name") || result.columns.includes("created_by_name")) {
+        const r0 = result.rows[0] as Record<string, unknown>;
+        const ar = r0.assigned_recruiter_name;
+        const cb = r0.created_by_name;
+        const parts: string[] = [];
+        if (typeof ar === "string" && ar.trim()) parts.push(`Assigned recruiter: **${ar.trim()}**`);
+        if (typeof cb === "string" && cb.trim()) parts.push(`Created by: **${cb.trim()}**`);
+        if (parts.length) {
+          insights = `${insights} ${parts.join(" · ")}.`;
+        }
+      }
     } else {
       insights = "No rows in scope — try a wider date range or confirm interviews are scheduled in the system.";
     }

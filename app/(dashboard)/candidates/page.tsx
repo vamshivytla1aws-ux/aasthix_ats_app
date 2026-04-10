@@ -61,6 +61,8 @@ function CandidatesPageInner() {
   const { data: jobsForBulk = [] } = useSWR<JobOption[]>("/api/jobs");
   const [bulkJobId, setBulkJobId] = useState<string>("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkTagInput, setBulkTagInput] = useState("");
+  const [bulkTagBusy, setBulkTagBusy] = useState(false);
 
   const [editCandidate, setEditCandidate] = useState<Candidate | null>(null);
   const [addFormExpanded, setAddFormExpanded] = useState(false);
@@ -256,21 +258,63 @@ function CandidatesPageInner() {
                     {bulkBusy ? "Working…" : "Add to pipeline"}
                   </button>
                 </div>
-                <button
-                  type="button"
-                  className={UI.secondaryButton + " py-1.5 text-xs"}
-                  disabled={!firstEmail}
-                  onClick={() => {
-                    if (!firstEmail) return;
-                    const rest = selectedList
-                      .map((c) => c.email)
-                      .filter((e): e is string => Boolean(e && e !== firstEmail));
-                    const bcc = rest.length ? `?bcc=${rest.map(encodeURIComponent).join(",")}` : "";
-                    window.location.href = `mailto:${encodeURIComponent(firstEmail)}${bcc}`;
-                  }}
-                >
-                  Send email
-                </button>
+                  <button
+                    type="button"
+                    className={UI.secondaryButton + " py-1.5 text-xs"}
+                    disabled={!firstEmail}
+                    onClick={() => {
+                      if (!firstEmail) return;
+                      const rest = selectedList
+                        .map((c) => c.email)
+                        .filter((e): e is string => Boolean(e && e !== firstEmail));
+                      const bcc = rest.length ? `?bcc=${rest.map(encodeURIComponent).join(",")}` : "";
+                      window.location.href = `mailto:${encodeURIComponent(firstEmail)}${bcc}`;
+                    }}
+                  >
+                    Send email
+                  </button>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <input
+                      type="text"
+                      placeholder="Tags (comma-separated)"
+                      value={bulkTagInput}
+                      onChange={(e) => setBulkTagInput(e.target.value)}
+                      className="min-w-[140px] max-w-[220px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900"
+                    />
+                    <button
+                      type="button"
+                      className={UI.secondaryButton + " py-1.5 text-xs"}
+                      disabled={bulkTagBusy || !bulkTagInput.trim()}
+                      onClick={async () => {
+                        const add_tags = bulkTagInput
+                          .split(",")
+                          .map((t) => t.trim())
+                          .filter(Boolean);
+                        if (add_tags.length === 0) return;
+                        setBulkTagBusy(true);
+                        try {
+                          await apiFetchJson("/api/candidates/bulk-tags", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ candidate_ids: Array.from(selectedIds), add_tags }),
+                          });
+                          setToast({ message: "Tags updated.", variant: "success" });
+                          setBulkTagInput("");
+                          void mutateCandidates();
+                        } catch (e: any) {
+                          const msg =
+                            e instanceof ApiError && e.status === 403
+                              ? `${e.message} — candidates.manage is required.`
+                              : e?.message || "Tag failed";
+                          setToast({ message: msg, variant: "error" });
+                        } finally {
+                          setBulkTagBusy(false);
+                        }
+                      }}
+                    >
+                      {bulkTagBusy ? "…" : "Add tags"}
+                    </button>
+                  </div>
                 <button
                   type="button"
                   className="ml-auto text-xs font-semibold text-blue-800 underline dark:text-blue-300"

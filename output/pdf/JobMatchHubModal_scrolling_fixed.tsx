@@ -165,10 +165,6 @@ export default function JobMatchHubModal({
       return a.full_name.localeCompare(b.full_name);
     });
   }, [matches]);
-	const visibleMatches = useMemo(() => {
-		if (!shortlistOnly) return sortedMatches;
-		return sortedMatches.filter((m) => effectiveAiShortlistIds.has(m.candidate_id));
-	}, [sortedMatches, shortlistOnly, effectiveAiShortlistIds]);
 
   const load = useCallback(async () => {
     if (!job?.id) return;
@@ -376,7 +372,12 @@ const effectiveAiShortlistIds = useMemo(() => {
       .map((m) => m.candidate_id)
   );
 }, [matches, hasHybridTop10, hybridTopIds]);
-	
+
+  const visibleMatches = useMemo(() => {
+    if (!shortlistOnly) return sortedMatches;
+    return sortedMatches.filter((m) => effectiveAiShortlistIds.has(m.candidate_id));
+  }, [sortedMatches, shortlistOnly, effectiveAiShortlistIds]);
+
   async function runExtractAsync() {
     if (!job?.id) return;
     setExtractAsyncBusy(true);
@@ -809,6 +810,7 @@ function selectAiShortlisted() {
                       </tr>
                     ) : (
                       visibleMatches.map((m) => {
+                        const headlineScore = Math.round(m.match_score);
                         const tier = m.match_breakdown?.ai_fit_tier ?? fitTierFromScore(m.match_score);
                         const tierClass =
                           tier === "Strong Fit"

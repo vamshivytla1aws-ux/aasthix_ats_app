@@ -510,7 +510,7 @@ export async function PATCH(request: Request) {
       if (roundStepRowCount > 0) Object.assign(updated, step.rows[0]);
     }
 
-    // "Client confirmed â€“ next round" at the last configured round (e.g. Final): add another round
+    // "Client confirmed – next round" at the last configured round (e.g. Final): add another round
     // so recruiters can keep advancing until they explicitly mark selected.
     if (
       interview_decision === "next_round" &&
@@ -832,7 +832,7 @@ export async function PATCH(request: Request) {
       </div>
 
       <div style="text-align:center;margin-top:12px;font-family:Arial,sans-serif;color:#6B7280;font-size:12px;">
-        Â© 2026 Aasthix Talent
+        © 2026 Aasthix Talent
       </div>
     </div>
   </body>

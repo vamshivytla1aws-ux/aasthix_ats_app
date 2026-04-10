@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { FileUp, X } from "lucide-react";
 import { UI } from "@/lib/ui";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import Toast from "@/components/Toast";
@@ -67,6 +67,8 @@ export default function JobForm({
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error"; requestId?: string } | null>(null);
   const [jobCloseDispositionOpen, setJobCloseDispositionOpen] = useState(false);
   const [draftBanner, setDraftBanner] = useState<{ savedAt: string } | null>(null);
+  const [jdImportBusy, setJdImportBusy] = useState(false);
+  const jdFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -115,6 +117,31 @@ export default function JobForm({
       cancelled = true;
     };
   }, [open, mode, initialJob?.id]);
+
+  async function onJdDocxSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setJdImportBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const data = await apiFetchJson<{ text?: string }>("/api/jobs/import-jd-docx", { method: "POST", body: fd });
+      if (typeof data?.text === "string") {
+        setDescription(data.text);
+        setToast({ message: "Description imported from Word. Review before saving.", variant: "success" });
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Could not import this file";
+      setToast({
+        message: msg,
+        variant: "error",
+        requestId: err instanceof ApiError ? err.requestId : undefined,
+      });
+    } finally {
+      setJdImportBusy(false);
+    }
+  }
 
   function addQuestion(category: QuestionCategory) {
     setInterviewQuestions((prev) => [...prev, { category, question: "", sort_order: prev.length + 1 }]);
@@ -506,7 +533,28 @@ export default function JobForm({
                   </select>
                 </div>
                 <div className="md:col-span-2">
-                  <label className={UI.label}>Description</label>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className={UI.label}>Description</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={jdFileInputRef}
+                        type="file"
+                        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        className="hidden"
+                        onChange={onJdDocxSelected}
+                        disabled={submitting || jdImportBusy}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => jdFileInputRef.current?.click()}
+                        disabled={submitting || jdImportBusy}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        <FileUp className="h-3.5 w-3.5" aria-hidden />
+                        {jdImportBusy ? "Importing…" : "Import from Word (.docx)"}
+                      </button>
+                    </div>
+                  </div>
                   <textarea
                     className={[UI.input, "min-h-[110px] resize-y"].join(" ")}
                     value={description}
