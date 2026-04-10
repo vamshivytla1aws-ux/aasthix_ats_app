@@ -3,16 +3,18 @@ import { applicationAccessPredicate, hasJobTeamTable } from "@/lib/applicationVi
 
 type QueryResultRow = Record<string, unknown>;
 
-function isMissingSchemaError(error: unknown) {
-  if (!error || typeof error !== "object") return false;
-  const maybeCode = "code" in error ? (error as { code?: unknown }).code : undefined;
-  return maybeCode === "42703" || maybeCode === "42P01";
+async function tryApplicationQuery(sql: string, params: unknown[], label: string) {
+  try {
+    return await query(sql, params);
+  } catch (error) {
+    console.warn(`[applicationCard] ${label} failed`, error);
+    return null;
+  }
 }
 
 async function fetchApplicationRowsInternal(whereClause: string, params: unknown[]) {
-  try {
-    return await query(
-      `
+  const enhanced = await tryApplicationQuery(
+    `
       SELECT
         a.id,
         a.candidate_id,
@@ -79,15 +81,13 @@ async function fetchApplicationRowsInternal(whereClause: string, params: unknown
       ) hist ON true
       ${whereClause}
       `,
-      params
-    );
-  } catch (error) {
-    if (!isMissingSchemaError(error)) throw error;
+    params,
+    "enhanced applications query"
+  );
+  if (enhanced) return enhanced;
 
-    console.warn("[applicationCard] Falling back to compatibility applications query", error);
-
-    return await query(
-      `
+  const compatibility = await tryApplicationQuery(
+    `
       SELECT
         a.id,
         a.candidate_id,
@@ -122,9 +122,51 @@ async function fetchApplicationRowsInternal(whereClause: string, params: unknown
       JOIN jobs j ON j.id = a.job_id
       ${whereClause}
       `,
-      params
-    );
-  }
+    params,
+    "compatibility applications query"
+  );
+  if (compatibility) return compatibility;
+
+  const legacy = await query(
+    `
+    SELECT
+      a.id,
+      a.candidate_id,
+      a.job_id,
+      COALESCE(NULLIF(a.status, ''), 'Applied') AS stage,
+      a.updated_at,
+      FALSE AS interview_scheduled,
+      NULL::timestamptz AS interview_datetime,
+      NULL::text AS interview_reschedule_reason,
+      NULL::text AS interview_cancel_reason,
+      FALSE AS interview_no_show,
+      NULL::bigint AS current_interview_round_id,
+      NULL::int AS current_interview_round_order,
+      NULL::text AS interview_round_status,
+      NULL::int AS rejected_in_round_order,
+      NULL::int AS selected_after_rounds,
+      NULL::text AS final_outcome,
+      COALESCE(a.source, 'UI') AS application_source,
+      NULL::bigint AS assigned_recruiter_user_id,
+      NULL::text AS assigned_recruiter_name,
+      NULL::text AS current_interview_round_label,
+      0::int AS interview_round_total,
+      c.full_name AS candidate_full_name,
+      c.email AS candidate_email,
+      c.phone AS candidate_phone,
+      j.title AS job_title,
+      j.company AS job_company,
+      j.location AS job_location,
+      '[]'::json AS interview_round_history
+    FROM applications a
+    JOIN candidates c ON c.id = a.candidate_id
+    JOIN jobs j ON j.id = a.job_id
+    ${whereClause.replaceAll("a.stage", "COALESCE(NULLIF(a.status, ''), 'Applied')")}
+    `,
+    params
+  );
+
+  return legacy;
 }
 
 export async function fetchApplicationsRows({
