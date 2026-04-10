@@ -49,7 +49,9 @@ async function hasNextBuild() {
 async function startWeb() {
   const port = process.env.PORT || '3000';
 
-  await run('node', ['scripts/runMigrations.mjs']);
+  if (process.env.SKIP_STARTUP_MIGRATIONS !== 'true') {
+    await run('node', ['scripts/runMigrations.mjs']);
+  }
   await run('node', ['scripts/seedAdmin.mjs']);
 
   if (!(await hasNextBuild())) {
