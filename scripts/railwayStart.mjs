@@ -2,7 +2,17 @@ import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import path from 'node:path';
 
-const role = (process.env.APP_RUNTIME || 'web').trim().toLowerCase();
+const roleHint = [
+  process.env.APP_RUNTIME,
+  process.env.RAILWAY_SERVICE_NAME,
+  process.env.RAILWAY_REPLICA_ID,
+]
+  .filter(Boolean)
+  .join(' ')
+  .trim()
+  .toLowerCase();
+
+const role = roleHint.includes('worker') ? 'worker' : 'web';
 
 function run(command, args, env = process.env) {
   return new Promise((resolve, reject) => {
