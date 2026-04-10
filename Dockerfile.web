@@ -3,4 +3,4 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-CMD ["sh", "-lc", "PORT=${PORT:-3000} npm run build && npx next start -H 0.0.0.0 -p $PORT"]
+CMD ["sh", "-lc", "PORT=${PORT:-3000} node scripts/runMigrations.mjs && npm run build && npx next start -H 0.0.0.0 -p $PORT"]
