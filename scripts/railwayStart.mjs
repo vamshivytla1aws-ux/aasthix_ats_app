@@ -50,6 +50,7 @@ async function startWeb() {
   const port = process.env.PORT || '3000';
 
   await run('node', ['scripts/runMigrations.mjs']);
+  await run('node', ['scripts/seedAdmin.mjs']);
 
   if (!(await hasNextBuild())) {
     await run('npm', ['run', 'build']);
