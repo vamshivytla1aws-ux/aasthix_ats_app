@@ -60,6 +60,101 @@ function extractLinkedIn(text: string) {
   return validateLinkedInUrl(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
 }
 
+/** Reject resume section titles and PDF artifacts misread as names (e.g. "Prof Essional Overview"). */
+const NAME_SECTION_RE =
+  /\b(overview|summary|objective|experience|skills|education|certifications?|employment|references|highlights?|snapshot|background|accreditation|essional|professional|curriculum|vitae|essio)\b/i;
+
+const NAME_ROLE_TOKEN = /\b(senior|junior|lead|principal|staff|engineer|engineering|developer|devops|architect|manager|consultant|analyst|intern|fresher|tester|qa|sdet|scientist|specialist|owner|director|designer|recruiter|administrator|marketing|sales|product|support)\b/i;
+
+const GEO_HINT_RE =
+  /\b(india|usa|us|united\s+states|uk|united\s+kingdom|canada|australia|singapore|uae|germany|france|ireland|netherlands|sweden|poland|spain|italy|japan|bengaluru|bangalore|hyderabad|chennai|pune|mumbai|delhi|new\s+delhi|noida|gurgaon|gurugram|kolkata|ahmedabad|kochi|trivandrum|thiruvananthapuram|jaipur|chandigarh|coimbatore|mysore|visakhapatnam|vizag|san\s+francisco|new\s+york|austin|seattle|london|toronto|dubai)\b/i;
+
+function containsGeoHint(s: string) {
+  return GEO_HINT_RE.test(s);
+}
+
+/**
+ * True if the string looks like a person's name, not a section heading or job title line.
+ */
+export function looksLikePersonName(s: string | null | undefined): boolean {
+  if (s == null || typeof s !== "string") return false;
+  const t = s.trim().replace(/\s+/g, " ");
+  if (t.length < 4 || t.length > 80) return false;
+  if (/[|•·,/()]/.test(t)) return false;
+  if (/@|https?:\/\/|www\.|\d{2,}/.test(t)) return false;
+  if (NAME_SECTION_RE.test(t)) return false;
+  if (NAME_ROLE_TOKEN.test(t)) return false;
+  if (containsGeoHint(t)) return false;
+  const words = t.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 5) return false;
+  let initials = 0;
+  for (const w of words) {
+    if (w.length > 24) return false;
+    if (!/^[A-Za-z][A-Za-z'.-]*\.?$/.test(w)) return false;
+    if (w.replace(/\./g, "").length === 1) initials += 1;
+  }
+  return initials <= 2;
+}
+
+function titleCaseName(input: string) {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/\bMc([a-z])/g, (_, x: string) => `Mc${x.toUpperCase()}`);
+}
+
+/**
+ * First segment of filename before role tokens: "Hari Mohan_Sr AI_Backend.pdf" → "Hari Mohan"
+ */
+export function extractNameFromFilename(filename: string): string | null {
+  const base = path
+    .basename(filename || "", path.extname(filename || ""))
+    .replace(/\+/g, " ")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  if (!base) return null;
+
+  const stop = new Set([
+    "sr",
+    "jr",
+    "ii",
+    "iii",
+    "iv",
+    "ai",
+    "ml",
+    "nlp",
+    "cv",
+    "resume",
+    "profile",
+    "updated",
+    "latest",
+    "engg",
+    "eng",
+    "yrs",
+    "year",
+    "years",
+  ]);
+
+  const tokens = base.split(/\s+/).filter(Boolean);
+  const taken: string[] = [];
+  for (const token of tokens) {
+    const low = token.toLowerCase();
+    if (stop.has(low)) break;
+    if (/^(backend|frontend|fullstack|full|stack|developer|engineer|devops|cloud|data|candidate)$/i.test(token)) break;
+    if (!/^[A-Za-z][A-Za-z'.-]{0,22}$/.test(token)) break;
+    taken.push(token);
+    if (taken.length >= 4) break;
+  }
+
+  if (taken.length >= 2) {
+    const candidate = taken.join(" ");
+    if (looksLikePersonName(candidate)) return titleCaseName(candidate);
+  }
+
+  return null;
+}
+
 function extractFullName(text: string) {
   const normalized = normalizeWhitespace(text);
   const lines = normalized
@@ -69,25 +164,42 @@ function extractFullName(text: string) {
   const invalid = new Set(["curriculum vitae", "resume", "profile", "bio data", "biodata", "cv"]);
   const invalidPatterns = [/\bcurriculum\s+vit(?:ae|tae|tte|ttae)\b/i, /\bresume\b/i, /\bprofile\b/i, /^\s*cv\s*$/i];
 
-  function titleCase(input: string) {
-    return input
-      .toLowerCase()
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-      .trim();
-  }
-
   function isNameLine(line: string) {
     const lower = line.toLowerCase().replace(/\s+/g, " ").trim();
     if (!lower || invalid.has(lower) || invalidPatterns.some((x) => x.test(lower))) return false;
     if (/@|\d|https?:\/\/|www\./i.test(line)) return false;
     if (line.length < 3 || line.length > 60) return false;
     if (!/^[A-Za-z][A-Za-z .'-]+$/.test(line)) return false;
-    return line.split(/\s+/).filter(Boolean).length >= 2;
+    if (line.split(/\s+/).filter(Boolean).length < 2) return false;
+    return looksLikePersonName(line);
   }
 
-  for (const line of lines.slice(0, 6)) if (isNameLine(line)) return titleCase(line);
-
   const email = extractEmail(normalized);
+  const emailTokens = (email?.split("@")[0] || "")
+    .replace(/[^a-z]/gi, " ")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((x) => x.length >= 2);
+
+  let best: { value: string; score: number } | null = null;
+  const consider = (line: string, index: number, proximityBonus = 0) => {
+    if (!isNameLine(line)) return;
+    const cleaned = line.replace(/\s+/g, " ").trim();
+    const tokens = cleaned.toLowerCase().split(/\s+/);
+    let score = 0;
+    if (index < 3) score += 5;
+    else if (index < 6) score += 3;
+    else if (index < 12) score += 1;
+    if (/^[A-Z][A-Za-z'.-]+(?:\s+[A-Z][A-Za-z'.-]+){1,4}$/.test(cleaned)) score += 2;
+    if (/^[A-Z.\s'-]+$/.test(cleaned)) score += 1;
+    const overlap = tokens.filter((t) => emailTokens.some((e) => e.includes(t) || t.includes(e))).length;
+    score += Math.min(3, overlap);
+    score += proximityBonus;
+    if (!best || score > best.score) best = { value: cleaned, score };
+  };
+
+  lines.slice(0, 20).forEach((line, index) => consider(line, index));
+
   if (email) {
     const idx = normalized.toLowerCase().indexOf(email.toLowerCase());
     const before = idx > 0 ? normalized.slice(0, idx) : "";
@@ -95,9 +207,110 @@ function extractFullName(text: string) {
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean)
-      .slice(-8)
+      .slice(-10)
       .reverse();
-    for (const line of candidateLines) if (isNameLine(line)) return titleCase(line);
+    candidateLines.forEach((line, index) => consider(line, index, 2));
+  }
+
+  return best ? titleCaseName(best.value) : null;
+}
+
+/** Tokens that appear after a comma in skill lists / JD fragments — not geographic regions. */
+const NOT_A_REGION_TOKEN = new Set(
+  [
+    "node", "nodes", "js", "ts", "net", "core", "boot", "api", "go", "ui", "ux", "end", "web", "dev",
+    "app", "sql", "git", "oss", "sdk", "ml", "ai", "rb", "py", "oss", "cd", "ci", "hq", "ii", "iii",
+    "ranking", "retrieval", "learning", "included", "including", "into", "inclu", "incl", "stack",
+    "cloud", "azure", "aws", "gcp", "kubernetes", "docker", "angular", "react", "vue", "java", "agile",
+    "scrum", "years", "year", "experience", "experiences", "requirements", "requirement", "proven",
+    "skills", "skill", "technical", "technologies", "framework", "frameworks", "development", "developer",
+    "engineer", "engineering", "based", "remote", "hybrid", "onsite", "full", "time", "part",
+  ].map((s) => s.toLowerCase())
+);
+
+const LOCATION_JUNK_PHRASE =
+  /\b(years?\s+of|work\s+experience|job\s+description|requirements?|proven\s+|technical\s+skills?|retrieval|ranking|machine\s+learning|deep\s+learning|professional\s+summary|summary|objective)\b/i;
+
+function cleanHeaderToken(s: string) {
+  return s.replace(/^[|•·,;:\-\s]+|[|•·,;:\-\s]+$/g, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function splitHeaderSegments(line: string) {
+  return line
+    .split(/\s*[|•·]\s*|\s{2,}/)
+    .map((x) => cleanHeaderToken(x))
+    .filter(Boolean);
+}
+
+/**
+ * Reject obvious non-locations (JD lines, tech pairs like "EF Core, Node", truncated words).
+ * Exported for unit tests / future UI hints.
+ */
+export function looksLikeCandidateLocation(s: string | null | undefined): boolean {
+  if (s == null || typeof s !== "string") return false;
+  const raw = cleanHeaderToken(s);
+  if (raw.length < 2 || raw.length > 100) return false;
+  if (/@|https?:\/\/|www\./i.test(raw)) return false;
+  if (/\d{4}\s*-\s*\d{4}/.test(raw)) return false;
+  if (LOCATION_JUNK_PHRASE.test(raw)) return false;
+  if (NAME_SECTION_RE.test(raw)) return false;
+  if (NAME_ROLE_TOKEN.test(raw)) return false;
+
+  const t = raw.replace(/^(?:Location|Address|Current\s+address|Current\s+location|Based\s+in|Residing\s+in)\s*:\s*/i, "").trim();
+  if (!t) return false;
+  if (/^(remote|hybrid|onsite)$/i.test(t)) return true;
+  if (containsGeoHint(t)) return true;
+
+  const parts = t.split(",").map((x) => cleanHeaderToken(x)).filter(Boolean);
+  if (parts.length === 0 || parts.length > 3) return false;
+
+  for (const p of parts) {
+    if (p.length > 60) return false;
+    const lastWord = p.split(/\s+/).pop()?.toLowerCase() ?? "";
+    if (lastWord && NOT_A_REGION_TOKEN.has(lastWord)) return false;
+    if (NOT_A_REGION_TOKEN.has(p.toLowerCase())) return false;
+    if (NAME_ROLE_TOKEN.test(p)) return false;
+  }
+
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1];
+    if (/^[A-Z]{2}$/.test(last)) return true;
+    if (parts.every((p) => /^[A-Za-z][A-Za-z .'-]{1,40}$/.test(p))) return true;
+  }
+
+  return false;
+}
+
+function extractLocationFromHeaderLines(lines: string[]): string | null {
+  const headerSlice = lines.slice(0, 18);
+
+  for (const line of headerSlice) {
+    if (!line) continue;
+    const normalizedLine = line.replace(/\s+/g, " ").trim();
+
+    const labeled = normalizedLine.match(
+      /^\s*(?:Location|Address|Current\s+address|Current\s+location|Based\s+in|Residing\s+in)\s*:\s*(.+)$/i
+    );
+    if (labeled?.[1]) {
+      const labeledSegments = splitHeaderSegments(labeled[1]);
+      for (const seg of labeledSegments) {
+        if (looksLikeCandidateLocation(seg)) return seg;
+      }
+      const v = cleanHeaderToken(labeled[1]);
+      if (looksLikeCandidateLocation(v)) return v;
+    }
+
+    const segments = splitHeaderSegments(normalizedLine);
+    for (const seg of segments) {
+      if (extractEmail(seg) || extractPhone(seg) || extractLinkedIn(seg)) continue;
+      if (looksLikeCandidateLocation(seg)) return seg;
+    }
+
+    const inlineMatches = normalizedLine.match(/[A-Za-z][A-Za-z .'-]{1,40},\s*(?:[A-Z]{2}|[A-Za-z][A-Za-z .'-]{1,40})/g) ?? [];
+    for (const match of inlineMatches) {
+      const candidate = cleanHeaderToken(match);
+      if (looksLikeCandidateLocation(candidate)) return candidate;
+    }
   }
 
   return null;
@@ -105,21 +318,29 @@ function extractFullName(text: string) {
 
 function extractLocation(text: string) {
   const t = normalizeWhitespace(text);
-  const labeled = t.match(/\bLocation\s*:\s*([^\n]+)\b/i);
-  if (labeled?.[1]) return labeled[1].trim();
-
-  const topLines = t
+  const lines = t
     .split("\n")
     .map((l) => l.trim())
-    .filter(Boolean)
-    .slice(0, 20);
+    .filter(Boolean);
 
-  for (const line of topLines) {
-    if (/@|https?:\/\//i.test(line)) continue;
-    const commaStyle = line.match(/\b([A-Za-z][A-Za-z .'-]+),\s*([A-Z]{2}|[A-Za-z]{2,})\b/);
-    if (commaStyle) return `${commaStyle[1].trim()}, ${commaStyle[2].trim()}`;
+  const head = extractLocationFromHeaderLines(lines);
+  if (head) return head;
+
+  let resumeTop = t;
+  const expMatch = t.search(/\n\s*(?:Professional\s+)?(?:Work\s+)?Experience\b/i);
+  const eduMatch = t.search(/\n\s*Education\b/i);
+  for (const idx of [expMatch, eduMatch]) {
+    if (idx > 500 && idx < resumeTop.length) {
+      resumeTop = t.slice(0, idx);
+      break;
+    }
   }
-  return null;
+  const earlyLines = resumeTop
+    .slice(0, 4000)
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return extractLocationFromHeaderLines(earlyLines);
 }
 
 function extractSkillsRuleBased(text: string) {
@@ -270,6 +491,8 @@ Rules:
 - Return null when unknown.
 - skills should be concise and deduplicated.
 - Do not invent values.
+- full_name: ONLY the person's real name as shown at the top of the resume (2–5 words). Never use section titles like "Professional Summary", "Profile", or mangled PDF text.
+- location: ONLY the candidate's city/region/country (e.g. "Chennai, India" or "Austin, TX"). Use null if not clearly stated in header/contact area. Never use job-description fragments, skill pairs, or lines about "years of experience".
 Resume:
 ${text.slice(0, 16000)}`;
   try {
@@ -307,11 +530,18 @@ ${text.slice(0, 16000)}`;
           .filter(Boolean)
           .slice(0, 30)
       : [];
+    const rawLoc = typeof parsed.location === "string" ? parsed.location.trim() : "";
+    const location =
+      rawLoc && looksLikeCandidateLocation(rawLoc) ? rawLoc : null;
+
+    const rawName = typeof parsed.full_name === "string" ? parsed.full_name.trim() : "";
+    const full_name = rawName && looksLikePersonName(rawName) ? rawName : null;
+
     return {
-      full_name: typeof parsed.full_name === "string" ? parsed.full_name.trim() || null : null,
+      full_name,
       email: typeof parsed.email === "string" ? parsed.email.trim() || null : null,
       phone: typeof parsed.phone === "string" ? parsed.phone.trim() || null : null,
-      location: typeof parsed.location === "string" ? parsed.location.trim() || null : null,
+      location,
       linkedin_url: typeof parsed.linkedin_url === "string" ? parsed.linkedin_url.trim() || null : null,
       skills: aiSkills.length > 0 ? aiSkills.join(", ") : null,
     };
@@ -346,6 +576,42 @@ function norm(v: string | null | undefined) {
   return (v || "").trim().toLowerCase();
 }
 
+/**
+ * Filename prefix (e.g. "Hari Mohan_Sr AI_...pdf") is often the most reliable signal when PDF text order is wrong.
+ * Order: file hint > AI > rule (each must pass looksLikePersonName).
+ */
+function pickFinalFullName(
+  ai: string | null | undefined,
+  rule: string | null | undefined,
+  fileHint: string | null | undefined
+): string | null {
+  const a = ai?.trim() && looksLikePersonName(ai.trim()) ? ai.trim() : null;
+  const r = rule?.trim() && looksLikePersonName(rule.trim()) ? rule.trim() : null;
+  const f = fileHint?.trim() && looksLikePersonName(fileHint.trim()) ? fileHint.trim() : null;
+
+  if (a && r && norm(a) === norm(r)) return titleCaseName(a);
+  if (a) return titleCaseName(a);
+  if (r) return titleCaseName(r);
+  if (f) return titleCaseName(f);
+  return null;
+}
+
+/** Prefer validated AI when both exist; if only one is valid, use it; break ties toward comma-style (city, country). */
+function pickFinalLocation(ai: string | null | undefined, rule: string | null | undefined): string | null {
+  const a = ai?.trim() && looksLikeCandidateLocation(ai.trim()) ? ai.trim() : null;
+  const r = rule?.trim() && looksLikeCandidateLocation(rule.trim()) ? rule.trim() : null;
+  if (!a && !r) return null;
+  if (a && !r) return a;
+  if (!a && r) return r;
+  if (a && r) {
+    if (norm(a) === norm(r)) return a;
+    if (a.includes(",") && !r.includes(",")) return a;
+    if (r.includes(",") && !a.includes(",")) return r;
+    return a;
+  }
+  return null;
+}
+
 function valueConfidence(aiValue: string | null | undefined, ruleValue: string | null | undefined) {
   const a = norm(aiValue);
   const r = norm(ruleValue);
@@ -364,6 +630,7 @@ export async function parseResumeBuffer(filename: string, buffer: Buffer): Promi
     );
   }
   const resume_url = await saveResumeFile(filename, buffer);
+  const nameFromFile = extractNameFromFilename(filename);
 
   const rule = {
     full_name: extractFullName(text),
@@ -383,6 +650,8 @@ export async function parseResumeBuffer(filename: string, buffer: Buffer): Promi
     validateLinkedInUrl(rule.linkedin_url || "") ||
     null;
   const finalSkills = dedupeSkillString([ai?.skills, rule.skills]);
+  const finalLocation = pickFinalLocation(ai?.location ?? null, rule.location);
+  const finalFullName = pickFinalFullName(ai?.full_name ?? null, rule.full_name, nameFromFile);
 
   const confidence = {
     full_name: valueConfidence(ai?.full_name || null, rule.full_name || null),
@@ -406,10 +675,10 @@ export async function parseResumeBuffer(filename: string, buffer: Buffer): Promi
   );
 
   return {
-    full_name: ai?.full_name || rule.full_name || null,
+    full_name: finalFullName,
     email: ai?.email || rule.email || null,
     phone: ai?.phone || rule.phone || null,
-    location: ai?.location || rule.location || null,
+    location: finalLocation,
     linkedin_url: finalLinkedIn,
     skills: finalSkills,
     resume_url,
