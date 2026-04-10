@@ -80,7 +80,7 @@ export function looksLikePersonName(s: string | null | undefined): boolean {
   if (s == null || typeof s !== "string") return false;
   const t = s.trim().replace(/\s+/g, " ");
   if (t.length < 4 || t.length > 80) return false;
-  if (/[|•·,/()]/.test(t)) return false;
+  if (/[|â€¢Â·,/()]/.test(t)) return false;
   if (/@|https?:\/\/|www\.|\d{2,}/.test(t)) return false;
   if (NAME_SECTION_RE.test(t)) return false;
   if (NAME_ROLE_TOKEN.test(t)) return false;
@@ -212,7 +212,8 @@ function extractFullName(text: string) {
     candidateLines.forEach((line, index) => consider(line, index, 2));
   }
 
-  return best ? titleCaseName(best.value) : null;
+  if (!best) return null;
+  return titleCaseName((best as { value: string; score: number }).value);
 }
 
 /** Tokens that appear after a comma in skill lists / JD fragments — not geographic regions. */
@@ -232,12 +233,12 @@ const LOCATION_JUNK_PHRASE =
   /\b(years?\s+of|work\s+experience|job\s+description|requirements?|proven\s+|technical\s+skills?|retrieval|ranking|machine\s+learning|deep\s+learning|professional\s+summary|summary|objective)\b/i;
 
 function cleanHeaderToken(s: string) {
-  return s.replace(/^[|•·,;:\-\s]+|[|•·,;:\-\s]+$/g, "").replace(/\s{2,}/g, " ").trim();
+  return s.replace(/^[|â€¢Â·,;:\-\s]+|[|â€¢Â·,;:\-\s]+$/g, "").replace(/\s{2,}/g, " ").trim();
 }
 
 function splitHeaderSegments(line: string) {
   return line
-    .split(/\s*[|•·]\s*|\s{2,}/)
+    .split(/\s*[|â€¢Â·]\s*|\s{2,}/)
     .map((x) => cleanHeaderToken(x))
     .filter(Boolean);
 }
