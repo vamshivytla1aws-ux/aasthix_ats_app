@@ -4,11 +4,12 @@ Zero-dependency HTTP server (stdlib only). Use when pip install fails (e.g. Pyth
   cd matcher-service
   python -m matcher_service.simple_server
 
-Listens on http://127.0.0.1:8000 — POST /match, GET /health
+Listens on http://127.0.0.1:8000 - POST /match, GET /health
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
@@ -61,8 +62,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    host = "127.0.0.1"
-    port = 8000
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
     if len(sys.argv) >= 2:
         port = int(sys.argv[1])
     httpd = HTTPServer((host, port), Handler)

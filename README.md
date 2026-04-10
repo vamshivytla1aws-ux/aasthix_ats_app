@@ -8,12 +8,12 @@ This is a minimal full-stack Applicant Tracking System scaffold built with:
 
 ### Structure
 
-- `app/` – App Router pages and API routes
-  - `app/page.tsx` – main dashboard
-  - `app/api/jobs/route.ts` – backend routes for jobs
-- `components/` – shared UI components (e.g. `JobList`)
-- `lib/db.js` – node-postgres connection pool using `DATABASE_URL`
-- `api/` – placeholder for additional backend utilities or services
+- `app/` - App Router pages and API routes
+  - `app/page.tsx` - main dashboard
+  - `app/api/jobs/route.ts` - backend routes for jobs
+- `components/` - shared UI components (e.g. `JobList`)
+- `lib/db.js` - node-postgres connection pool using `DATABASE_URL`
+- `api/` - placeholder for additional backend utilities or services
 
 ### Environment Variables
 
@@ -32,4 +32,20 @@ npm run dev
 ```
 
 Then open `http://localhost:3000`.
+
 # aasthix_ats_app
+
+## Railway Deployment
+
+Railway-ready config files have been added for:
+
+- the main Next.js web app: `railway.json`
+- the Python matcher service: `matcher-service/railway.json`
+
+Deployment guide:
+
+- `docs/railway-deploy.md`
+
+Environment variable template:
+
+- `.env.railway.example`
