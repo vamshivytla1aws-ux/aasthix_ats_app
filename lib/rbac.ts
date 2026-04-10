@@ -161,13 +161,19 @@ export async function getAuthAccess() {
   const row = userRes.rows[0] as { id: number; email: string; role: string | null };
   const role = normalizeRole(row.role);
 
-  const permRes = await query(
-    `SELECT permission_key, allowed FROM user_permissions WHERE user_id = $1`,
-    [auth.user_id]
-  );
   const explicit = new Map<string, boolean>();
-  for (const r of permRes.rows as Array<{ permission_key: string; allowed: boolean }>) {
-    explicit.set(r.permission_key, Boolean(r.allowed));
+  try {
+    const permRes = await query(
+      `SELECT permission_key, allowed FROM user_permissions WHERE user_id = $1`,
+      [auth.user_id]
+    );
+    for (const r of permRes.rows as Array<{ permission_key: string; allowed: boolean }>) {
+      explicit.set(r.permission_key, Boolean(r.allowed));
+    }
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? (error as { code?: unknown }).code : undefined;
+    if (code !== "42P01" && code !== "42703") throw error;
+    console.warn("[rbac] user_permissions table unavailable; falling back to role baseline", error);
   }
 
   const permissions = getEffectivePermissions(row.role, explicit);
