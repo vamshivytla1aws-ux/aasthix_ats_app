@@ -12,12 +12,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const initialMessage =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("message")
-      : null;
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(initialMessage);
+  const [info, setInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    const msg = new URLSearchParams(window.location.search).get("message");
+    if (msg) setInfo(msg);
+  }, []);
 
   useEffect(() => {
     fetch("/api/auth/config")

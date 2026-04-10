@@ -15,6 +15,7 @@
     "screening-jobs-once": "node scripts/screeningJobs.mjs --once",
     "client-renewal-emails": "tsx scripts/clientRenewalEmails.ts",
     "client-renewal-emails-once": "tsx scripts/clientRenewalEmails.ts --once",
+    "set-user-password": "node scripts/setUserPassword.mjs",
     "worker:ai-match": "tsx lib/queue/worker.ts",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -7,7 +7,14 @@ export type AuditAction =
   | "auth.invite.created"
   | "auth.invite.accepted"
   | "rbac.role_updated"
-  | "rbac.permissions_updated";
+  | "rbac.permissions_updated"
+  | "contextual_ai.chat"
+  | "application_email.sent"
+  | "candidates.gdpr.export"
+  | "candidates.gdpr.erase"
+  | "candidates.salary.viewed"
+  | "candidates.csv.export"
+  | "admin.password_reset";
 
 export async function writeAuditLog(params: {
   actorUserId: number | null;

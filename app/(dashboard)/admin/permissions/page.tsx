@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { Shield, Mail, ScrollText } from "lucide-react";
+import { KeyRound, Shield, Mail, ScrollText } from "lucide-react";
 import { apiFetchJson } from "@/lib/apiClient";
 import { UI } from "@/lib/ui";
 import { INVITE_ROLES } from "@/lib/rbacConstants";
@@ -27,6 +27,12 @@ export default function AdminPermissionsPage() {
   const [inviteRole, setInviteRole] = useState<string>(INVITE_ROLES[0] ?? "recruiter");
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<string | null>(null);
+
+  const [pwUser, setPwUser] = useState<UserRow | null>(null);
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwMessage, setPwMessage] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -64,6 +70,38 @@ export default function AdminPermissionsPage() {
       setError(msg);
     } finally {
       setSaving(null);
+    }
+  }
+
+  async function submitPasswordReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pwUser) return;
+    setPwMessage(null);
+    setError(null);
+    if (pwNew.length < 8) {
+      setPwMessage("Password must be at least 8 characters.");
+      return;
+    }
+    if (pwNew !== pwConfirm) {
+      setPwMessage("Passwords do not match.");
+      return;
+    }
+    setPwBusy(true);
+    try {
+      await apiFetchJson("/api/admin/users/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: pwUser.id, new_password: pwNew }),
+      });
+      setPwMessage(`Password updated for ${pwUser.email}.`);
+      setPwNew("");
+      setPwConfirm("");
+      setPwUser(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to set password";
+      setError(msg);
+    } finally {
+      setPwBusy(false);
     }
   }
 
@@ -154,6 +192,68 @@ export default function AdminPermissionsPage() {
         {inviteMessage ? <p className="mt-3 break-all text-xs text-slate-700">{inviteMessage}</p> : null}
       </div>
 
+      {pwUser ? (
+        <div className="rounded-2xl border border-amber-200/90 bg-amber-50/50 p-5 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/20">
+          <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+            <KeyRound className="h-4 w-4 text-amber-700 dark:text-amber-400" />
+            Set login password
+          </h2>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+            Writes a bcrypt hash to Postgres (<code className="rounded bg-white/60 px-1 dark:bg-slate-900/60">users.password_hash</code>
+            ). User can sign in with this email and password immediately.
+          </p>
+          <form onSubmit={submitPasswordReset} className="mt-4 space-y-3">
+            <div className="text-sm font-medium text-slate-800 dark:text-slate-200">{pwUser.full_name}</div>
+            <div className="text-xs text-slate-500">{pwUser.email}</div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className={UI.label}>New password</label>
+                <input
+                  type="password"
+                  className={UI.input}
+                  autoComplete="new-password"
+                  value={pwNew}
+                  onChange={(e) => setPwNew(e.target.value)}
+                  required
+                  minLength={8}
+                  placeholder="At least 8 characters"
+                />
+              </div>
+              <div>
+                <label className={UI.label}>Confirm</label>
+                <input
+                  type="password"
+                  className={UI.input}
+                  autoComplete="new-password"
+                  value={pwConfirm}
+                  onChange={(e) => setPwConfirm(e.target.value)}
+                  required
+                  minLength={8}
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="submit" disabled={pwBusy} className={UI.primaryButton}>
+                {pwBusy ? "Saving…" : "Save password"}
+              </button>
+              <button
+                type="button"
+                className={UI.secondaryButton}
+                onClick={() => {
+                  setPwUser(null);
+                  setPwNew("");
+                  setPwConfirm("");
+                  setPwMessage(null);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+            {pwMessage ? <p className="text-xs text-emerald-700 dark:text-emerald-400">{pwMessage}</p> : null}
+          </form>
+        </div>
+      ) : null}
+
       {error ? <div className="text-sm text-red-600">{error}</div> : null}
 
       {loading ? (
@@ -164,6 +264,7 @@ export default function AdminPermissionsPage() {
             <thead className="bg-slate-50">
               <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">User</th>
+                <th className="px-4 py-3 w-[9rem]">Password</th>
                 <th className="px-4 py-3">Role</th>
                 {keys.map((k) => (
                   <th key={k} className="px-4 py-3">
@@ -178,6 +279,21 @@ export default function AdminPermissionsPage() {
                   <td className="px-4 py-3.5">
                     <div className="font-semibold text-slate-900">{u.full_name}</div>
                     <div className="text-xs text-slate-500">{u.email}</div>
+                  </td>
+                  <td className="px-4 py-3.5 align-top">
+                    <button
+                      type="button"
+                      className={UI.secondaryButton + " py-1.5 text-xs whitespace-nowrap"}
+                      onClick={() => {
+                        setPwUser(u);
+                        setPwNew("");
+                        setPwConfirm("");
+                        setPwMessage(null);
+                        setError(null);
+                      }}
+                    >
+                      Set password
+                    </button>
                   </td>
                   <td className="px-4 py-3.5">
                     <select
