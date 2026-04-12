@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { getCareersPublisherUserId } from "@/lib/careersPublisher";
+import { getPublicCareersJob } from "@/lib/careersPublicJob";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,14 +52,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid job_id" }, { status: 400 });
     }
 
+    let trackingUserId = publisherId;
     if (jobId != null) {
-      const jobCheck = await query(
-        `SELECT 1 FROM jobs WHERE id = $1 AND created_by_user_id = $2 LIMIT 1`,
-        [jobId, publisherId]
-      );
-      if (jobCheck.rowCount === 0) {
+      const publicJob = await getPublicCareersJob(jobId);
+      if (!publicJob.job) {
         return NextResponse.json({ error: "Job not found" }, { status: 404 });
       }
+      trackingUserId = Number(publicJob.job.created_by_user_id || publisherId);
     }
 
     const sessionId = String(body?.session_id || "").trim().slice(0, 128) || null;
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       INSERT INTO careers_funnel_events (publisher_user_id, job_id, event_type, session_id, meta)
       VALUES ($1, $2, $3, $4, $5::jsonb)
       `,
-      [publisherId, jobId, eventType, sessionId, metaJson]
+      [trackingUserId, jobId, eventType, sessionId, metaJson]
     );
 
     return NextResponse.json({ ok: true });

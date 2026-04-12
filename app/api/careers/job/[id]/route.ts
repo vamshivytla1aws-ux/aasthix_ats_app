@@ -29,10 +29,11 @@ export async function GET(
   }
 
   const publicPath = `/careers/job/${data.job.id}`;
+  const { created_by_user_id: _ownerId, ...publicJob } = data.job;
   return NextResponse.json({
     configured: true,
     public_path: publicPath,
     public_url: buildPublicUrl(request, publicPath),
-    job: data.job,
+    job: publicJob,
   });
 }

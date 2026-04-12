@@ -11,6 +11,7 @@ export type PublicCareersJob = {
   description: string | null;
   experience_requirement: string | null;
   created_at: string | null;
+  created_by_user_id?: number;
 };
 
 export async function getPublicCareersJob(jobId: number): Promise<{
@@ -33,13 +34,13 @@ export async function getPublicCareersJob(jobId: number): Promise<{
       NULLIF(employment_type, '') AS employment_type,
       description,
       NULLIF(experience_requirement, '') AS experience_requirement,
-      created_at
+      created_at,
+      created_by_user_id
     FROM jobs
     WHERE id = $1
-      AND created_by_user_id = $2
     LIMIT 1
     `,
-    [jobId, publisherId]
+    [jobId]
   );
 
   if (res.rowCount === 0) {

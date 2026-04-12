@@ -13,6 +13,7 @@ import {
 import { sendCareersApplicationConfirmation } from "@/lib/careersConfirmationEmail";
 import { extractPlainTextFromResumeBuffer } from "@/lib/resumeParser";
 import { refreshResumeEmbeddingForCandidate } from "@/lib/candidates/refreshResumeEmbedding";
+import { getPublicCareersJob } from "@/lib/careersPublicJob";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,15 @@ export async function POST(request: Request) {
   const jobId = Number(form.get("job_id"));
   if (!Number.isFinite(jobId) || jobId <= 0) {
     return NextResponse.json({ error: "Invalid job" }, { status: 400 });
+  }
+
+  const publicJob = await getPublicCareersJob(jobId);
+  if (!publicJob.configured || !publicJob.job) {
+    return NextResponse.json({ error: "Job is no longer available" }, { status: 404 });
+  }
+  const owningUserId = Number(publicJob.job.created_by_user_id || 0);
+  if (!Number.isFinite(owningUserId) || owningUserId <= 0) {
+    return NextResponse.json({ error: "Job owner is not configured" }, { status: 400 });
   }
 
   const consent = String(form.get("consent") || "");
@@ -98,7 +108,7 @@ export async function POST(request: Request) {
 
   const buf = Buffer.from(await file.arrayBuffer());
   const fileName = `${crypto.randomUUID()}${ext}`;
-  const relDir = path.join("careers", String(publisherId));
+  const relDir = path.join("careers", String(owningUserId));
   const absDir = path.join(process.cwd(), "public", "uploads", "resumes", relDir);
   await fs.mkdir(absDir, { recursive: true });
   const absPath = path.join(absDir, fileName);
@@ -123,12 +133,12 @@ export async function POST(request: Request) {
 
     const jobRes = await client.query(
       `
-      SELECT id, title, company, status, open_positions
+      SELECT id, title, company, status, open_positions, created_by_user_id
       FROM jobs
-      WHERE id = $1 AND created_by_user_id = $2
+      WHERE id = $1
       LIMIT 1
       `,
-      [jobId, publisherId]
+      [jobId]
     );
     if (jobRes.rowCount === 0) {
       await client.query("ROLLBACK");
@@ -139,6 +149,7 @@ export async function POST(request: Request) {
       company: string;
       status: string;
       open_positions: number;
+      created_by_user_id: number;
     };
     jobTitle = String(job.title || "");
     companyName = String(job.company || "");
@@ -155,7 +166,7 @@ export async function POST(request: Request) {
 
     const byEmail = await client.query(
       `SELECT id, email, phone FROM candidates WHERE created_by_user_id = $1 AND lower(trim(email)) = $2 LIMIT 1`,
-      [publisherId, email]
+      [owningUserId, email]
     );
     const byPhone = await client.query(
       `
@@ -165,7 +176,7 @@ export async function POST(request: Request) {
         AND length($2) >= 8
       LIMIT 1
       `,
-      [publisherId, phoneDigits]
+      [owningUserId, phoneDigits]
     );
 
     const rowE = byEmail.rows[0] as { id: number } | undefined;
@@ -212,7 +223,7 @@ export async function POST(request: Request) {
           currentSalary,
           expectedSalary,
           CAREERS_APPLICATION_SOURCE,
-          publisherId,
+          owningUserId,
         ]
       );
     } else if (rowP) {
@@ -245,7 +256,7 @@ export async function POST(request: Request) {
           currentSalary,
           expectedSalary,
           CAREERS_APPLICATION_SOURCE,
-          publisherId,
+          owningUserId,
         ]
       );
     } else {
@@ -270,7 +281,7 @@ export async function POST(request: Request) {
           expectedSalary,
           experienceSummary,
           CAREERS_APPLICATION_SOURCE,
-          publisherId,
+          owningUserId,
         ]
       );
       candidateId = Number(ins.rows[0].id);
@@ -294,7 +305,7 @@ export async function POST(request: Request) {
       VALUES ($1, $2, 'Applied', 'Applied', NOW(), $3, $4)
       RETURNING id
       `,
-      [candidateId, jobId, publisherId, CAREERS_APPLICATION_SOURCE]
+      [candidateId, jobId, owningUserId, CAREERS_APPLICATION_SOURCE]
     );
     applicationId = Number(appIns.rows[0].id);
 
@@ -309,12 +320,12 @@ export async function POST(request: Request) {
         expires_at = EXCLUDED.expires_at,
         status = 'unread'
       `,
-      [publisherId, applicationId, "careers_apply", alertMessage]
+      [owningUserId, applicationId, "careers_apply", alertMessage]
     );
 
     await client.query("COMMIT");
 
-    void refreshResumeEmbeddingForCandidate(candidateId, publisherId).catch(() => {});
+    void refreshResumeEmbeddingForCandidate(candidateId, owningUserId).catch(() => {});
   } catch (e: any) {
     try {
       await client.query("ROLLBACK");
@@ -342,7 +353,7 @@ export async function POST(request: Request) {
     INSERT INTO careers_funnel_events (publisher_user_id, job_id, event_type, session_id, meta)
     VALUES ($1, $2, 'submit_success', $3, '{}'::jsonb)
     `,
-    [publisherId, jobId, sessionId]
+    [owningUserId, jobId, sessionId]
   ).catch(() => {});
 
   void sendCareersApplicationConfirmation({
