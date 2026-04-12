@@ -13,6 +13,7 @@ import ApprovalPanel from "@/components/enterprise/ApprovalPanel";
 import JobTeamPanel from "@/components/enterprise/JobTeamPanel";
 import JobInterviewRoundsPanel from "@/components/JobInterviewRoundsPanel";
 import DispositionReasonModal from "@/components/DispositionReasonModal";
+import SocialShareModal from "@/components/jobs/SocialShareModal";
 import Toast from "@/components/Toast";
 import { jobStatusRequiresDispositionReason } from "@/lib/dispositionRules";
 import { REQUISITION_WORKFLOW_STEPS } from "@/lib/requisitionWorkflow";
@@ -153,6 +154,7 @@ export default function JobDetailPage() {
   const isValidId = useMemo(() => Number.isFinite(jobId), [jobId]);
   const [qBusy, setQBusy] = useState(false);
   const [matchHubOpen, setMatchHubOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [jobDisposition, setJobDisposition] = useState<{ nextStatus: string } | null>(null);
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
 
@@ -239,6 +241,12 @@ export default function JobDetailPage() {
   return (
     <>
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={3500} /> : null}
+      <SocialShareModal
+        open={shareOpen}
+        job={job}
+        onClose={() => setShareOpen(false)}
+        onToast={(message, variant = "success") => setToast({ message, variant })}
+      />
       <DispositionReasonModal
         open={jobDisposition !== null}
         reasonSet="job_close"
@@ -271,6 +279,15 @@ export default function JobDetailPage() {
       metrics={
         <span className="flex flex-wrap items-center gap-2">
           <StatusBadge status={job.status || "Open"} />
+          {String(job.status || "").toLowerCase().includes("open") && Number(job.open_positions || 0) > 0 ? (
+            <button
+              type="button"
+              onClick={() => setShareOpen(true)}
+              className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-950/60"
+            >
+              Post in social media
+            </button>
+          ) : null}
           {canManage ? (
             <select
               value={job.status || "Open"}
@@ -303,6 +320,13 @@ export default function JobDetailPage() {
       }
       actions={
         <>
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            className={UI.secondaryButton + " py-2 text-sm"}
+          >
+            Post in social media
+          </button>
           <button
             type="button"
             onClick={() => setMatchHubOpen(true)}

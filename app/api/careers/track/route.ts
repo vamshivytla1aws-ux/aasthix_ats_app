@@ -5,7 +5,20 @@ import { getCareersPublisherUserId } from "@/lib/careersPublisher";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ALLOWED = new Set(["view_job_list", "view_jd", "start_apply", "submit_success"]);
+const ALLOWED = new Set([
+  "view_job_list",
+  "view_jd",
+  "start_apply",
+  "submit_success",
+  "share_modal_open",
+  "copy_public_link",
+  "share_linkedin_click",
+  "share_x_click",
+  "copy_instagram_caption",
+  "copy_short_caption",
+  "copy_ready_post_text",
+  "open_public_page",
+]);
 
 /**
  * Public funnel tracking (session id from client localStorage).
