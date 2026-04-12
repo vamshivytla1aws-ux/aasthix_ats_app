@@ -53,7 +53,7 @@ export async function GET(
     };
 
     let teamMembers: Array<{ user_id: number; role: string; user_email: string; user_name: string }> = [];
-    if (hasTeamTable) {
+    try {
       const teamRes = await query(
         `SELECT jt.user_id, jt.role, u.email AS user_email, u.full_name AS user_name
          FROM job_team jt JOIN users u ON u.id = jt.user_id
@@ -62,6 +62,8 @@ export async function GET(
         [jobId]
       );
       teamMembers = teamRes.rows as typeof teamMembers;
+    } catch {
+      // job_team may not exist in older environments
     }
 
     return NextResponse.json({
