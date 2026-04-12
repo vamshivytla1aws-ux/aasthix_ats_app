@@ -49,3 +49,8 @@ Deployment guide:
 Environment variable template:
 
 - `.env.railway.example`
+
+Notes:
+
+- keep secrets such as `OPENAI_API_KEY` in Railway Variables, not in Git
+- the public careers portal needs `CAREERS_PUBLISHER_USER_ID` set on the server to show jobs in `/careers`

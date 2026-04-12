@@ -32,10 +32,17 @@ Add these variables to the web service:
 - `APP_PUBLIC_URL`
 - `CRON_SECRET`
 - `MATCHER_PYTHON_URL`
+- `CAREERS_PUBLISHER_USER_ID` if you want `/careers` and the jobs preview portal to publish jobs
 - `OPENAI_API_KEY` if AI features should work
 - SMTP vars if email features should work
 
 Use `.env.railway.example` as the template.
+
+Important:
+
+- do not put `OPENAI_API_KEY` or any other secrets in Git
+- keep secrets in Railway Variables only
+- remove `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, and `SEED_ADMIN_NAME` if they were used during first-time setup, because startup admin seeding is not part of normal access control
 
 ## 3. Create the Python matcher service
 

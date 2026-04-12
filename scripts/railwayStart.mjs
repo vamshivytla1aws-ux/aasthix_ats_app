@@ -52,7 +52,6 @@ async function startWeb() {
   if (process.env.SKIP_STARTUP_MIGRATIONS !== 'true') {
     await run('node', ['scripts/runMigrations.mjs']);
   }
-  await run('node', ['scripts/seedAdmin.mjs']);
 
   if (!(await hasNextBuild())) {
     await run('npm', ['run', 'build']);
