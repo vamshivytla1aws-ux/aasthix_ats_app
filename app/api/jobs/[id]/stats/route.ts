@@ -15,28 +15,15 @@ export async function GET(
   try {
     const auth = await requirePermission("jobs.view");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-    const user = auth.access;
     const jobId = Number(params.id);
 
     if (!Number.isFinite(jobId) || jobId <= 0) {
       return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
     }
 
-    let hasTeamTable = false;
-    try {
-      await query(`SELECT 1 FROM job_team LIMIT 0`, []);
-      hasTeamTable = true;
-    } catch {
-      // not migrated yet
-    }
-
-    const ownerOrTeam = hasTeamTable
-      ? `(j.created_by_user_id = $2 OR EXISTS (SELECT 1 FROM job_team jt WHERE jt.job_id = j.id AND jt.user_id = $2))`
-      : `j.created_by_user_id = $2`;
-
     const jobCheck = await query(
-      `SELECT j.id, j.status FROM jobs j WHERE j.id = $1 AND ${ownerOrTeam} LIMIT 1`,
-      [jobId, user.user_id]
+      `SELECT j.id, j.status FROM jobs j WHERE j.id = $1 LIMIT 1`,
+      [jobId]
     );
     if (!jobCheck.rowCount) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
