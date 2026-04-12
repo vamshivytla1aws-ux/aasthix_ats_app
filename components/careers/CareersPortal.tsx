@@ -2,13 +2,12 @@
 
 import React, { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Building2, Calendar, CheckCircle2, Clock, FileText, MapPin, Send, Sparkles, X } from "lucide-react";
+import { Calendar, CheckCircle2, Clock, FileText, MapPin, Send, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 
 type PublicJob = {
   id: number;
   title: string;
-  company: string;
   location: string;
   status: string;
   open_positions: number;
@@ -189,7 +188,7 @@ export default function CareersPortal() {
 
         <section className="mt-14 rounded-3xl border border-white/10 bg-slate-900/40 p-8 backdrop-blur-sm sm:p-10">
           <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
-            <Building2 className="h-6 w-6 text-indigo-400" />
+            <Sparkles className="h-6 w-6 text-indigo-400" />
             About AASTHIX
           </h2>
           <p className="mt-4 text-slate-300 leading-relaxed">
@@ -264,10 +263,6 @@ export default function CareersPortal() {
                           <div className="font-medium text-white">{job.title}</div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
                             <span className="inline-flex items-center gap-1">
-                              <Building2 className="h-3 w-3" />
-                              {job.company}
-                            </span>
-                            <span className="inline-flex items-center gap-1">
                               <MapPin className="h-3 w-3" />
                               {job.location}
                             </span>
@@ -341,7 +336,7 @@ export default function CareersPortal() {
                     {jdJob.title}
                   </h3>
                   <p className="mt-1 text-sm text-slate-400">
-                    {jdJob.company} · {jdJob.location}
+                    {jdJob.location}
                   </p>
                 </div>
                 <button
