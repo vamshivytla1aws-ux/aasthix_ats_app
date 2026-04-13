@@ -21,5 +21,5 @@ export function applicationAccessPredicate(alias: string, userParam: string, has
   void hasTeam;
   // Keep the caller's parameter numbering stable even though row-level filtering is disabled.
   // Several queries still pass the user id as a bound parameter alongside this predicate.
-  return `(${userParam} IS NULL OR TRUE)`;
+  return `(${userParam}::bigint IS NULL OR TRUE)`;
 }
