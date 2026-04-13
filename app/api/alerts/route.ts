@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
+import { CAREERS_APPLICATION_SOURCE } from "@/lib/careersPublisher";
+import { applicationAccessPredicate, hasJobTeamTable } from "@/lib/applicationVisibility";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +37,38 @@ export async function GET(request: Request) {
     const auth = await requirePermission("alerts.view");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const user = auth.access;
+    const hasTeam = await hasJobTeamTable();
+
+    const careersVisibility =
+      user.role === "admin"
+        ? "TRUE"
+        : applicationAccessPredicate("a", "$1", hasTeam);
+
+    await query(
+      `
+      INSERT INTO alerts (user_id, application_id, type, message, status, expires_at)
+      SELECT
+        $1,
+        a.id,
+        'careers_apply',
+        'New candidate applied for ' || COALESCE(j.title, 'this role'),
+        'unread',
+        NOW() + INTERVAL '30 days'
+      FROM applications a
+      JOIN jobs j ON j.id = a.job_id
+      WHERE COALESCE(a.source, 'UI') = $2
+        AND a.created_at >= NOW() - INTERVAL '30 days'
+        AND ${careersVisibility}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM alerts existing
+          WHERE existing.user_id = $1
+            AND existing.application_id = a.id
+            AND existing.type = 'careers_apply'
+        )
+      `,
+      [user.user_id, CAREERS_APPLICATION_SOURCE]
+    );
 
     // Generate (upsert) interview alerts for the next +/- 1 hour window.
     const generated = await query(
@@ -254,4 +288,3 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Failed to update alerts" }, { status: 500 });
   }
 }
-
