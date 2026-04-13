@@ -116,6 +116,7 @@ export async function GET(request: Request) {
         c.full_name,
         c.email,
         c.phone,
+        c.created_at,
         c.linkedin_url,
         c.website_url,
         c.location,
@@ -149,7 +150,7 @@ export async function GET(request: Request) {
       LEFT JOIN vendors v ON v.id = j.vendor_id
       ${whereSql}
       GROUP BY
-        c.id, c.full_name, c.email, c.phone, c.linkedin_url, c.website_url, c.location, c.resume_url,
+        c.id, c.full_name, c.email, c.phone, c.created_at, c.linkedin_url, c.website_url, c.location, c.resume_url,
         c.skills, c.notice_period, c.current_salary, c.expected_salary, c.experience_summary, c.source, c.created_at
       ORDER BY c.created_at DESC NULLS LAST, c.id DESC
       ${limitSql}
@@ -223,6 +224,7 @@ export async function POST(request: Request) {
         full_name,
         email,
         phone,
+        created_at,
         linkedin_url,
         website_url,
         location,
@@ -326,12 +328,13 @@ export async function PUT(request: Request) {
           source = COALESCE($14, source),
           updated_at = NOW()
         WHERE id = $1
-        RETURNING
-          id,
-          full_name,
-          email,
-          phone,
-          linkedin_url,
+      RETURNING
+        id,
+        full_name,
+        email,
+        phone,
+        created_at,
+        linkedin_url,
           website_url,
           location,
           resume_url,
@@ -378,12 +381,13 @@ export async function PUT(request: Request) {
           expected_salary = $11,
           updated_at = NOW()
         WHERE id = $1
-        RETURNING
-          id,
-          full_name,
-          email,
-          phone,
-          linkedin_url,
+      RETURNING
+        id,
+        full_name,
+        email,
+        phone,
+        created_at,
+        linkedin_url,
           website_url,
           location,
           resume_url,

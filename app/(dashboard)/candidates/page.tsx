@@ -22,6 +22,7 @@ type Candidate = {
   full_name: string;
   email: string;
   phone?: string | null;
+  created_at?: string | null;
   linkedin_url?: string | null;
   website_url?: string | null;
   location?: string | null;

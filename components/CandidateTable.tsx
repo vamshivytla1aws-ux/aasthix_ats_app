@@ -8,6 +8,7 @@ type Candidate = {
   full_name: string;
   email: string;
   phone?: string | null;
+  created_at?: string | null;
   linkedin_url?: string | null;
   website_url?: string | null;
   location?: string | null;
@@ -92,6 +93,21 @@ export default function CandidateTable({
     if (n > 50) return "text-red-600";
     if (n >= 20) return "text-amber-600";
     return "text-emerald-600";
+  }
+
+  function formatCreatedDate(value: string | null | undefined) {
+    if (!value) return "—";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    try {
+      return new Intl.DateTimeFormat("en-IN", {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+      }).format(d);
+    } catch {
+      return d.toLocaleDateString();
+    }
   }
 
   function statusBadge(status: string | null | undefined) {
@@ -216,6 +232,9 @@ export default function CandidateTable({
               Source
             </th>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Created Date
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
               LinkedIn
             </th>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -277,6 +296,9 @@ export default function CandidateTable({
                 >
                   {c.source || "UI"}
                 </span>
+              </td>
+              <td className="px-4 py-3.5 whitespace-nowrap text-slate-700">
+                {formatCreatedDate(c.created_at)}
               </td>
               <td className="px-4 py-3.5 whitespace-nowrap">
                 {c.linkedin_url ? (
@@ -451,7 +473,7 @@ export default function CandidateTable({
           ))}
           {data.length === 0 && (
             <tr>
-              <td colSpan={15} className="px-4 py-10 text-center text-slate-500">
+              <td colSpan={16} className="px-4 py-10 text-center text-slate-500">
                 No candidates yet.
               </td>
             </tr>
@@ -462,4 +484,3 @@ export default function CandidateTable({
     </>
   );
 }
-
