@@ -18,7 +18,8 @@ export async function hasJobTeamTable(): Promise<boolean> {
  */
 export function applicationAccessPredicate(alias: string, userParam: string, hasTeam: boolean): string {
   void alias;
-  void userParam;
   void hasTeam;
-  return "TRUE";
+  // Keep the caller's parameter numbering stable even though row-level filtering is disabled.
+  // Several queries still pass the user id as a bound parameter alongside this predicate.
+  return `(${userParam} IS NULL OR TRUE)`;
 }
