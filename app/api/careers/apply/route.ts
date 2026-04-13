@@ -127,6 +127,7 @@ export async function POST(request: Request) {
   let applicationId: number;
   let jobTitle = "";
   let companyName = "";
+  let alertUserIds: number[] = [];
 
   try {
     await client.query("BEGIN");
@@ -310,18 +311,30 @@ export async function POST(request: Request) {
     applicationId = Number(appIns.rows[0].id);
 
     const alertMessage = `New candidate applied for ${jobTitle}`;
-    await client.query(
+    const alertAudience = await client.query(
       `
-      INSERT INTO alerts (user_id, application_id, type, message, status, expires_at)
-      VALUES ($1, $2, $3, $4, 'unread', NOW() + INTERVAL '30 days')
-      ON CONFLICT (user_id, application_id, type)
-      DO UPDATE SET
-        message = EXCLUDED.message,
-        expires_at = EXCLUDED.expires_at,
-        status = 'unread'
+      SELECT DISTINCT id
+      FROM users
+      WHERE id = $1
+         OR role = 'admin'
       `,
-      [owningUserId, applicationId, "careers_apply", alertMessage]
+      [owningUserId]
     );
+    alertUserIds = (alertAudience.rows as Array<{ id: number }>).map((row) => Number(row.id)).filter((id) => Number.isFinite(id) && id > 0);
+    for (const alertUserId of alertUserIds) {
+      await client.query(
+        `
+        INSERT INTO alerts (user_id, application_id, type, message, status, expires_at)
+        VALUES ($1, $2, $3, $4, 'unread', NOW() + INTERVAL '30 days')
+        ON CONFLICT (user_id, application_id, type)
+        DO UPDATE SET
+          message = EXCLUDED.message,
+          expires_at = EXCLUDED.expires_at,
+          status = 'unread'
+        `,
+        [alertUserId, applicationId, "careers_apply", alertMessage]
+      );
+    }
 
     await client.query("COMMIT");
 
