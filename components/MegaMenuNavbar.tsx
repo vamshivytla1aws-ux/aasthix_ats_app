@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronDown, LogOut, Settings, Shield, User, Keyboard,
-  HelpCircle, BarChart3, Bell, MessageSquare, Tag, StickyNote,
+  HelpCircle, BarChart3, Bell, MessageSquare, Tag, StickyNote, PlusSquare,
 } from "lucide-react";
 import { apiFetchJson } from "@/lib/apiClient";
 import { APP_CONFIG } from "@/lib/config";
@@ -32,6 +32,7 @@ export default function MegaMenuNavbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export default function MegaMenuNavbar() {
   const [role, setRole] = useState<string>("user");
   const [permissions, setPermissions] = useState<Record<string, boolean>>({});
   const moreRef = useRef<HTMLDivElement | null>(null);
+  const quickRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -59,14 +61,15 @@ export default function MegaMenuNavbar() {
   }, []);
 
   useEffect(() => {
-    if (!moreOpen && !profileOpen) return;
+    if (!moreOpen && !profileOpen && !quickOpen) return;
     function onDoc(e: MouseEvent) {
       if (moreOpen && moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+      if (quickOpen && quickRef.current && !quickRef.current.contains(e.target as Node)) setQuickOpen(false);
       if (profileOpen && profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [moreOpen, profileOpen]);
+  }, [moreOpen, quickOpen, profileOpen]);
 
   async function logout() {
     setLoading(true);
@@ -121,6 +124,39 @@ export default function MegaMenuNavbar() {
           <GlobalHeaderSearch />
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <div className="relative hidden md:block" ref={quickRef}>
+              <button
+                type="button"
+                onClick={() => setQuickOpen((v) => !v)}
+                className={UI.enterprise.shellGhostButton}
+                aria-expanded={quickOpen}
+              >
+                <PlusSquare className="h-4 w-4" />
+                Quick create
+              </button>
+              {quickOpen ? (
+                <div className="absolute right-0 top-full z-50 mt-2 min-w-[220px] rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-2 shadow-[var(--ats-shadow-md)]">
+                  {[
+                    { href: "/jobs", label: "New job", hint: "Create a fresh requisition" },
+                    { href: "/candidates", label: "New candidate", hint: "Add or import talent" },
+                    { href: "/pipeline", label: "Move pipeline", hint: "Update stage and ownership" },
+                    { href: "/interviews", label: "Schedule interview", hint: "Open interview desk" },
+                    { href: "/notes", label: "Open notes", hint: "Capture blockers and follow-ups" },
+                    { href: "/chat", label: "Open chat", hint: "Collaborate with the team" },
+                  ].map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="block rounded-xl px-3 py-2.5 transition hover:bg-[var(--ats-bg-panel-strong)]"
+                      onClick={() => setQuickOpen(false)}
+                    >
+                      <div className="text-sm font-semibold text-[var(--ats-text)]">{item.label}</div>
+                      <div className="text-xs text-[var(--ats-text-muted)]">{item.hint}</div>
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <DashboardThemeToggle variant="shell" />
             {userName ? (
               <>

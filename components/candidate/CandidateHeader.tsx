@@ -24,6 +24,15 @@ function formatINR(value: number | null) {
   }
 }
 
+function SummaryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-3 py-2">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-[var(--ats-text)]">{value}</div>
+    </div>
+  );
+}
+
 export default function CandidateHeader({
   candidate,
   density = "ultra",
@@ -31,42 +40,38 @@ export default function CandidateHeader({
   candidate: CandidateHeaderData;
   density?: Density;
 }) {
-  const badgeClass =
+  const statusTone =
     candidate.status === "Placed"
-      ? "bg-emerald-100 text-emerald-700"
-      : "bg-blue-100 text-blue-700";
+      ? "border-[color:rgb(16_185_129_/_0.2)] bg-[color:rgb(16_185_129_/_0.14)] text-[var(--ats-success)]"
+      : "border-[color:rgb(37_99_235_/_0.2)] bg-[color:rgb(37_99_235_/_0.14)] text-[var(--ats-primary)]";
 
-  const spacingClass = density === "comfortable" ? "py-3" : density === "compact" ? "py-2" : "py-1";
-  const titleClass = density === "comfortable" ? "text-lg" : density === "compact" ? "text-base" : "text-base";
-  const metaClass = density === "comfortable" ? "text-sm" : "text-xs";
-  const salaryLabelClass = density === "ultra" ? "text-[10px]" : "text-xs";
-  const badgeSize = density === "comfortable" ? "px-3 py-1 text-xs" : density === "compact" ? "px-2.5 py-0.5 text-xs" : "px-2 py-0.5 text-[11px]";
+  const titleSize = density === "comfortable" ? "text-2xl" : "text-xl";
 
   return (
-    <div className={["border-b border-gray-200", spacingClass].join(" ")}>
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h1 className={[titleClass, "font-semibold text-gray-800 leading-5"].join(" ")}>{candidate.name}</h1>
-          <p className={[metaClass, "text-gray-500 leading-4"].join(" ")}>
-            {candidate.email || "—"}
-            {candidate.phone ? ` • ${candidate.phone}` : ""}
-          </p>
+    <section className="rounded-[1.4rem] border border-[var(--ats-border)] bg-[linear-gradient(135deg,color-mix(in_oklab,var(--ats-primary)_14%,var(--ats-bg-elevated)),var(--ats-bg-elevated)_45%,color-mix(in_oklab,var(--ats-accent)_8%,var(--ats-bg-elevated)))] p-5 shadow-[var(--ats-shadow-md)]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--ats-text-soft)]">
+            Candidate command center
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h1 className={`${titleSize} font-semibold tracking-tight text-[var(--ats-text)]`}>{candidate.name}</h1>
+            <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusTone}`}>
+              {candidate.status}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[var(--ats-text-muted)]">
+            <span>{candidate.email || "No email"}</span>
+            <span>{candidate.phone || "No phone"}</span>
+          </div>
         </div>
-        <span className={["inline-flex rounded-full font-semibold", badgeSize, badgeClass].join(" ")}>
-          {candidate.status}
-        </span>
+
+        <div className="grid w-full gap-3 sm:grid-cols-3 lg:w-[520px]">
+          <SummaryMetric label="Current salary" value={formatINR(candidate.current_salary)} />
+          <SummaryMetric label="Expected salary" value={formatINR(candidate.expected_salary)} />
+          <SummaryMetric label="Notice period" value={candidate.notice_period?.trim() || "—"} />
+        </div>
       </div>
-      <div className="mt-0.5 text-xs text-gray-700">
-        <span className={[salaryLabelClass, "text-gray-500"].join(" ")}>Salary</span>{" "}
-        <span className="font-medium">
-          {formatINR(candidate.current_salary)} → {formatINR(candidate.expected_salary)}
-        </span>
-      </div>
-      <div className="mt-0.5 text-xs text-gray-700">
-        <span className={[salaryLabelClass, "text-gray-500"].join(" ")}>Notice</span>{" "}
-        <span className="font-medium">{candidate.notice_period?.trim() || "—"}</span>
-      </div>
-    </div>
+    </section>
   );
 }
-

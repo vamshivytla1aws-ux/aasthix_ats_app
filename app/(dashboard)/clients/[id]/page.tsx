@@ -1,19 +1,30 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import { UI } from "@/lib/ui";
 import { apiFetchJson } from "@/lib/apiClient";
 
 function formatClientDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "—";
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("en-IN", {
     month: "short",
     day: "numeric",
     year: "numeric",
   }).format(new Date(t));
+}
+
+function MetricTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className={UI.enterprise.metricCard}>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">{label}</div>
+      <div className="mt-2 text-xl font-semibold tracking-tight text-[var(--ats-text)]">{value}</div>
+    </div>
+  );
 }
 
 export default function ClientDetailPage() {
@@ -22,7 +33,7 @@ export default function ClientDetailPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await apiFetchJson<any>(`/api/clients/${clientId}`);
@@ -30,78 +41,156 @@ export default function ClientDetailPage() {
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    if (Number.isFinite(clientId)) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
-  if (!Number.isFinite(clientId)) return <div className="p-6">Invalid client id.</div>;
-  if (loading) return <div className="p-6">Loading client...</div>;
-  if (!data?.client) return <div className="p-6">Client not found.</div>;
+  useEffect(() => {
+    if (Number.isFinite(clientId)) void load();
+  }, [clientId, load]);
+
+  const contacts = useMemo(() => data?.client?.contacts || [], [data?.client?.contacts]);
+
+  if (!Number.isFinite(clientId)) {
+    return (
+      <ModulePageFrame title="Client" subtitle="Invalid client id">
+        <div className={`${UI.enterprise.elevatedCard} p-6 text-sm text-[var(--ats-text-muted)]`}>Invalid client id.</div>
+      </ModulePageFrame>
+    );
+  }
+
+  if (loading) {
+    return (
+      <ModulePageFrame title="Client" subtitle="Loading account intelligence">
+        <div className={`${UI.enterprise.elevatedCard} p-6`}>
+          <div className="h-8 w-56 animate-pulse rounded bg-[var(--ats-border-subtle)]" />
+          <div className="mt-4 h-44 animate-pulse rounded-2xl bg-[var(--ats-border-subtle)]" />
+        </div>
+      </ModulePageFrame>
+    );
+  }
+
+  if (!data?.client) {
+    return (
+      <ModulePageFrame title="Client" subtitle="Client not found">
+        <div className={`${UI.enterprise.elevatedCard} p-6`}>
+          <Link href="/clients" className="text-sm font-semibold text-[var(--ats-primary)] hover:underline">
+            Back to clients
+          </Link>
+        </div>
+      </ModulePageFrame>
+    );
+  }
 
   const c = data.client;
+
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-5">
-      <div className="text-sm">
-        <Link href="/clients" className="text-blue-700 hover:underline">← Back to Clients</Link>
-      </div>
-      <div className="rounded-2xl border bg-white p-5">
-        <div className="text-2xl font-bold">{c.name}</div>
-        <div className="mt-2 text-sm text-slate-600">{c.industry || "—"} • {c.service_type || "—"}</div>
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-slate-700">
-          <div>Website: {c.website ? <a className="text-blue-700 underline" href={c.website} target="_blank" rel="noreferrer">{c.website}</a> : "—"}</div>
-          <div>Status: <span className="font-semibold">{c.status || "Active"}</span></div>
-          <div>Commercials: {c.commercials || "—"}</div>
-          <div>Invoice Days: {c.invoice_days || "—"}</div>
+    <ModulePageFrame
+      title={c.name}
+      subtitle={[c.industry || "Industry not set", c.service_type || "Service type not set"].join(" · ")}
+      metrics={
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-3 py-1 text-xs font-semibold text-[var(--ats-text)]">
+            {c.status || "Active"}
+          </span>
+          <span className="rounded-full border border-[color:rgb(37_99_235_/_0.18)] bg-[color:rgb(37_99_235_/_0.1)] px-3 py-1 text-xs font-semibold text-[var(--ats-primary)]">
+            {contacts.length} contact{contacts.length === 1 ? "" : "s"}
+          </span>
         </div>
-        <div className="mt-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Address</div>
-          <div className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{c.address || "—"}</div>
+      }
+      actions={
+        <Link href="/clients" className={UI.secondaryButton + " py-2 text-sm"}>
+          Back to clients
+        </Link>
+      }
+    >
+      <div className="space-y-5">
+        <div className="grid gap-4 lg:grid-cols-4">
+          <MetricTile label="Website" value={c.website ? "Available" : "Not set"} />
+          <MetricTile label="Invoice days" value={c.invoice_days || "—"} />
+          <MetricTile label="Agreement" value={c.agreement_enabled ? "Enabled" : "Disabled"} />
+          <MetricTile label="Renewal notice" value={`${c.renewal_notice_days ?? 30} days`} />
         </div>
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="rounded-2xl border bg-white p-5">
-          <div className="text-sm font-semibold text-slate-900">SPOC Contacts</div>
-          <div className="mt-3 space-y-2">
-            {(c.contacts || []).length === 0 ? <div className="text-sm text-slate-500">No contacts</div> : null}
-            {(c.contacts || []).map((sp: any) => (
-              <div key={sp.id} className="rounded-lg bg-slate-50 p-3 text-sm">
-                <div className="font-semibold">{sp.name}</div>
-                <div className="text-slate-600">{sp.email || "—"} {sp.phone ? `• ${sp.phone}` : ""}</div>
+
+        <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+          <section className={`${UI.enterprise.elevatedCard} p-6`}>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">
+              Account profile
+            </div>
+            <dl className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">Website</dt>
+                <dd className="mt-1 text-sm text-[var(--ats-text)]">
+                  {c.website ? (
+                    <a className="font-medium text-[var(--ats-primary)] hover:underline" href={c.website} target="_blank" rel="noreferrer">
+                      {c.website}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
               </div>
-            ))}
-          </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">Commercials</dt>
+                <dd className="mt-1 text-sm text-[var(--ats-text)]">{c.commercials || "—"}</dd>
+              </div>
+              <div className="md:col-span-2">
+                <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">Address</dt>
+                <dd className="mt-1 whitespace-pre-wrap text-sm text-[var(--ats-text)]">{c.address || "—"}</dd>
+              </div>
+              <div className="md:col-span-2">
+                <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">Additional notes</dt>
+                <dd className="mt-1 whitespace-pre-wrap text-sm text-[var(--ats-text)]">{c.remarks || "—"}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className={`${UI.enterprise.elevatedCard} p-6`}>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">
+              Agreement window
+            </div>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl border border-[var(--ats-border-subtle)] bg-[var(--ats-bg-panel)] px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">Start</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--ats-text)]">{formatClientDate(c.agreement_start_date)}</div>
+              </div>
+              <div className="rounded-2xl border border-[var(--ats-border-subtle)] bg-[var(--ats-bg-panel)] px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">End</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--ats-text)]">{formatClientDate(c.agreement_end_date)}</div>
+              </div>
+            </div>
+          </section>
         </div>
-        <div className="rounded-2xl border border-violet-100/90 bg-gradient-to-br from-violet-50/80 via-white to-fuchsia-50/30 p-4 shadow-sm dark:border-violet-900/40 dark:from-violet-950/30 dark:via-slate-900 dark:to-fuchsia-950/20">
-          <div className="text-xs font-semibold uppercase tracking-wide text-violet-600/80 dark:text-violet-300/90">
-            Agreement
-          </div>
-          <div className="mt-2 text-sm text-slate-700 dark:text-slate-200">
-            Available: <span className="font-semibold">{c.agreement_enabled ? "Yes" : "No"}</span>
-          </div>
-          <div className="mt-2 space-y-1 text-[13px] leading-snug text-slate-700 dark:text-slate-200">
+
+        <section className={`${UI.enterprise.elevatedCard} p-6`}>
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <span className="text-slate-500 dark:text-slate-400">Start</span>{" "}
-              <span className="font-medium">{formatClientDate(c.agreement_start_date)}</span>
-            </div>
-            <div>
-              <span className="text-slate-500 dark:text-slate-400">End</span>{" "}
-              <span className="font-medium">{formatClientDate(c.agreement_end_date)}</span>
-            </div>
-            <div>
-              <span className="text-slate-500 dark:text-slate-400">Renewal notice</span>{" "}
-              <span className="font-medium">{c.renewal_notice_days ?? 30} days</span>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">SPOC contacts</div>
+              <div className="mt-1 text-sm text-[var(--ats-text-muted)]">Primary client-side relationships and delivery contacts.</div>
             </div>
           </div>
-        </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {contacts.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-6 text-sm text-[var(--ats-text-muted)]">
+                No contacts added yet.
+              </div>
+            ) : (
+              contacts.map((sp: any) => (
+                <div key={sp.id || sp.email || sp.name} className="rounded-2xl border border-[var(--ats-border-subtle)] bg-[var(--ats-bg-panel)] p-4">
+                  <div className="text-base font-semibold text-[var(--ats-text)]">{sp.name}</div>
+                  <div className="mt-1 text-sm text-[var(--ats-text-muted)]">
+                    {sp.email || "—"}
+                    {sp.phone ? ` · ${sp.phone}` : ""}
+                  </div>
+                  {sp.designation ? (
+                    <div className="mt-2 inline-flex rounded-full border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-2.5 py-1 text-xs font-semibold text-[var(--ats-text-muted)]">
+                      {sp.designation}
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
+        </section>
       </div>
-      <div className="rounded-2xl border bg-white p-5">
-        <div className="text-sm font-semibold text-slate-900">Additional Notes</div>
-        <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{c.remarks || "—"}</div>
-      </div>
-    </div>
+    </ModulePageFrame>
   );
 }
-

@@ -9,6 +9,15 @@ type CandidateJobInfo = {
 
 type Density = "comfortable" | "compact" | "ultra";
 
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--ats-border-subtle)] bg-[var(--ats-bg-panel)] px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">{label}</span>
+      <span className="text-sm font-semibold text-[var(--ats-text)]">{value}</span>
+    </div>
+  );
+}
+
 export default function JobInfo({
   candidate,
   density = "ultra",
@@ -16,61 +25,45 @@ export default function JobInfo({
   candidate: CandidateJobInfo;
   density?: Density;
 }) {
-  const rootPad = density === "comfortable" ? "py-3" : density === "compact" ? "py-2" : "py-1";
-  const titleClass = density === "ultra" ? "text-[10px]" : "text-xs";
-  const rowPad = density === "comfortable" ? "py-1" : "py-0.5";
-  const labelClass = density === "ultra" ? "text-[10px]" : "text-xs";
+  void density;
 
   const showInterviewRound =
     candidate.stage === "Interview" &&
     (candidate.current_interview_round_label != null || candidate.current_interview_round_order != null);
+
   const roundPrimary = showInterviewRound
     ? candidate.current_interview_round_label || `Round ${candidate.current_interview_round_order ?? 1}`
     : "Not started";
+
   const total = candidate.interview_round_total;
   const order = candidate.current_interview_round_order ?? 1;
   const completed =
     showInterviewRound && typeof total === "number" && total > 0 ? Math.max(0, order - 1) : null;
 
   return (
-    <div className={["border-b border-gray-200", rootPad].join(" ")}>
-      <p className={["mb-0.5 font-medium text-gray-700", titleClass].join(" ")}>Job Info</p>
-      <div className="space-y-0.5 text-xs">
-        <div className={["flex items-center justify-between gap-2 hover:bg-gray-50 transition", rowPad].join(" ")}>
-          <span className={[labelClass, "text-gray-500"].join(" ")}>Job Title</span>
-          <span className="font-medium text-gray-800">{candidate.job_title || "Not assigned"}</span>
+    <section className="space-y-3">
+      <div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">
+          Application context
         </div>
-        <div className={["flex items-center justify-between gap-2 hover:bg-gray-50 transition", rowPad].join(" ")}>
-          <span className={[labelClass, "text-gray-500"].join(" ")}>Pipeline Stage</span>
-          <span className="font-medium text-gray-800">{candidate.stage || "—"}</span>
-        </div>
-        <div className={["hover:bg-gray-50 transition", rowPad].join(" ")}>
-          <div className="flex items-start justify-between gap-2">
-            <span className={[labelClass, "shrink-0 text-gray-500"].join(" ")}>Interview Round</span>
-            <div className="min-w-0 text-right font-medium text-gray-800">
-              {showInterviewRound ? (
-                <>
-                  <span className="text-indigo-700">
-                    {roundPrimary}
-                    {completed !== null && typeof total === "number" ? ` (${completed}/${total}) completed` : null}
-                  </span>
-                  {candidate.current_interview_round_order != null && candidate.current_interview_round_order > 1 ? (
-                    <span className="mt-0.5 block text-[11px] font-semibold text-indigo-700/90">
-                      Round {candidate.current_interview_round_order - 1} completed
-                    </span>
-                  ) : null}
-                </>
-              ) : (
-                <span>{roundPrimary}</span>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className={["flex items-center justify-between gap-2 hover:bg-gray-50 transition", rowPad].join(" ")}>
-          <span className={[labelClass, "text-gray-500"].join(" ")}>Status</span>
-          <span className="font-medium text-gray-800">{candidate.status}</span>
+        <div className="mt-1 text-sm text-[var(--ats-text-muted)]">
+          The current requisition, pipeline stage, and interview progress for this profile.
         </div>
       </div>
-    </div>
+
+      <div className="grid gap-2">
+        <InfoRow label="Job title" value={candidate.job_title || "Not assigned"} />
+        <InfoRow label="Pipeline stage" value={candidate.stage || "—"} />
+        <InfoRow
+          label="Interview round"
+          value={
+            showInterviewRound && completed !== null && typeof total === "number"
+              ? `${roundPrimary} (${completed}/${total} completed)`
+              : roundPrimary
+          }
+        />
+        <InfoRow label="Status" value={candidate.status} />
+      </div>
+    </section>
   );
 }

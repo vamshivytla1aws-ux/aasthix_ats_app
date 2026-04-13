@@ -27,53 +27,60 @@ export function useDashboardTheme(): Ctx {
   return c;
 }
 
-/** Optional: navbar pieces that may render before provider in edge cases */
 export function useDashboardThemeOptional(): Ctx | null {
   return useContext(DashboardThemeContext);
 }
 
 export function DashboardThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<DashboardThemeMode>("auto");
+  const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     try {
-      setMode(parseStoredTheme(localStorage.getItem(DASHBOARD_THEME_STORAGE_KEY)));
+      setMode(parseStoredTheme(window.localStorage.getItem(DASHBOARD_THEME_STORAGE_KEY)));
     } catch {
       setMode("auto");
     }
+
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyMedia = () => setSystemPrefersDark(media.matches);
+    applyMedia();
+
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", applyMedia);
+      return () => media.removeEventListener("change", applyMedia);
+    }
+
+    media.addListener(applyMedia);
+    return () => media.removeListener(applyMedia);
+  }, []);
+
+  useEffect(() => {
     setHydrated(true);
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(DASHBOARD_THEME_STORAGE_KEY, mode);
+      window.localStorage.setItem(DASHBOARD_THEME_STORAGE_KEY, mode);
     } catch {
       // ignore
     }
   }, [mode, hydrated]);
 
-  // Re-evaluate Auto mode as local time passes
-  useEffect(() => {
-    if (mode !== "auto") return;
-    const id = window.setInterval(() => setTick((t) => t + 1), 60_000);
-    return () => window.clearInterval(id);
-  }, [mode]);
+  const effectiveDark = useMemo(
+    () => resolveEffectiveDark(mode, systemPrefersDark),
+    [mode, systemPrefersDark]
+  );
 
   useEffect(() => {
-    const onVis = () => {
-      if (mode === "auto") setTick((t) => t + 1);
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [mode]);
-
-  const effectiveDark = useMemo(() => {
-    void tick;
-    return resolveEffectiveDark(mode);
-  }, [mode, tick]);
+    const root = document.documentElement;
+    const body = document.body;
+    root.classList.toggle("dark", effectiveDark);
+    root.dataset.theme = effectiveDark ? "dark" : "light";
+    body.dataset.theme = effectiveDark ? "dark" : "light";
+  }, [effectiveDark]);
 
   const cycleTheme = useCallback(() => {
     setMode((m) => cycleThemeMode(m));
@@ -92,10 +99,7 @@ export function DashboardThemeProvider({ children }: { children: React.ReactNode
   return (
     <DashboardThemeContext.Provider value={value}>
       <div
-        className={[
-          "dashboard-root flex min-h-screen flex-col overflow-x-hidden bg-[var(--ats-bg-page)] text-slate-900 dark:text-slate-100 transition-colors duration-300",
-          effectiveDark ? "dark" : "",
-        ].join(" ")}
+        className="dashboard-root flex min-h-screen flex-col overflow-x-hidden bg-[var(--ats-bg-page)] text-[var(--ats-text)] transition-colors duration-300"
         suppressHydrationWarning
       >
         {children}

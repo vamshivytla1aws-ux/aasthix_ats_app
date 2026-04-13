@@ -5,7 +5,15 @@ import { apiFetchJson } from "@/lib/apiClient";
 import { APP_CONFIG } from "@/lib/config";
 import { UI } from "@/lib/ui";
 import Link from "next/link";
-import { Activity, ArrowRight, BriefcaseBusiness, Clock3, UsersRound } from "lucide-react";
+import {
+  Activity,
+  ArrowRight,
+  BriefcaseBusiness,
+  Clock3,
+  ShieldAlert,
+  Sparkles,
+  UsersRound,
+} from "lucide-react";
 import AccessGate from "@/components/AccessGate";
 import HrAssistantPanel from "@/components/hrAssistant/HrAssistantPanel";
 
@@ -23,113 +31,43 @@ type InterviewAlert = {
   message: string;
 };
 
-function IconBriefcase({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <path
-        d="M9 6a3 3 0 0 1 3-3h0a3 3 0 0 1 3 3v1h4a2 2 0 0 1 2 2v3.5a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V9a2 2 0 0 1 2-2h4V6Zm2 1h2V6a1 1 0 0 0-1-1h0a1 1 0 0 0-1 1v1Z"
-        className="fill-current"
-        opacity="0.95"
-      />
-      <path
-        d="M3 14.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4.5A4.98 4.98 0 0 1 18 16H6a4.98 4.98 0 0 1-3-1.5Z"
-        className="fill-current"
-        opacity="0.7"
-      />
-    </svg>
-  );
-}
-
-function IconUsers({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <path d="M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0Z" className="fill-current" opacity="0.95" />
-      <path d="M4 20a6 6 0 0 1 12 0v1H4v-1Z" className="fill-current" opacity="0.7" />
-      <path
-        d="M18.5 21v-1a7.98 7.98 0 0 0-2.17-5.52A5 5 0 0 1 21 19.5V21h-2.5Z"
-        className="fill-current"
-        opacity="0.55"
-      />
-    </svg>
-  );
-}
-
-function IconLayers({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <path
-        d="M12 3 3.5 8 12 13l8.5-5L12 3Z"
-        className="fill-current"
-        opacity="0.95"
-      />
-      <path
-        d="M3.5 12 12 17l8.5-5"
-        className="stroke-current"
-        strokeWidth="2"
-        strokeLinecap="round"
-        opacity="0.7"
-      />
-      <path
-        d="M3.5 16 12 21l8.5-5"
-        className="stroke-current"
-        strokeWidth="2"
-        strokeLinecap="round"
-        opacity="0.55"
-      />
-    </svg>
-  );
-}
-
 function MetricCard({
   title,
   value,
-  tone,
+  detail,
   icon,
 }: {
   title: string;
   value: React.ReactNode;
-  tone: "blue" | "green" | "purple";
+  detail: string;
   icon: React.ReactNode;
 }) {
-  const toneTop =
-    tone === "blue"
-      ? "border-t-indigo-600"
-      : tone === "green"
-        ? "border-t-emerald-600"
-        : "border-t-violet-600";
-  const toneGradient =
-    tone === "blue"
-      ? "bg-gradient-to-br from-indigo-50/80 to-white"
-      : tone === "green"
-        ? "bg-gradient-to-br from-emerald-50 to-white"
-        : "bg-gradient-to-br from-violet-50 to-white";
-  const toneIcon =
-    tone === "blue"
-      ? "text-indigo-700 bg-indigo-100/70"
-      : tone === "green"
-        ? "text-emerald-700 bg-emerald-100/70"
-        : "text-violet-700 bg-violet-100/70";
-
   return (
-    <div
-      className={[
-        "rounded-2xl border border-slate-200 border-t-4 p-6 shadow-sm transition-all duration-200",
-        "hover:shadow-md hover:scale-[1.01]",
-        toneTop,
-        toneGradient,
-      ].join(" ")}
-    >
+    <div className={UI.enterprise.metricCard}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-sm font-semibold text-slate-700">{title}</div>
-          <div className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{value}</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">{title}</div>
+          <div className="mt-2 text-3xl font-semibold tracking-tight text-[var(--ats-text)]">{value}</div>
+          <div className="mt-1 text-sm text-[var(--ats-text-muted)]">{detail}</div>
         </div>
-        <div className={["h-11 w-11 rounded-2xl grid place-items-center", toneIcon].join(" ")}>
+        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] text-[var(--ats-primary)]">
           {icon}
         </div>
       </div>
     </div>
   );
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-IN", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
 }
 
 export default function DashboardPage() {
@@ -182,12 +120,12 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    load();
-    loadAlerts();
+    void load();
+    void loadAlerts();
   }, []);
 
   useEffect(() => {
-    const timer = setInterval(() => loadAlerts(), 60_000);
+    const timer = setInterval(() => void loadAlerts(), 60_000);
     return () => clearInterval(timer);
   }, []);
 
@@ -211,181 +149,221 @@ export default function DashboardPage() {
     [jobs]
   );
   const closedJobs = Math.max(0, jobs.length - openJobs);
-  const conversionRate = applications.length
-    ? Math.round((perStage.Selected / applications.length) * 100)
-    : 0;
+  const conversionRate = applications.length ? Math.round((perStage.Selected / applications.length) * 100) : 0;
   const interviewLoad = perStage.Interview;
   const alertSummary = useMemo(() => {
     const ongoing = alerts.filter((a) => a.type === "ongoing").length;
     const upcoming = alerts.filter((a) => a.type === "upcoming").length;
     return { ongoing, upcoming };
   }, [alerts]);
+  const riskCount = (sla?.stale_in_stage_over_days || 0) + (sla?.interview_overdue_after_hours || 0);
 
   return (
     <AccessGate permissionKey="dashboard.view">
-      <div className={["space-y-6", UI.pageShell].join(" ")}>
-      <div className="flex items-center justify-between rounded-2xl border border-slate-200/90 bg-white shadow-ats-sm shadow-ats-ring p-5">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-          <div className="text-sm text-slate-600">{APP_CONFIG.appName} overview metrics</div>
-        </div>
-        <button onClick={load} className={UI.secondaryButton}>
-          Refresh
-        </button>
-      </div>
-
-      {error && <div className="text-sm text-red-600">{error}</div>}
-
-      {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="h-4 w-28 rounded bg-slate-200 animate-pulse" />
-              <div className="mt-3 h-8 w-16 rounded bg-slate-200 animate-pulse" />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-            <MetricCard
-              title="Total jobs"
-              value={jobs.length}
-              tone="blue"
-              icon={<IconBriefcase className="h-6 w-6" />}
-            />
-            <MetricCard
-              title="Total candidates"
-              value={candidates.length}
-              tone="green"
-              icon={<IconUsers className="h-6 w-6" />}
-            />
-            <MetricCard
-              title="Total applications"
-              value={applications.length}
-              tone="purple"
-              icon={<IconLayers className="h-6 w-6" />}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200/90 bg-white shadow-ats-sm shadow-ats-ring p-4">
-              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <BriefcaseBusiness className="h-4 w-4 text-indigo-600" />
-                Job Health
+      <div className="space-y-5">
+        <section className={UI.enterprise.commandRail}>
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[color:rgb(37_99_235_/_0.18)] bg-[color:rgb(255_255_255_/_0.55)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-primary)]">
+                <Sparkles className="h-3.5 w-3.5" />
+                Executive command center
               </div>
-              <div className="mt-2 text-sm text-slate-700">Open: <span className="font-semibold">{openJobs}</span></div>
-              <div className="text-sm text-slate-700">Closed: <span className="font-semibold">{closedJobs}</span></div>
-            </div>
-            <div className="rounded-2xl border border-slate-200/90 bg-white shadow-ats-sm shadow-ats-ring p-4">
-              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <Activity className="h-4 w-4 text-violet-600" />
-                Funnel Conversion
-              </div>
-              <div className="mt-2 text-2xl font-bold text-slate-900">{conversionRate}%</div>
-              <div className="text-xs text-slate-500">Selected / total applications</div>
-            </div>
-            <div className="rounded-2xl border border-slate-200/90 bg-white shadow-ats-sm shadow-ats-ring p-4">
-              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <Clock3 className="h-4 w-4 text-amber-600" />
-                Interview Load
-              </div>
-              <div className="mt-2 text-2xl font-bold text-slate-900">{interviewLoad}</div>
-              <div className="text-xs text-slate-500">Candidates currently in interview stage</div>
-            </div>
-            <div className="rounded-2xl border border-slate-200/90 bg-white shadow-ats-sm shadow-ats-ring p-4">
-              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <UsersRound className="h-4 w-4 text-emerald-600" />
-                Interview Alerts
-              </div>
-              <div className="mt-2 text-sm text-slate-700">Ongoing: <span className="font-semibold">{alertSummary.ongoing}</span></div>
-              <div className="text-sm text-slate-700">Upcoming 1h: <span className="font-semibold">{alertSummary.upcoming}</span></div>
-            </div>
-          </div>
-
-          {sla ? (
-            <div className="rounded-2xl border border-amber-200/90 bg-amber-50/50 p-4 shadow-ats-sm dark:border-amber-900/50 dark:bg-amber-950/20">
-              <div className="text-xs font-bold uppercase tracking-wide text-amber-900 dark:text-amber-200">SLA-style signals</div>
-              <p className="mt-1 text-xs text-amber-900/80 dark:text-amber-200/90">
-                Non-terminal applications with no stage update in {sla.stale_days_threshold}+ days, and scheduled interviews whose start time is more than{" "}
-                {sla.interview_stale_hours_threshold} hours ago.
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--ats-text)]">Recruiting operations at a glance</h1>
+              <p className="mt-2 text-sm leading-6 text-[var(--ats-text-muted)]">
+                {APP_CONFIG.appName} now surfaces funnel performance, recruiter load, and delivery risk in one premium workspace.
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-6 text-sm text-amber-950 dark:text-amber-100">
-                <span>
-                  Time-in-stage stale: <strong className="font-semibold">{sla.stale_in_stage_over_days}</strong>
-                </span>
-                <span>
-                  Stale interview slots: <strong className="font-semibold">{sla.interview_overdue_after_hours}</strong>
-                </span>
-                <Link href="/pipeline" className="font-semibold text-blue-700 hover:underline dark:text-blue-400">
-                  Review pipeline →
-                </Link>
-                <Link href="/alerts" className="font-semibold text-blue-700 hover:underline dark:text-blue-400">
-                  Alerts →
-                </Link>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="rounded-2xl border border-slate-200/90 bg-white shadow-ats-sm shadow-ats-ring p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-slate-600">Candidates per stage</div>
-                <div className="text-xs text-slate-500">
-                  Based on applications grouped by current stage
-                </div>
-              </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              {STAGES.map((s) => (
-                <div key={s} className="rounded-xl border bg-slate-50 p-4">
-                  <div className="text-xs font-medium text-slate-600">{s}</div>
-                  <div className="mt-1 text-2xl font-semibold">{perStage[s]}</div>
-                </div>
-              ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href="/jobs" className={UI.secondaryButton + " py-2 text-sm"}>
+                Create job
+              </Link>
+              <Link href="/candidates" className={UI.secondaryButton + " py-2 text-sm"}>
+                Add candidate
+              </Link>
+              <Link href="/pipeline" className={UI.secondaryButton + " py-2 text-sm"}>
+                Open pipeline
+              </Link>
+              <button onClick={() => void load()} className={UI.primaryButton + " py-2 text-sm"}>
+                Refresh workspace
+              </button>
             </div>
           </div>
+        </section>
 
-          <HrAssistantPanel />
+        {error ? <div className="text-sm text-[var(--ats-danger)]">{error}</div> : null}
 
-          <div className="rounded-2xl border border-slate-200/90 bg-white shadow-ats-sm shadow-ats-ring p-5">
-            <div className="mb-3 text-sm font-semibold text-slate-900">Quick Actions</div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Link href="/jobs" className="group rounded-xl border border-slate-200/90 bg-white p-3 shadow-ats-sm transition hover:border-indigo-200 hover:bg-indigo-50/50">
-                <div className="text-sm font-semibold text-slate-900">Create Job</div>
-                <div className="mt-1 text-xs text-slate-500">Add a new role to your hiring plan</div>
-                <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700">
-                  Open <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
-                </div>
-              </Link>
-              <Link href="/candidates" className="group rounded-xl border border-slate-200/90 bg-white p-3 shadow-ats-sm transition hover:border-indigo-200 hover:bg-indigo-50/50">
-                <div className="text-sm font-semibold text-slate-900">Add Candidate</div>
-                <div className="mt-1 text-xs text-slate-500">Create or import candidate profile</div>
-                <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700">
-                  Open <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
-                </div>
-              </Link>
-              <Link href="/pipeline" className="group rounded-xl border border-slate-200/90 bg-white p-3 shadow-ats-sm transition hover:border-indigo-200 hover:bg-indigo-50/50">
-                <div className="text-sm font-semibold text-slate-900">Manage Pipeline</div>
-                <div className="mt-1 text-xs text-slate-500">Move candidates across stages</div>
-                <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700">
-                  Open <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
-                </div>
-              </Link>
-              <Link href="/interviews" className="group rounded-xl border border-slate-200/90 bg-white p-3 shadow-ats-sm transition hover:border-indigo-200 hover:bg-indigo-50/50">
-                <div className="text-sm font-semibold text-slate-900">Interview Desk</div>
-                <div className="mt-1 text-xs text-slate-500">Monitor upcoming and ongoing interviews</div>
-                <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700">
-                  Open <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
-                </div>
-              </Link>
-            </div>
+        {loading ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className={`${UI.enterprise.metricCard} h-36 animate-pulse bg-[var(--ats-bg-panel)]`} />
+            ))}
           </div>
-        </>
-      )}
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard
+                title="Open requisitions"
+                value={openJobs}
+                detail={`${closedJobs} closed roles in the system`}
+                icon={<BriefcaseBusiness className="h-6 w-6" />}
+              />
+              <MetricCard
+                title="Candidate pool"
+                value={candidates.length}
+                detail={`${applications.length} active application records`}
+                icon={<UsersRound className="h-6 w-6" />}
+              />
+              <MetricCard
+                title="Interview load"
+                value={interviewLoad}
+                detail={`${alertSummary.upcoming} upcoming and ${alertSummary.ongoing} live signals`}
+                icon={<Clock3 className="h-6 w-6" />}
+              />
+              <MetricCard
+                title="Operational risk"
+                value={riskCount}
+                detail="Stale pipeline items and overdue interview actions"
+                icon={<ShieldAlert className="h-6 w-6" />}
+              />
+            </div>
+
+            <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
+              <section className={`${UI.enterprise.elevatedCard} p-6`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">
+                      Funnel pulse
+                    </div>
+                    <div className="mt-1 text-lg font-semibold text-[var(--ats-text)]">
+                      Stage distribution and conversion
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-4 py-3 text-right">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">
+                      Conversion
+                    </div>
+                    <div className="mt-1 text-2xl font-semibold text-[var(--ats-text)]">{conversionRate}%</div>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {STAGES.map((s) => (
+                    <div key={s} className="rounded-2xl border border-[var(--ats-border-subtle)] bg-[var(--ats-bg-panel)] p-4">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">{s}</div>
+                      <div className="mt-2 text-3xl font-semibold tracking-tight text-[var(--ats-text)]">{perStage[s]}</div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--ats-border-subtle)]">
+                        <div
+                          className="h-full rounded-full bg-[linear-gradient(90deg,var(--ats-primary),var(--ats-accent))]"
+                          style={{
+                            width: `${applications.length ? Math.max(8, Math.round((perStage[s] / applications.length) * 100)) : 8}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className={`${UI.enterprise.elevatedCard} p-6`}>
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">
+                  <Activity className="h-4 w-4 text-[var(--ats-primary)]" />
+                  Exception queue
+                </div>
+                <div className="mt-3 space-y-3">
+                  {sla ? (
+                    <>
+                      <div className="rounded-2xl border border-[color:rgb(245_158_11_/_0.22)] bg-[color:rgb(245_158_11_/_0.11)] p-4">
+                        <div className="text-sm font-semibold text-[var(--ats-text)]">Pipeline aging</div>
+                        <div className="mt-1 text-sm text-[var(--ats-text-muted)]">
+                          {sla.stale_in_stage_over_days} applications have had no stage change for {sla.stale_days_threshold}+ days.
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-[color:rgb(239_68_68_/_0.2)] bg-[color:rgb(239_68_68_/_0.1)] p-4">
+                        <div className="text-sm font-semibold text-[var(--ats-text)]">Interview latency</div>
+                        <div className="mt-1 text-sm text-[var(--ats-text-muted)]">
+                          {sla.interview_overdue_after_hours} scheduled interviews are older than {sla.interview_stale_hours_threshold} hours.
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-4 text-sm text-[var(--ats-text-muted)]">
+                      SLA telemetry is not available right now.
+                    </div>
+                  )}
+
+                  <div className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-4">
+                    <div className="text-sm font-semibold text-[var(--ats-text)]">Interview alerts</div>
+                    <div className="mt-2 space-y-2">
+                      {alerts.length === 0 ? (
+                        <div className="text-sm text-[var(--ats-text-muted)]">No interview alerts at the moment.</div>
+                      ) : (
+                        alerts.slice(0, 4).map((alert) => (
+                          <div key={alert.id} className="rounded-xl border border-[var(--ats-border-subtle)] bg-[var(--ats-bg-elevated)] px-3 py-2">
+                            <div className="text-sm font-semibold text-[var(--ats-text)]">{alert.candidate_full_name}</div>
+                            <div className="text-xs text-[var(--ats-text-muted)]">{alert.message}</div>
+                            <div className="mt-1 text-[11px] text-[var(--ats-text-soft)]">{formatDateTime(alert.interview_datetime)}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <HrAssistantPanel />
+
+            <section className={`${UI.enterprise.elevatedCard} p-6`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">
+                    Quick action rail
+                  </div>
+                  <div className="mt-1 text-lg font-semibold text-[var(--ats-text)]">Jump into the highest-value workflows</div>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    href: "/jobs",
+                    title: "Create job",
+                    body: "Open a requisition and start team delivery planning.",
+                  },
+                  {
+                    href: "/candidates",
+                    title: "Add candidate",
+                    body: "Create or import a candidate into the active talent pool.",
+                  },
+                  {
+                    href: "/pipeline",
+                    title: "Manage pipeline",
+                    body: "Move stages, rebalance ownership, and resolve bottlenecks.",
+                  },
+                  {
+                    href: "/interviews",
+                    title: "Interview desk",
+                    body: "Coordinate upcoming interviews and close stale decisions.",
+                  },
+                ].map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="group rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-4 shadow-[var(--ats-shadow-sm)] transition hover:border-[var(--ats-border-strong)] hover:bg-[var(--ats-bg-panel-strong)]"
+                  >
+                    <div className="text-base font-semibold text-[var(--ats-text)]">{item.title}</div>
+                    <div className="mt-2 text-sm leading-6 text-[var(--ats-text-muted)]">{item.body}</div>
+                    <div className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[var(--ats-primary)]">
+                      Open
+                      <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
       </div>
     </AccessGate>
   );
 }
-

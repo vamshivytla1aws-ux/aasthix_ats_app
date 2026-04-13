@@ -2,8 +2,9 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { apiFetchJson } from "@/lib/apiClient";
+import { BellRing, ExternalLink, Loader2, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { apiFetchJson } from "@/lib/apiClient";
 
 type AlertRow = {
   id: number;
@@ -21,22 +22,38 @@ function normalizeAlertId(value: unknown): number | null {
 }
 
 function normalizeRows(rows: AlertRow[]): AlertRow[] {
-  return (rows || []).map((a) => {
-    const id = normalizeAlertId(a.id);
-    const candidateId = normalizeAlertId((a as AlertRow).candidate_id);
-    const base = { ...a, candidate_id: candidateId };
+  return (rows || []).map((alert) => {
+    const id = normalizeAlertId(alert.id);
+    const candidateId = normalizeAlertId(alert.candidate_id);
+    const base = { ...alert, candidate_id: candidateId };
     return id != null ? { ...base, id } : base;
   });
 }
 
 function formatTime(value: string) {
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "--";
   try {
-    return new Intl.DateTimeFormat("en-IN", { hour: "2-digit", minute: "2-digit" }).format(d);
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(d);
   } catch {
-    return d.toLocaleTimeString();
+    return d.toLocaleString();
   }
+}
+
+function toneForType(type: string) {
+  const key = String(type || "").toLowerCase();
+  if (key.includes("reject") || key.includes("risk") || key.includes("expired")) {
+    return "border-[color:rgb(239_68_68_/_0.18)] bg-[color:rgb(239_68_68_/_0.08)] text-[var(--ats-danger)]";
+  }
+  if (key.includes("interview") || key.includes("renewal") || key.includes("approval")) {
+    return "border-[color:rgb(245_158_11_/_0.18)] bg-[color:rgb(245_158_11_/_0.08)] text-[var(--ats-warning)]";
+  }
+  return "border-[color:rgb(37_99_235_/_0.18)] bg-[color:rgb(37_99_235_/_0.08)] text-[var(--ats-primary)]";
 }
 
 export default function AlertBell({ variant = "default" }: { variant?: "default" | "shell" }) {
@@ -49,9 +66,9 @@ export default function AlertBell({ variant = "default" }: { variant?: "default"
 
   const activeAlerts = useMemo(
     () =>
-      alerts.filter((a) => {
-        const notExpired = !a.expires_at || new Date(a.expires_at).getTime() > Date.now();
-        return a.status === "unread" && notExpired;
+      alerts.filter((alert) => {
+        const notExpired = !alert.expires_at || new Date(alert.expires_at).getTime() > Date.now();
+        return alert.status === "unread" && notExpired;
       }),
     [alerts]
   );
@@ -59,16 +76,17 @@ export default function AlertBell({ variant = "default" }: { variant?: "default"
   const visibleAlerts = useMemo(
     () =>
       activeAlerts
-        .filter((a) => {
-          const nid = normalizeAlertId(a.id);
-          return nid != null && !dismissedIds.includes(nid);
+        .filter((alert) => {
+          const normalizedId = normalizeAlertId(alert.id);
+          return normalizedId != null && !dismissedIds.includes(normalizedId);
         })
         .slice(0, 10),
     [activeAlerts, dismissedIds]
   );
-  const alertCount = activeAlerts.filter((a) => {
-    const nid = normalizeAlertId(a.id);
-    return nid != null && !dismissedIds.includes(nid);
+
+  const alertCount = activeAlerts.filter((alert) => {
+    const normalizedId = normalizeAlertId(alert.id);
+    return normalizedId != null && !dismissedIds.includes(normalizedId);
   }).length;
 
   async function load() {
@@ -77,12 +95,10 @@ export default function AlertBell({ variant = "default" }: { variant?: "default"
       const data = await apiFetchJson<{ alerts: AlertRow[] }>("/api/alerts");
       const next = normalizeRows(data.alerts || []);
       setAlerts(next);
-      // Keep dismiss cache clean for removed/expired alerts.
       setDismissedIds((prev) =>
-        prev.filter((did) => next.some((a) => normalizeAlertId(a.id) === did))
+        prev.filter((dismissedId) => next.some((alert) => normalizeAlertId(alert.id) === dismissedId))
       );
     } catch (err) {
-      // Network/offline, dev server down, or blocked request — do not crash the shell.
       console.warn("AlertBell: could not load alerts", err);
       setAlerts([]);
     } finally {
@@ -91,12 +107,11 @@ export default function AlertBell({ variant = "default" }: { variant?: "default"
   }
 
   useEffect(() => {
-    load();
+    void load();
     const timer = window.setInterval(() => {
-      load();
+      void load();
     }, 60_000);
     return () => window.clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -121,10 +136,8 @@ export default function AlertBell({ variant = "default" }: { variant?: "default"
 
   async function markAsRead(rawId: unknown) {
     const id = normalizeAlertId(rawId);
-    if (id == null) {
-      console.error("Alert ID missing/invalid");
-      return;
-    }
+    if (id == null) return;
+
     setDismissingIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
     try {
       await apiFetchJson("/api/alerts", {
@@ -134,10 +147,11 @@ export default function AlertBell({ variant = "default" }: { variant?: "default"
       });
 
       setAlerts((prev) =>
-        prev.map((a) => (normalizeAlertId(a.id) === id ? { ...a, status: "read", expires_at: a.expires_at } : a))
+        prev.map((alert) =>
+          normalizeAlertId(alert.id) === id ? { ...alert, status: "read", expires_at: alert.expires_at } : alert
+        )
       );
     } catch (err) {
-      // Revert optimistic hide if server rejected update
       setDismissedIds((prev) => prev.filter((x) => x !== id));
       console.error("Failed to dismiss alert", err);
     } finally {
@@ -147,123 +161,125 @@ export default function AlertBell({ variant = "default" }: { variant?: "default"
 
   async function handleRemove(rawId: unknown) {
     const id = normalizeAlertId(rawId);
-    if (id == null) {
-      console.error("Alert ID missing/invalid");
-      return;
-    }
+    if (id == null) return;
     setDismissedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
     await markAsRead(id);
   }
 
+  const triggerClassName =
+    variant === "shell"
+      ? "relative inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 p-2.5 text-white shadow-[0_16px_44px_-28px_rgba(15,23,42,0.9)] backdrop-blur-sm transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
+      : "relative inline-flex items-center justify-center rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-2.5 text-[var(--ats-text)] shadow-[var(--ats-shadow-sm)] transition hover:border-[var(--ats-border-strong)] hover:bg-[var(--ats-bg-panel-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(37_99_235_/_0.16)]";
+
   return (
     <div className="relative" ref={dropdownRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={
-          variant === "shell"
-            ? "relative rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-white transition hover:bg-white/25"
-            : "relative rounded-xl border border-gray-200 bg-white px-3 py-2 text-slate-700 shadow-ats-sm transition duration-200 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-700"
-        }
-        aria-label="Alerts"
-      >
-        <span className="text-lg leading-none">🔔</span>
-        {alertCount > 0 && (
-          <span className="absolute -right-1 -top-1 min-w-5 animate-pulse rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+      <button type="button" onClick={() => setOpen((v) => !v)} className={triggerClassName} aria-label="Alerts">
+        <BellRing className="h-4.5 w-4.5" />
+        {alertCount > 0 ? (
+          <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-[var(--ats-danger)] px-1.5 py-0.5 text-[10px] font-semibold text-white">
             {alertCount}
           </span>
-        )}
+        ) : null}
       </button>
 
       <AnimatePresence>
-        {open && (
+        {open ? (
           <motion.div
             initial={{ opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.98 }}
             transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute right-0 top-12 z-50 w-96 max-h-96 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 shadow-ats dark:border-slate-600 dark:bg-slate-900 dark:shadow-none"
+            className="absolute right-0 top-12 z-50 w-[25rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-[1.35rem] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] shadow-[var(--ats-shadow-md)] ring-1 ring-[rgb(255_255_255_/_0.45)]"
           >
-            <div className="mb-2 flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Notifications</div>
-              {loading && <div className="text-xs text-slate-500 dark:text-slate-400">Loading…</div>}
+            <div className="border-b border-[var(--ats-border)] bg-[linear-gradient(135deg,color-mix(in_oklab,var(--ats-primary)_10%,var(--ats-bg-elevated)),var(--ats-bg-elevated))] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">
+                    Notification center
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-[var(--ats-text)]">
+                    {alertCount > 0 ? `${alertCount} active alerts` : "All clear"}
+                  </div>
+                </div>
+                {loading ? <Loader2 className="h-4 w-4 animate-spin text-[var(--ats-text-soft)]" /> : null}
+              </div>
             </div>
 
-            {alerts.length === 0 && !loading ? (
-              <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/80 dark:text-slate-300">
-                No alerts.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <AnimatePresence initial={false}>
-                  {visibleAlerts.map((a) => {
-                    const isRead = a.status !== "unread";
-                    const rowId = normalizeAlertId(a.id);
-                    return (
-                      <motion.div
-                        key={rowId ?? String(a.message)}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        transition={{ duration: 0.18 }}
-                        className={[
-                          "w-full rounded-xl border border-slate-200 p-3 text-left transition dark:border-slate-600",
-                          isRead ? "opacity-60" : "hover:bg-slate-50 dark:hover:bg-slate-800/80",
-                        ].join(" ")}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div
-                              className={[
-                                "text-sm font-medium text-slate-900 dark:text-slate-100",
-                                isRead ? "line-through" : "",
-                              ].join(" ")}
-                            >
-                              {a.message}
-                            </div>
-                            {a.candidate_id != null && a.candidate_id > 0 ? (
-                              <div className="mt-1.5">
-                                <Link
-                                  href={`/candidates/${a.candidate_id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline dark:text-indigo-400 dark:hover:text-indigo-300"
-                                  onClick={(e) => e.stopPropagation()}
+            <div className="max-h-[26rem] overflow-y-auto p-3">
+              {visibleAlerts.length === 0 && !loading ? (
+                <div className="rounded-2xl border border-dashed border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-4 py-6 text-center">
+                  <div className="text-sm font-semibold text-[var(--ats-text)]">No active alerts</div>
+                  <div className="mt-1 text-xs text-[var(--ats-text-muted)]">
+                    Delivery exceptions, public applications, and reminders will appear here.
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <AnimatePresence initial={false}>
+                    {visibleAlerts.map((alert) => {
+                      const rowId = normalizeAlertId(alert.id);
+                      const busy = rowId != null && dismissingIds.includes(rowId);
+                      return (
+                        <motion.div
+                          key={rowId ?? String(alert.message)}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ duration: 0.18 }}
+                          className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-3 shadow-[var(--ats-shadow-sm)]"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${toneForType(alert.type)}`}
                                 >
-                                  Open profile
-                                </Link>
+                                  {String(alert.type || "alert").replaceAll("_", " ")}
+                                </span>
+                                <span className="text-[11px] text-[var(--ats-text-soft)]">{formatTime(alert.created_at)}</span>
                               </div>
-                            ) : null}
-                            <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                              {formatTime(a.created_at)}
+                              <div className="mt-2 text-sm font-medium leading-6 text-[var(--ats-text)]">{alert.message}</div>
+                              {alert.candidate_id != null && alert.candidate_id > 0 ? (
+                                <div className="mt-3">
+                                  <Link
+                                    href={`/candidates/${alert.candidate_id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 rounded-full border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-2.5 py-1 text-xs font-semibold text-[var(--ats-primary)] transition hover:border-[color:rgb(37_99_235_/_0.24)] hover:bg-[color:rgb(37_99_235_/_0.08)]"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    Open profile
+                                    <ExternalLink className="h-3 w-3" />
+                                  </Link>
+                                </div>
+                              ) : null}
                             </div>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void handleRemove(alert.id);
+                              }}
+                              disabled={busy}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] text-[var(--ats-text-muted)] transition hover:border-[var(--ats-border-strong)] hover:bg-[var(--ats-bg-panel-strong)] hover:text-[var(--ats-text)] disabled:opacity-50"
+                              title="Dismiss alert"
+                              aria-label="Dismiss alert"
+                            >
+                              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void handleRemove(a.id);
-                            }}
-                            disabled={rowId != null && dismissingIds.includes(rowId)}
-                            className="shrink-0 rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-500 dark:text-slate-200 dark:hover:bg-slate-700"
-                            title="Dismiss alert"
-                            aria-label="Dismiss alert"
-                          >
-                            {rowId != null && dismissingIds.includes(rowId) ? "..." : "×"}
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
-              </div>
-            )}
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                </div>
+              )}
+            </div>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
     </div>
   );
 }
-

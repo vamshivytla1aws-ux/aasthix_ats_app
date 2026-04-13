@@ -227,7 +227,6 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
   const showSearchPanel = open && value.trim().length >= 2;
   const showDropdown =
     open && (showRecentPanel || showSearchPanel || (value.trim().length >= 2 && loading));
-  const shellMuted = isPanel ? "text-slate-500" : "text-white/70";
   const shellChipBase = isPanel
     ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
     : "border-white/25 bg-white/10 text-white/90 hover:bg-white/20";
@@ -275,8 +274,7 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
                   : "border-white/30 bg-white/15 text-white placeholder:text-white/60 focus:border-white/50 focus:ring-white/30",
               ].join(" ")}
               aria-label="Global search"
-              aria-expanded={open}
-              aria-controls="global-search-results"
+              aria-haspopup="listbox"
             />
             {loading && (
               <Loader2
@@ -306,7 +304,24 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
               </button>
             )}
           </div>
-          
+          <div className="flex flex-wrap items-center gap-1.5">
+            {allowedScopes.map((allowedScope) => (
+              <button
+                key={allowedScope}
+                type="button"
+                onClick={() => setScope(allowedScope)}
+                className={[
+                  "rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] transition",
+                  scopeChipActive(allowedScope),
+                ].join(" ")}
+              >
+                {allowedScope === "all" ? "All" : allowedScope}
+              </button>
+            ))}
+            <span className={isPanel ? "ml-auto text-[11px] text-slate-500 dark:text-slate-400" : "ml-auto text-[11px] text-white/65"}>
+              Press / to focus
+            </span>
+          </div>
         </div>
       </form>
 
