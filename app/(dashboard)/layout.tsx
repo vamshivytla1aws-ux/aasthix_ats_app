@@ -2,6 +2,14 @@ import MegaMenuNavbar from "@/components/MegaMenuNavbar";
 import DashboardSWRProvider from "@/components/providers/DashboardSWRProvider";
 import EnterpriseWorkspaceStrip from "@/components/EnterpriseWorkspaceStrip";
 import { APP_CONFIG } from "@/lib/config";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (

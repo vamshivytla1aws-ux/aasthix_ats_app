@@ -38,6 +38,21 @@ Add these variables to the web service:
 
 Use `.env.railway.example` as the template.
 
+Recommended domain setup for Aasthix:
+
+- keep the marketing site on `https://www.aasthix.com`
+- add a Railway custom domain: `app.aasthix.com`
+- add a Hostinger DNS record: `CNAME app -> web-production-51c20.up.railway.app`
+- set `APP_PUBLIC_URL=https://app.aasthix.com`
+
+This keeps:
+
+- public careers pages on `https://app.aasthix.com/careers`
+- single-job public links on `https://app.aasthix.com/careers/job/<id>`
+- authenticated ATS pages on `https://app.aasthix.com/dashboard`
+
+The ATS middleware already keeps `/careers` public while redirecting private app routes to `/login` when no auth cookie is present.
+
 Important:
 
 - do not put `OPENAI_API_KEY` or any other secrets in Git

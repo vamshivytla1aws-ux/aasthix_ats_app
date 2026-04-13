@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import { getPublicCareersJob } from "@/lib/careersPublicJob";
+import { buildPublicUrl } from "@/lib/publicUrl";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function buildPublicUrl(request: Request, path: string) {
-  const configured = String(process.env.APP_PUBLIC_URL || "").trim().replace(/\/+$/, "");
-  if (configured) return `${configured}${path}`;
-  return new URL(path, request.url).toString();
-}
-
 export async function GET(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   const params = await context.params;
@@ -33,7 +28,7 @@ export async function GET(
   return NextResponse.json({
     configured: true,
     public_path: publicPath,
-    public_url: buildPublicUrl(request, publicPath),
+    public_url: buildPublicUrl(publicPath),
     job: publicJob,
   });
 }

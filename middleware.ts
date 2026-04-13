@@ -14,6 +14,12 @@ const PUBLIC_PATHS = new Set([
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const shouldNoIndex =
+    !pathname.startsWith("/api") &&
+    !pathname.startsWith("/_next") &&
+    !pathname.startsWith("/favicon") &&
+    !pathname.startsWith("/assets") &&
+    !pathname.startsWith("/careers");
 
   // Never redirect API routes: APIs must return JSON (e.g. 401) themselves.
   if (pathname.startsWith("/api")) {
@@ -30,7 +36,11 @@ export async function middleware(req: NextRequest) {
   }
 
   if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/careers")) {
-    return NextResponse.next();
+    const res = NextResponse.next();
+    if (shouldNoIndex) {
+      res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+    }
+    return res;
   }
 
   const token = req.cookies.get(tokenCookieName())?.value;
@@ -43,10 +53,13 @@ export async function middleware(req: NextRequest) {
 
   // Middleware runs on the Edge runtime. To avoid Edge-incompatible crypto deps,
   // we only check presence of the auth cookie here. APIs still enforce auth.
-  return NextResponse.next();
+  const res = NextResponse.next();
+  if (shouldNoIndex) {
+    res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  }
+  return res;
 }
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image).*)"],
 };
-

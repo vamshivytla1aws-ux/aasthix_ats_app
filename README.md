@@ -54,3 +54,5 @@ Notes:
 
 - keep secrets such as `OPENAI_API_KEY` in Railway Variables, not in Git
 - the public careers portal needs `CAREERS_PUBLISHER_USER_ID` set on the server to show jobs in `/careers`
+- recommended public ATS domain: `https://app.aasthix.com`
+- keep the marketing site on `https://www.aasthix.com` and point `app.aasthix.com` to Railway with a `CNAME`

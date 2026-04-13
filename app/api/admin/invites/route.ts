@@ -4,17 +4,12 @@ import { requireAdmin } from "@/lib/rbac";
 import { generateInviteToken, hashInviteToken } from "@/lib/inviteToken";
 import { writeAuditLog } from "@/lib/auditLog";
 import { INVITE_ROLES } from "@/lib/rbacConstants";
+import { buildPublicUrl } from "@/lib/publicUrl";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
-
-function publicBaseUrl() {
-  const u = process.env.APP_PUBLIC_URL?.trim();
-  if (u) return u.replace(/\/$/, "");
-  return "http://localhost:3000";
-}
 
 export async function GET() {
   try {
@@ -73,7 +68,7 @@ export async function POST(request: Request) {
       [emailNorm, tokenHash, r, expiresAt, auth.access.user_id]
     );
 
-    const inviteUrl = `${publicBaseUrl()}/invite/accept?token=${encodeURIComponent(raw)}`;
+    const inviteUrl = buildPublicUrl(`/invite/accept?token=${encodeURIComponent(raw)}`);
 
     await writeAuditLog({
       actorUserId: auth.access.user_id,
