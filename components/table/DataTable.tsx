@@ -22,6 +22,7 @@ type Candidate = {
   resume_url?: string | null;
   status?: "Active" | "Placed" | string | null;
   source?: string | null;
+  created_at?: string | null;
 };
 
 export type CandidateSearchScope = "all" | "email" | "phone" | "location" | "company" | "jobTitle";
@@ -51,6 +52,19 @@ type DataTableProps = {
 
 function normalize(text: string) {
   return text.trim().toLowerCase();
+}
+
+function formatCreatedDate(value: string | null | undefined) {
+  if (!value) return "—";
+  try {
+    return new Intl.DateTimeFormat("en-IN", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
 }
 
 export default function DataTable({
@@ -108,6 +122,7 @@ export default function DataTable({
   const [columns, setColumns] = useState({
     name: true,
     email: true,
+    createdDate: true,
     resume: true,
     location: true,
     company: true,
@@ -119,6 +134,7 @@ export default function DataTable({
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
     name: 200,
     email: 220,
+    createdDate: 140,
     resume: 88,
     location: 150,
     company: 190,
@@ -370,6 +386,7 @@ export default function DataTable({
     const headers: string[] = [];
     if (columns.name) headers.push("Name");
     if (columns.email) headers.push("Email");
+    if (columns.createdDate) headers.push("Created Date");
     if (columns.resume) headers.push("Resume");
     if (columns.location) headers.push("Location");
     if (columns.company) headers.push("Company");
@@ -380,6 +397,7 @@ export default function DataTable({
       const row: string[] = [];
       if (columns.name) row.push(c.full_name || "");
       if (columns.email) row.push(c.email || "");
+      if (columns.createdDate) row.push(formatCreatedDate(c.created_at));
       if (columns.resume) row.push(c.resume_url || "");
       if (columns.location) row.push(c.location || "");
       if (columns.company) row.push(c.applied_company_names || "");
@@ -482,6 +500,7 @@ export default function DataTable({
                 [
                   ["name", "Name"],
                   ["email", "Email"],
+                  ["createdDate", "Created Date"],
                   ["resume", "Resume"],
                   ["location", "Location"],
                   ["company", "Company"],
@@ -559,6 +578,16 @@ export default function DataTable({
                     width={columnWidths.email}
                     onResizeStart={onResizeStart}
                     resizeKey="email"
+                  />
+                ) : null}
+                {columns.createdDate ? (
+                  <TableHeader
+                    label="Created Date"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    width={columnWidths.createdDate}
+                    onResizeStart={onResizeStart}
+                    resizeKey="createdDate"
                   />
                 ) : null}
                 {columns.resume ? (
@@ -652,6 +681,11 @@ export default function DataTable({
                   {columns.email ? <td style={{ width: columnWidths.email }} className={[rowClass, "text-slate-700"].join(" ")}>
                     <span className="block max-w-[280px] truncate">{c.email}</span>
                   </td> : null}
+                  {columns.createdDate ? (
+                    <td style={{ width: columnWidths.createdDate }} className={[rowClass, "text-slate-700"].join(" ")}>
+                      <span className="block whitespace-nowrap">{formatCreatedDate(c.created_at)}</span>
+                    </td>
+                  ) : null}
                   {columns.resume ? (
                     <td style={{ width: columnWidths.resume }} className={rowClass} onClick={(e) => e.stopPropagation()}>
                       {c.resume_url ? (
@@ -759,4 +793,3 @@ export default function DataTable({
     </div>
   );
 }
-

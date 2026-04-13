@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Calendar, CheckCircle2, Clock, FileText, MapPin, Send, Sparkles, X } from "lucide-react";
 import Link from "next/link";
+import BrandLogo from "@/components/BrandLogo";
 
 type PublicJob = {
   id: number;
@@ -159,9 +160,10 @@ export default function CareersPortal() {
       <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/25">
-              <Sparkles className="h-6 w-6 text-white" />
-            </div>
+            <BrandLogo
+              size={44}
+              className="shrink-0 rounded-xl bg-slate-950/70 p-1 ring-1 ring-white/10"
+            />
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-300/90">AASTHIX</p>
               <p className="text-sm text-slate-400">Talent &amp; Delivery</p>

@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -22,6 +21,7 @@ import {
   isDashboardNavHrefActive,
   isNavItemVisible,
 } from "@/lib/dashboardNavConfig";
+import BrandLogo from "@/components/BrandLogo";
 
 const ADMIN_LINKS = [
   { label: "Access control", href: "/admin/permissions" },
@@ -96,9 +96,6 @@ export default function MegaMenuNavbar() {
     [role, permissions]
   );
 
-  const logoMark = APP_CONFIG.brandInitials || "AT";
-  const brandLogo = APP_CONFIG.brandLogoSrc?.trim();
-
   return (
     <header className="sticky top-0 z-50">
       {/* Top shell — dark gradient */}
@@ -108,22 +105,11 @@ export default function MegaMenuNavbar() {
             href="/dashboard"
             className="flex min-w-0 shrink-0 items-center gap-2.5 rounded-lg outline-none ring-offset-2 transition-opacity hover:opacity-95 focus-visible:ring-2 focus-visible:ring-white/50 sm:gap-3"
           >
-            {brandLogo ? (
-              <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-white/10 p-0.5 ring-1 ring-white/20">
-                <Image
-                  src={brandLogo}
-                  alt={`${APP_CONFIG.appName} logo`}
-                  width={36}
-                  height={36}
-                  className="h-8 w-8 object-contain object-center"
-                  priority
-                />
-              </div>
-            ) : (
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/15 text-[10px] font-extrabold tracking-wide text-white ring-1 ring-white/25">
-                {logoMark}
-              </div>
-            )}
+            <BrandLogo
+              size={36}
+              className="shrink-0 rounded-lg bg-white/5 p-0.5 ring-1 ring-white/20"
+              imageClassName="p-0.5"
+            />
             <div className="min-w-0">
               <div className={`truncate text-sm font-semibold tracking-tight sm:text-base ${UI.enterprise.onShell}`}>
                 {APP_CONFIG.appName}

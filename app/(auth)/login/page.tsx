@@ -6,6 +6,7 @@ import { APP_CONFIG } from "@/lib/config";
 import { UI } from "@/lib/ui";
 import Toast from "@/components/Toast";
 import { navigateAfterAuthSession } from "@/lib/postAuthRedirect";
+import BrandLogo from "@/components/BrandLogo";
 
 export default function LoginPage() {
   const [allowSignup, setAllowSignup] = useState(true);
@@ -56,7 +57,17 @@ export default function LoginPage() {
       {info && <Toast message={info} variant="success" onClose={() => setInfo(null)} autoHideMs={3500} />}
       {error && <Toast message={error} variant="error" onClose={() => setError(null)} autoHideMs={3500} />}
       <div className="w-full rounded-2xl border bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:scale-[1.01]">
-      <div className="space-y-1">
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <BrandLogo
+            size={52}
+            className="shrink-0 rounded-2xl bg-slate-950 p-1 ring-1 ring-slate-200"
+          />
+          <div className="min-w-0">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">AASTHIX TALENT</div>
+            <div className="text-sm text-slate-600">{APP_CONFIG.tagline}</div>
+          </div>
+        </div>
         <h1 className="text-2xl font-bold">Login</h1>
         <div className="text-sm text-slate-600">
           Sign in to {APP_CONFIG.appName}. {APP_CONFIG.tagline}
@@ -122,4 +133,3 @@ export default function LoginPage() {
     </>
   );
 }
-
