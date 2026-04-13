@@ -161,13 +161,49 @@ export async function POST(request: Request) {
 
     const result = await query(
       `
-      INSERT INTO applications (candidate_id, job_id, stage, status, updated_at, created_by_user_id, source, assigned_recruiter_user_id)
-      VALUES ($1, $2, COALESCE($3, 'Applied'), COALESCE($3, 'Applied'), NOW(), $4, $5, $6)
+      INSERT INTO applications (
+        candidate_id,
+        job_id,
+        stage,
+        status,
+        updated_at,
+        created_by_user_id,
+        source,
+        assigned_recruiter_user_id,
+        current_interview_round_id,
+        current_interview_round_order,
+        interview_round_status
+      )
+      VALUES (
+        $1,
+        $2,
+        COALESCE($3, 'Applied'),
+        COALESCE($3, 'Applied'),
+        NOW(),
+        $4,
+        $5,
+        $6,
+        NULL,
+        NULL,
+        CASE WHEN COALESCE($3, 'Applied') = 'Interview' THEN NULL ELSE 'not_started' END
+      )
       ON CONFLICT (candidate_id, job_id) DO UPDATE
         SET stage = COALESCE(EXCLUDED.stage, applications.stage),
             status = COALESCE(EXCLUDED.stage, applications.status),
             updated_at = NOW(),
-            assigned_recruiter_user_id = COALESCE(EXCLUDED.assigned_recruiter_user_id, applications.assigned_recruiter_user_id)
+            assigned_recruiter_user_id = COALESCE(EXCLUDED.assigned_recruiter_user_id, applications.assigned_recruiter_user_id),
+            current_interview_round_id = CASE
+              WHEN COALESCE(EXCLUDED.stage, applications.stage) = 'Interview' THEN applications.current_interview_round_id
+              ELSE NULL
+            END,
+            current_interview_round_order = CASE
+              WHEN COALESCE(EXCLUDED.stage, applications.stage) = 'Interview' THEN applications.current_interview_round_order
+              ELSE NULL
+            END,
+            interview_round_status = CASE
+              WHEN COALESCE(EXCLUDED.stage, applications.stage) = 'Interview' THEN applications.interview_round_status
+              ELSE 'not_started'
+            END
       RETURNING id, candidate_id, job_id, stage, updated_at
       `,
       [candidate_id, job_id, stage ?? null, user.user_id, appSource, ownerId]

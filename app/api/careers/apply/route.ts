@@ -302,8 +302,19 @@ export async function POST(request: Request) {
 
     const appIns = await client.query(
       `
-      INSERT INTO applications (candidate_id, job_id, stage, status, updated_at, created_by_user_id, source)
-      VALUES ($1, $2, 'Applied', 'Applied', NOW(), $3, $4)
+      INSERT INTO applications (
+        candidate_id,
+        job_id,
+        stage,
+        status,
+        updated_at,
+        created_by_user_id,
+        source,
+        current_interview_round_id,
+        current_interview_round_order,
+        interview_round_status
+      )
+      VALUES ($1, $2, 'Applied', 'Applied', NOW(), $3, $4, NULL, NULL, 'not_started')
       RETURNING id
       `,
       [candidateId, jobId, owningUserId, CAREERS_APPLICATION_SOURCE]

@@ -21,13 +21,16 @@ export default function JobInfo({
   const rowPad = density === "comfortable" ? "py-1" : "py-0.5";
   const labelClass = density === "ultra" ? "text-[10px]" : "text-xs";
 
-  const roundPrimary =
-    candidate.current_interview_round_label ||
-    `Round ${candidate.current_interview_round_order ?? 1}`;
+  const showInterviewRound =
+    candidate.stage === "Interview" &&
+    (candidate.current_interview_round_label != null || candidate.current_interview_round_order != null);
+  const roundPrimary = showInterviewRound
+    ? candidate.current_interview_round_label || `Round ${candidate.current_interview_round_order ?? 1}`
+    : "Not started";
   const total = candidate.interview_round_total;
   const order = candidate.current_interview_round_order ?? 1;
   const completed =
-    typeof total === "number" && total > 0 ? Math.max(0, order - 1) : null;
+    showInterviewRound && typeof total === "number" && total > 0 ? Math.max(0, order - 1) : null;
 
   return (
     <div className={["border-b border-gray-200", rootPad].join(" ")}>
@@ -45,7 +48,7 @@ export default function JobInfo({
           <div className="flex items-start justify-between gap-2">
             <span className={[labelClass, "shrink-0 text-gray-500"].join(" ")}>Interview Round</span>
             <div className="min-w-0 text-right font-medium text-gray-800">
-              {candidate.stage === "Interview" ? (
+              {showInterviewRound ? (
                 <>
                   <span className="text-indigo-700">
                     {roundPrimary}

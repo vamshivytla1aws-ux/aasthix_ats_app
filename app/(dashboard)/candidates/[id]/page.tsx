@@ -215,6 +215,16 @@ function CandidateProfilePageContent() {
 
   const c = data.candidate;
   const stageLabel = c.stage || "Applied";
+  const stageProgressWidth =
+    stageLabel === "Selected"
+      ? "100%"
+      : stageLabel === "Rejected" || stageLabel === "Screening Failed"
+        ? "85%"
+        : stageLabel === "Interview"
+          ? "60%"
+          : stageLabel === "Screening"
+            ? "40%"
+            : "20%";
 
   const detailsPanel = (
     <div className="space-y-0">
@@ -492,13 +502,13 @@ function CandidateProfilePageContent() {
           <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">{c.job_title || "Role not set"}</p>
           <div className="mt-3">
             <div className="mb-1 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              <span>Progress</span>
+              <span>Pipeline stage</span>
               <span>{stageLabel}</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-500 dark:to-indigo-500"
-                style={{ width: c.stage?.toLowerCase().includes("offer") ? "90%" : c.stage?.toLowerCase().includes("interview") ? "60%" : "25%" }}
+                style={{ width: stageProgressWidth }}
               />
             </div>
           </div>

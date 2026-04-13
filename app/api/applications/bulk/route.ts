@@ -40,11 +40,27 @@ export async function POST(request: Request) {
 
     const result = await query(
       `
-      INSERT INTO applications (candidate_id, job_id, stage, status, updated_at, created_by_user_id, source)
-      SELECT u.cid, $1, 'Applied', 'Applied', NOW(), $2, 'bulk'
+      INSERT INTO applications (
+        candidate_id,
+        job_id,
+        stage,
+        status,
+        updated_at,
+        created_by_user_id,
+        source,
+        current_interview_round_id,
+        current_interview_round_order,
+        interview_round_status
+      )
+      SELECT u.cid, $1, 'Applied', 'Applied', NOW(), $2, 'bulk', NULL, NULL, 'not_started'
       FROM unnest($3::bigint[]) AS u(cid)
       ON CONFLICT (candidate_id, job_id) DO UPDATE SET
-        updated_at = NOW()
+        stage = 'Applied',
+        status = 'Applied',
+        updated_at = NOW(),
+        current_interview_round_id = NULL,
+        current_interview_round_order = NULL,
+        interview_round_status = 'not_started'
       RETURNING id, candidate_id
       `,
       [jid, user.user_id, ids]

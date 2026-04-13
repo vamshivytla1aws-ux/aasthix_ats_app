@@ -211,6 +211,12 @@ export async function GET(
     if (candidate.latest_application_id != null) {
       candidate.latest_application_id = Number(candidate.latest_application_id);
     }
+    if (candidate.stage !== "Interview") {
+      candidate.current_interview_round_order = null;
+      candidate.current_interview_round_label = null;
+      candidate.interview_round_total = 0;
+      candidate.interview_round_status = null;
+    }
 
     const timelineRes = await query(
       `
@@ -457,4 +463,3 @@ export async function GET(
     return NextResponse.json({ error: "Failed to fetch candidate profile" }, { status: 500 });
   }
 }
-

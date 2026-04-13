@@ -84,12 +84,25 @@ async function upsertCandidate(
 async function ensureAppliedApplication(userId: number, candidateId: number, jobId: number) {
   await query(
     `
-    INSERT INTO applications (candidate_id, job_id, stage, status, updated_at, created_by_user_id)
-    VALUES ($1, $2, 'Applied', 'Applied', NOW(), $3)
+    INSERT INTO applications (
+      candidate_id,
+      job_id,
+      stage,
+      status,
+      updated_at,
+      created_by_user_id,
+      current_interview_round_id,
+      current_interview_round_order,
+      interview_round_status
+    )
+    VALUES ($1, $2, 'Applied', 'Applied', NOW(), $3, NULL, NULL, 'not_started')
     ON CONFLICT (candidate_id, job_id) DO UPDATE
       SET stage = 'Applied',
           status = 'Applied',
-          updated_at = NOW()
+          updated_at = NOW(),
+          current_interview_round_id = NULL,
+          current_interview_round_order = NULL,
+          interview_round_status = 'not_started'
     `,
     [candidateId, jobId, userId]
   );

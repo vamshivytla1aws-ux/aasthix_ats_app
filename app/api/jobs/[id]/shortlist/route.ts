@@ -101,12 +101,35 @@ export async function POST(request: Request, { params }: { params: { id: string 
       if (own.rowCount === 0) continue;
 
       await query(
-        `INSERT INTO applications (candidate_id, job_id, stage, status, updated_at, created_by_user_id)
-         VALUES ($1, $2, $3, $3, NOW(), $4)
+        `INSERT INTO applications (
+           candidate_id,
+           job_id,
+           stage,
+           status,
+           updated_at,
+           created_by_user_id,
+           current_interview_round_id,
+           current_interview_round_order,
+           interview_round_status
+         )
+         VALUES (
+           $1,
+           $2,
+           $3,
+           $3,
+           NOW(),
+           $4,
+           NULL,
+           NULL,
+           CASE WHEN $3 = 'Interview' THEN NULL ELSE 'not_started' END
+         )
          ON CONFLICT (candidate_id, job_id) DO UPDATE SET
            stage = EXCLUDED.stage,
            status = EXCLUDED.stage,
-           updated_at = NOW()`,
+           updated_at = NOW(),
+           current_interview_round_id = CASE WHEN EXCLUDED.stage = 'Interview' THEN applications.current_interview_round_id ELSE NULL END,
+           current_interview_round_order = CASE WHEN EXCLUDED.stage = 'Interview' THEN applications.current_interview_round_order ELSE NULL END,
+           interview_round_status = CASE WHEN EXCLUDED.stage = 'Interview' THEN applications.interview_round_status ELSE 'not_started' END`,
         [cid, jobId, stage, user.user_id]
       );
       created += 1;
