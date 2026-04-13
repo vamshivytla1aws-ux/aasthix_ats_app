@@ -34,7 +34,7 @@ export async function logScreeningAudit(input: {
       ]
     );
   } catch (e: any) {
-    if (e?.code === "42P01") return;
+    if (e?.code === "42P01" || e?.code === "42703") return;
     console.error("[screening-audit]", e);
   }
 }
