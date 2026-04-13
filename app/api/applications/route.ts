@@ -52,6 +52,173 @@ async function safeFetchApplicationCardRow(applicationId: number, userId: number
   }
 }
 
+function isSchemaCompatibilityError(error: unknown) {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "42703" || code === "42P01";
+}
+
+async function loadPreviousApplicationState(
+  applicationId: number,
+  userId: number,
+  accessWhere2: string
+) {
+  try {
+    const prev = await query(
+      `
+      SELECT
+        a.stage,
+        a.interview_scheduled,
+        a.interview_datetime,
+        a.job_id AS prev_job_id,
+        a.current_interview_round_id AS prev_round_id,
+        a.current_interview_round_order AS prev_round_order,
+        jir.round_label AS prev_round_label
+      FROM applications a
+      LEFT JOIN job_interview_rounds jir ON jir.id = a.current_interview_round_id
+      WHERE a.id = $1 AND (${accessWhere2})
+      `,
+      [applicationId, userId]
+    );
+    return prev;
+  } catch (error) {
+    if (!isSchemaCompatibilityError(error)) throw error;
+    return await query(
+      `
+      SELECT
+        COALESCE(a.stage, a.status, 'Applied') AS stage,
+        COALESCE(a.interview_scheduled, FALSE) AS interview_scheduled,
+        a.interview_datetime,
+        a.job_id AS prev_job_id,
+        NULL::bigint AS prev_round_id,
+        NULL::int AS prev_round_order,
+        NULL::text AS prev_round_label
+      FROM applications a
+      WHERE a.id = $1 AND (${accessWhere2})
+      `,
+      [applicationId, userId]
+    );
+  }
+}
+
+async function updateApplicationStageCore(input: {
+  id: number;
+  stage: Stage | undefined;
+  interview_scheduled: boolean | undefined;
+  interview_datetime: string | undefined;
+  interview_reschedule_reason: string | null | undefined;
+  interview_cancel_reason: string | null | undefined;
+  interview_no_show: boolean | undefined;
+  reminder_sent: boolean | undefined;
+  userId: number;
+  accessWhere9: string;
+}) {
+  const {
+    id,
+    stage,
+    interview_scheduled,
+    interview_datetime,
+    interview_reschedule_reason,
+    interview_cancel_reason,
+    interview_no_show,
+    reminder_sent,
+    userId,
+    accessWhere9,
+  } = input;
+
+  try {
+    return await query(
+      `
+      UPDATE applications
+      SET stage = COALESCE($2::text, applications.stage),
+          status = COALESCE($2::text, applications.status),
+          interview_scheduled = CASE WHEN $3::boolean IS NULL THEN interview_scheduled ELSE $3::boolean END,
+          interview_datetime = CASE WHEN $4::timestamptz IS NULL THEN interview_datetime ELSE $4::timestamptz END,
+          interview_reschedule_reason = CASE WHEN $5::text IS NULL THEN interview_reschedule_reason ELSE $5::text END,
+          interview_cancel_reason = CASE WHEN $6::text IS NULL THEN interview_cancel_reason ELSE $6::text END,
+          interview_no_show = CASE WHEN $7::boolean IS NULL THEN interview_no_show ELSE $7::boolean END,
+          reminder_sent = CASE WHEN $8::boolean IS NULL THEN reminder_sent ELSE $8::boolean END,
+          current_interview_round_id = CASE
+            WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN NULL
+            ELSE applications.current_interview_round_id
+          END,
+          current_interview_round_order = CASE
+            WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN NULL
+            ELSE applications.current_interview_round_order
+          END,
+          interview_round_status = CASE
+            WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN 'not_started'
+            ELSE applications.interview_round_status
+          END,
+          rejected_in_round_order = CASE
+            WHEN COALESCE($2::text, applications.stage) = 'Rejected' THEN COALESCE(applications.current_interview_round_order, applications.rejected_in_round_order)
+            ELSE applications.rejected_in_round_order
+          END,
+          selected_after_rounds = CASE
+            WHEN COALESCE($2::text, applications.stage) = 'Selected' THEN COALESCE(applications.current_interview_round_order, applications.selected_after_rounds)
+            ELSE applications.selected_after_rounds
+          END,
+          final_outcome = CASE
+            WHEN COALESCE($2::text, applications.stage) = 'Selected' THEN 'selected'
+            WHEN COALESCE($2::text, applications.stage) = 'Rejected' THEN 'rejected'
+            ELSE applications.final_outcome
+          END,
+          updated_at = NOW()
+      WHERE id = $1 AND (${accessWhere9})
+      RETURNING id, candidate_id, job_id, stage, updated_at, interview_scheduled, interview_datetime, interview_reschedule_reason, interview_cancel_reason, interview_no_show, reminder_sent, current_interview_round_id, current_interview_round_order, interview_round_status, rejected_in_round_order, selected_after_rounds, final_outcome
+      `,
+      [
+        id,
+        stage ?? null,
+        typeof interview_scheduled === "boolean" ? interview_scheduled : null,
+        typeof interview_datetime === "string" ? interview_datetime : null,
+        typeof interview_reschedule_reason === "string" ? interview_reschedule_reason : null,
+        typeof interview_cancel_reason === "string" ? interview_cancel_reason : null,
+        typeof interview_no_show === "boolean" ? interview_no_show : null,
+        typeof reminder_sent === "boolean" ? reminder_sent : null,
+        userId,
+      ]
+    );
+  } catch (error) {
+    if (!isSchemaCompatibilityError(error)) throw error;
+    return await query(
+      `
+      UPDATE applications
+      SET stage = COALESCE($2::text, COALESCE(applications.stage, applications.status, 'Applied')),
+          status = COALESCE($2::text, COALESCE(applications.status, applications.stage, 'Applied')),
+          interview_scheduled = CASE WHEN $3::boolean IS NULL THEN COALESCE(interview_scheduled, FALSE) ELSE $3::boolean END,
+          interview_datetime = CASE WHEN $4::timestamptz IS NULL THEN interview_datetime ELSE $4::timestamptz END,
+          updated_at = NOW()
+      WHERE id = $1 AND (${accessWhere9})
+      RETURNING
+        id,
+        candidate_id,
+        job_id,
+        COALESCE(stage, status, 'Applied') AS stage,
+        updated_at,
+        COALESCE(interview_scheduled, FALSE) AS interview_scheduled,
+        interview_datetime,
+        NULL::text AS interview_reschedule_reason,
+        NULL::text AS interview_cancel_reason,
+        FALSE AS interview_no_show,
+        FALSE AS reminder_sent,
+        NULL::bigint AS current_interview_round_id,
+        NULL::int AS current_interview_round_order,
+        'not_started'::text AS interview_round_status,
+        NULL::int AS rejected_in_round_order,
+        NULL::int AS selected_after_rounds,
+        NULL::text AS final_outcome
+      `,
+      [
+        id,
+        stage ?? null,
+        typeof interview_scheduled === "boolean" ? interview_scheduled : null,
+        typeof interview_datetime === "string" ? interview_datetime : null,
+        userId,
+      ]
+    );
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await requirePermission("pipeline.view");
@@ -334,22 +501,7 @@ export async function PATCH(request: Request) {
     }
 
     // Used to ensure scheduled email is only sent once on the transition to Interview+interview_scheduled=true.
-    const prev = await query(
-      `
-      SELECT
-        a.stage,
-        a.interview_scheduled,
-        a.interview_datetime,
-        a.job_id AS prev_job_id,
-        a.current_interview_round_id AS prev_round_id,
-        a.current_interview_round_order AS prev_round_order,
-        jir.round_label AS prev_round_label
-      FROM applications a
-      LEFT JOIN job_interview_rounds jir ON jir.id = a.current_interview_round_id
-      WHERE a.id = $1 AND (${accessWhere2})
-      `,
-      [id, user.user_id]
-    );
+    const prev = await loadPreviousApplicationState(id, user.user_id, accessWhere2);
     if (prev.rowCount === 0) {
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
     }
@@ -383,58 +535,18 @@ export async function PATCH(request: Request) {
       validatedRejectionReasonId = rid;
     }
 
-    const result = await query(
-      `
-      UPDATE applications
-      SET stage = COALESCE($2::text, applications.stage),
-          status = COALESCE($2::text, applications.status),
-          interview_scheduled = CASE WHEN $3::boolean IS NULL THEN interview_scheduled ELSE $3::boolean END,
-          interview_datetime = CASE WHEN $4::timestamptz IS NULL THEN interview_datetime ELSE $4::timestamptz END,
-          interview_reschedule_reason = CASE WHEN $5::text IS NULL THEN interview_reschedule_reason ELSE $5::text END,
-          interview_cancel_reason = CASE WHEN $6::text IS NULL THEN interview_cancel_reason ELSE $6::text END,
-          interview_no_show = CASE WHEN $7::boolean IS NULL THEN interview_no_show ELSE $7::boolean END,
-          reminder_sent = CASE WHEN $8::boolean IS NULL THEN reminder_sent ELSE $8::boolean END,
-          current_interview_round_id = CASE
-            WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN NULL
-            ELSE applications.current_interview_round_id
-          END,
-          current_interview_round_order = CASE
-            WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN NULL
-            ELSE applications.current_interview_round_order
-          END,
-          interview_round_status = CASE
-            WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN 'not_started'
-            ELSE applications.interview_round_status
-          END,
-          rejected_in_round_order = CASE
-            WHEN COALESCE($2::text, applications.stage) = 'Rejected' THEN COALESCE(applications.current_interview_round_order, applications.rejected_in_round_order)
-            ELSE applications.rejected_in_round_order
-          END,
-          selected_after_rounds = CASE
-            WHEN COALESCE($2::text, applications.stage) = 'Selected' THEN COALESCE(applications.current_interview_round_order, applications.selected_after_rounds)
-            ELSE applications.selected_after_rounds
-          END,
-          final_outcome = CASE
-            WHEN COALESCE($2::text, applications.stage) = 'Selected' THEN 'selected'
-            WHEN COALESCE($2::text, applications.stage) = 'Rejected' THEN 'rejected'
-            ELSE applications.final_outcome
-          END,
-          updated_at = NOW()
-      WHERE id = $1 AND (${accessWhere9})
-      RETURNING id, candidate_id, job_id, stage, updated_at, interview_scheduled, interview_datetime, interview_reschedule_reason, interview_cancel_reason, interview_no_show, reminder_sent, current_interview_round_id, current_interview_round_order, interview_round_status, rejected_in_round_order, selected_after_rounds, final_outcome
-      `,
-      [
-        id,
-        stage ?? null,
-        typeof interview_scheduled === "boolean" ? interview_scheduled : null,
-        typeof interview_datetime === "string" ? interview_datetime : null,
-        typeof interview_reschedule_reason === "string" ? interview_reschedule_reason : null,
-        typeof interview_cancel_reason === "string" ? interview_cancel_reason : null,
-        typeof interview_no_show === "boolean" ? interview_no_show : null,
-        typeof reminder_sent === "boolean" ? reminder_sent : null,
-        user.user_id,
-      ]
-    );
+    const result = await updateApplicationStageCore({
+      id,
+      stage,
+      interview_scheduled,
+      interview_datetime,
+      interview_reschedule_reason,
+      interview_cancel_reason,
+      interview_no_show,
+      reminder_sent,
+      userId: user.user_id,
+      accessWhere9,
+    });
 
     if (result.rowCount === 0) {
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
@@ -463,8 +575,8 @@ export async function PATCH(request: Request) {
     const effectiveRoundAction = interview_decision === "next_round" ? "next" : round_action;
 
     if (updated.stage === "Interview" && !updated.current_interview_round_id) {
-      // If the job has no configured interview rounds yet, create a safe default flow.
-      // This prevents UI from showing "Round not set" and enables enterprise progression immediately.
+      // If enterprise interview-round tables are available, bootstrap the first round.
+      // Older Railway DBs may not have these tables/columns yet, so don't block stage moves.
       try {
         const roundCountRes = await query(
           `
@@ -488,34 +600,34 @@ export async function PATCH(request: Request) {
             [updated.job_id, user.user_id]
           );
         }
-      } catch (e: any) {
-        if (e?.code !== "42P01") throw e;
-      }
 
-      const firstRound = await query(
-        `
-        SELECT id, round_order
-        FROM job_interview_rounds
-        WHERE job_id = $1
-        ORDER BY round_order ASC, id ASC
-        LIMIT 1
-        `,
-        [updated.job_id]
-      );
-      if (firstRound.rowCount > 0) {
-        const setFirst = await query(
+        const firstRound = await query(
           `
-          UPDATE applications
-          SET current_interview_round_id = $2,
-              current_interview_round_order = $3,
-              interview_round_status = 'in_progress',
-              updated_at = NOW()
-          WHERE id = $1 AND (${accessWhere4})
-          RETURNING *
+          SELECT id, round_order
+          FROM job_interview_rounds
+          WHERE job_id = $1
+          ORDER BY round_order ASC, id ASC
+          LIMIT 1
           `,
-          [updated.id, firstRound.rows[0].id, firstRound.rows[0].round_order, user.user_id]
+          [updated.job_id]
         );
-        if (setFirst.rowCount > 0) Object.assign(updated, setFirst.rows[0]);
+        if (firstRound.rowCount > 0) {
+          const setFirst = await query(
+            `
+            UPDATE applications
+            SET current_interview_round_id = $2,
+                current_interview_round_order = $3,
+                interview_round_status = 'in_progress',
+                updated_at = NOW()
+            WHERE id = $1 AND (${accessWhere4})
+            RETURNING *
+            `,
+            [updated.id, firstRound.rows[0].id, firstRound.rows[0].round_order, user.user_id]
+          );
+          if (setFirst.rowCount > 0) Object.assign(updated, setFirst.rows[0]);
+        }
+      } catch (e) {
+        if (!isSchemaCompatibilityError(e)) throw e;
       }
     }
 
@@ -596,8 +708,8 @@ export async function PATCH(request: Request) {
           [updated.job_id, user.user_id, updated.id]
         );
         if (extend.rowCount && extend.rowCount > 0) Object.assign(updated, extend.rows[0]);
-      } catch (e: any) {
-        if (e?.code !== "42P01") throw e;
+      } catch (e) {
+        if (!isSchemaCompatibilityError(e)) throw e;
       }
     }
 
@@ -643,8 +755,8 @@ export async function PATCH(request: Request) {
               user.user_id,
             ]
           );
-        } catch (e: any) {
-          if (e?.code !== "42P01") throw e;
+        } catch (e) {
+          if (!isSchemaCompatibilityError(e)) throw e;
         }
       }
     }
@@ -663,46 +775,78 @@ export async function PATCH(request: Request) {
           `,
           [user.user_id, updated.candidate_id, updated.id, message]
         );
-      } catch (e: any) {
-        // If enterprise tables aren't present yet, don't block pipeline actions.
-        if (e?.code !== "42P01") throw e;
+      } catch (e) {
+        // If enterprise tables/columns aren't present yet, don't block pipeline actions.
+        if (!isSchemaCompatibilityError(e)) throw e;
       }
     }
 
     if (interview_decision === "final_selected") {
-      const done = await query(
-        `
-        UPDATE applications
-        SET stage = 'Selected',
-            status = 'Selected',
-            selected_after_rounds = COALESCE(current_interview_round_order, selected_after_rounds),
-            final_outcome = 'selected',
-            interview_round_status = 'completed',
-            updated_at = NOW()
-        WHERE id = $1 AND (${accessWhere2})
-        RETURNING *
-        `,
-        [updated.id, user.user_id]
-      );
-      if (done.rowCount > 0) Object.assign(updated, done.rows[0]);
+      try {
+        const done = await query(
+          `
+          UPDATE applications
+          SET stage = 'Selected',
+              status = 'Selected',
+              selected_after_rounds = COALESCE(current_interview_round_order, selected_after_rounds),
+              final_outcome = 'selected',
+              interview_round_status = 'completed',
+              updated_at = NOW()
+          WHERE id = $1 AND (${accessWhere2})
+          RETURNING *
+          `,
+          [updated.id, user.user_id]
+        );
+        if (done.rowCount > 0) Object.assign(updated, done.rows[0]);
+      } catch (e) {
+        if (!isSchemaCompatibilityError(e)) throw e;
+        const done = await query(
+          `
+          UPDATE applications
+          SET stage = 'Selected',
+              status = 'Selected',
+              updated_at = NOW()
+          WHERE id = $1 AND (${accessWhere2})
+          RETURNING *
+          `,
+          [updated.id, user.user_id]
+        );
+        if (done.rowCount > 0) Object.assign(updated, done.rows[0]);
+      }
     }
 
     if (interview_decision === "rejected") {
-      const done = await query(
-        `
-        UPDATE applications
-        SET stage = 'Rejected',
-            status = 'Rejected',
-            rejected_in_round_order = COALESCE(current_interview_round_order, rejected_in_round_order),
-            final_outcome = 'rejected',
-            interview_round_status = 'rejected',
-            updated_at = NOW()
-        WHERE id = $1 AND (${accessWhere2})
-        RETURNING *
-        `,
-        [updated.id, user.user_id]
-      );
-      if (done.rowCount > 0) Object.assign(updated, done.rows[0]);
+      try {
+        const done = await query(
+          `
+          UPDATE applications
+          SET stage = 'Rejected',
+              status = 'Rejected',
+              rejected_in_round_order = COALESCE(current_interview_round_order, rejected_in_round_order),
+              final_outcome = 'rejected',
+              interview_round_status = 'rejected',
+              updated_at = NOW()
+          WHERE id = $1 AND (${accessWhere2})
+          RETURNING *
+          `,
+          [updated.id, user.user_id]
+        );
+        if (done.rowCount > 0) Object.assign(updated, done.rows[0]);
+      } catch (e) {
+        if (!isSchemaCompatibilityError(e)) throw e;
+        const done = await query(
+          `
+          UPDATE applications
+          SET stage = 'Rejected',
+              status = 'Rejected',
+              updated_at = NOW()
+          WHERE id = $1 AND (${accessWhere2})
+          RETURNING *
+          `,
+          [updated.id, user.user_id]
+        );
+        if (done.rowCount > 0) Object.assign(updated, done.rows[0]);
+      }
     }
 
     const prevMs = prevInterviewDatetime ? new Date(prevInterviewDatetime).getTime() : null;
@@ -998,8 +1142,8 @@ export async function PATCH(request: Request) {
             interview_decision: interview_decision ?? null,
           },
         });
-      } catch (e: any) {
-        if (e?.code !== "42P01") throw e;
+      } catch (e) {
+        if (!isSchemaCompatibilityError(e)) throw e;
       }
     }
 
