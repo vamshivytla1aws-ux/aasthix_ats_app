@@ -125,10 +125,9 @@ export async function createAndSendScreeningTest(input: {
       JOIN candidates c ON c.id = a.candidate_id
       JOIN jobs j ON j.id = a.job_id
       WHERE a.id = $1
-        AND a.created_by_user_id = $2
       LIMIT 1
       `,
-      [input.applicationId, input.userId]
+      [input.applicationId]
     );
 
     if (appInfoRes.rowCount === 0) {

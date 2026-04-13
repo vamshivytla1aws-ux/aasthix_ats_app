@@ -43,6 +43,15 @@ function escapeHtml(unsafe: string) {
     .replaceAll("'", "&#039;");
 }
 
+async function safeFetchApplicationCardRow(applicationId: number, userId: number) {
+  try {
+    return await fetchApplicationCardRow(applicationId, userId);
+  } catch (error) {
+    console.error("Failed to load application card row", { applicationId, userId, error });
+    return null;
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await requirePermission("pipeline.view");
@@ -317,7 +326,7 @@ export async function PATCH(request: Request) {
       if (upd.rowCount === 0) {
         return NextResponse.json({ error: "Application not found" }, { status: 404 });
       }
-      const card = await fetchApplicationCardRow(Number(id), user.user_id);
+      const card = await safeFetchApplicationCardRow(Number(id), user.user_id);
       if (!card) {
         return NextResponse.json({ error: "Application not found" }, { status: 404 });
       }
@@ -744,67 +753,74 @@ export async function PATCH(request: Request) {
 
     // Expire interview alerts when interview is no longer active/scheduled.
     if (updated.stage !== "Interview" || updated.interview_scheduled !== true) {
-      await query(
-        `
-        UPDATE alerts
-        SET status = 'expired'
-        WHERE user_id = $1
-          AND application_id = $2
-          AND status = 'unread'
-        `,
-        [user.user_id, updated.id]
-      );
+      try {
+        await query(
+          `
+          UPDATE alerts
+          SET status = 'expired'
+          WHERE user_id = $1
+            AND application_id = $2
+            AND status = 'unread'
+          `,
+          [user.user_id, updated.id]
+        );
+      } catch (e: any) {
+        if (e?.code !== "42P01" && e?.code !== "42703") {
+          console.error("Failed to expire interview alerts", e);
+        }
+      }
     }
 
     if (shouldSendScheduledEmail) {
-      console.log("[interview-schedule-email] sending scheduled email", {
-        applicationId: updated.id,
-        candidateId: updated.candidate_id,
-        interviewDatetime: updated.interview_datetime,
-        prevInterviewScheduled,
-      });
-      const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
-      if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
-        console.error("Missing SMTP env vars; cannot send scheduled interview email.");
-      } else {
-        const transporter = nodemailer.createTransport({
-          host: SMTP_HOST,
-          port: Number(SMTP_PORT),
-          secure: Number(SMTP_PORT) === 465,
-          auth: {
-            user: SMTP_USER,
-            pass: SMTP_PASS,
-          },
+      try {
+        console.log("[interview-schedule-email] sending scheduled email", {
+          applicationId: updated.id,
+          candidateId: updated.candidate_id,
+          interviewDatetime: updated.interview_datetime,
+          prevInterviewScheduled,
         });
+        const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
+        if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+          console.error("Missing SMTP env vars; cannot send scheduled interview email.");
+        } else {
+          const transporter = nodemailer.createTransport({
+            host: SMTP_HOST,
+            port: Number(SMTP_PORT),
+            secure: Number(SMTP_PORT) === 465,
+            auth: {
+              user: SMTP_USER,
+              pass: SMTP_PASS,
+            },
+          });
 
-        const candidateInfo = await query(
-          `
-          SELECT
-            c.email AS candidate_email,
-            c.full_name AS candidate_full_name,
-            j.title AS job_title,
-            j.description AS job_description
-          FROM applications a
-          JOIN candidates c ON c.id = a.candidate_id
-          JOIN jobs j ON j.id = a.job_id
-          WHERE a.id = $1 AND (${applicationAccessPredicate("a", "$2", hasTeam)})
-          `,
-          [updated.id, user.user_id]
-        );
+          const candidateInfo = await query(
+            `
+            SELECT
+              c.email AS candidate_email,
+              c.full_name AS candidate_full_name,
+              j.title AS job_title,
+              j.description AS job_description
+            FROM applications a
+            JOIN candidates c ON c.id = a.candidate_id
+            JOIN jobs j ON j.id = a.job_id
+            WHERE a.id = $1 AND (${applicationAccessPredicate("a", "$2", hasTeam)})
+            `,
+            [updated.id, user.user_id]
+          );
 
-        const candidateEmail = candidateInfo.rows?.[0]?.candidate_email as string | null | undefined;
-        const candidateName = candidateInfo.rows?.[0]?.candidate_full_name as string | null | undefined;
-        const jobTitle = candidateInfo.rows?.[0]?.job_title as string | null | undefined;
-        const jobDescription = candidateInfo.rows?.[0]?.job_description as string | null | undefined;
+          const candidateEmail = candidateInfo.rows?.[0]?.candidate_email as string | null | undefined;
+          const candidateName = candidateInfo.rows?.[0]?.candidate_full_name as string | null | undefined;
+          const jobTitle = candidateInfo.rows?.[0]?.job_title as string | null | undefined;
+          const jobDescription = candidateInfo.rows?.[0]?.job_description as string | null | undefined;
 
-        if (candidateEmail) {
-          const subject = "Interview Scheduled - Aasthix Talent";
-          const when = formatEmailDateTime(updated.interview_datetime);
-          const roleText = jobTitle || "-";
-          const whenText = when || "-";
-          const descriptionText = jobDescription ? jobDescription : "Not provided";
+          if (candidateEmail) {
+            const subject = "Interview Scheduled - Aasthix Talent";
+            const when = formatEmailDateTime(updated.interview_datetime);
+            const roleText = jobTitle || "-";
+            const whenText = when || "-";
+            const descriptionText = jobDescription ? jobDescription : "Not provided";
 
-          const html = `
+            const html = `
 <!doctype html>
 <html>
   <body style="margin:0;padding:0;background:#F8FAFC;">
@@ -874,8 +890,6 @@ export async function PATCH(request: Request) {
   </body>
 </html>
 `;
-
-          try {
             await transporter.sendMail({
               from: `"Aasthix Talent" <${SMTP_USER}>`,
               to: candidateEmail,
@@ -886,12 +900,12 @@ export async function PATCH(request: Request) {
               applicationId: updated.id,
               to: candidateEmail,
             });
-          } catch (err) {
-            console.error("Failed to send scheduled interview email:", err);
+          } else {
+            console.error(`No candidate email found for application ${updated.id}.`);
           }
-        } else {
-          console.error(`No candidate email found for application ${updated.id}.`);
         }
+      } catch (err) {
+        console.error("Failed to prepare or send scheduled interview email:", err);
       }
     }
 
@@ -902,50 +916,54 @@ export async function PATCH(request: Request) {
         interview_decision === "final_selected" ||
         interview_decision === "rejected");
     if (shouldSendProgressEmail) {
-      const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-      if (SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS) {
-        const transporter = nodemailer.createTransport({
-          host: SMTP_HOST,
-          port: Number(SMTP_PORT),
-          secure: Number(SMTP_PORT) === 465,
-          auth: { user: SMTP_USER, pass: SMTP_PASS },
-        });
-        const candidateInfo = await query(
-          `
-          SELECT c.email AS candidate_email, c.full_name AS candidate_full_name, j.title AS job_title
-          FROM applications a
-          JOIN candidates c ON c.id = a.candidate_id
-          JOIN jobs j ON j.id = a.job_id
-          WHERE a.id = $1 AND (${applicationAccessPredicate("a", "$2", hasTeam)})
-          LIMIT 1
-          `,
-          [updated.id, user.user_id]
-        );
-        const candidateEmail = candidateInfo.rows?.[0]?.candidate_email as string | null | undefined;
-        if (candidateEmail) {
-          const subject =
-            interview_decision === "final_selected"
-              ? "Final Confirmation - Selected"
-              : interview_decision === "rejected"
-                ? "Interview Update"
-                : "Interview Round Update";
-          const message =
-            interview_decision === "final_selected"
-              ? "This is final confirmation that you are selected. We will share the next steps shortly."
-              : interview_decision === "rejected"
-                ? `Your profile was not selected in ${
-                    updated.rejected_in_round_order ? `Round ${updated.rejected_in_round_order}` : "the current round"
-                  }.`
-                : `Congratulations! You are confirmed for ${
-                    updated.current_interview_round_order ? `Round ${updated.current_interview_round_order}` : "the next round"
-                  }. We will share the info shortly.`;
-          await transporter.sendMail({
-            from: `"Aasthix Talent" <${SMTP_USER}>`,
-            to: candidateEmail,
-            subject,
-            text: `Hi ${candidateInfo.rows?.[0]?.candidate_full_name || "Candidate"},\n\n${message}`,
+      try {
+        const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+        if (SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS) {
+          const transporter = nodemailer.createTransport({
+            host: SMTP_HOST,
+            port: Number(SMTP_PORT),
+            secure: Number(SMTP_PORT) === 465,
+            auth: { user: SMTP_USER, pass: SMTP_PASS },
           });
+          const candidateInfo = await query(
+            `
+            SELECT c.email AS candidate_email, c.full_name AS candidate_full_name, j.title AS job_title
+            FROM applications a
+            JOIN candidates c ON c.id = a.candidate_id
+            JOIN jobs j ON j.id = a.job_id
+            WHERE a.id = $1 AND (${applicationAccessPredicate("a", "$2", hasTeam)})
+            LIMIT 1
+            `,
+            [updated.id, user.user_id]
+          );
+          const candidateEmail = candidateInfo.rows?.[0]?.candidate_email as string | null | undefined;
+          if (candidateEmail) {
+            const subject =
+              interview_decision === "final_selected"
+                ? "Final Confirmation - Selected"
+                : interview_decision === "rejected"
+                  ? "Interview Update"
+                  : "Interview Round Update";
+            const message =
+              interview_decision === "final_selected"
+                ? "This is final confirmation that you are selected. We will share the next steps shortly."
+                : interview_decision === "rejected"
+                  ? `Your profile was not selected in ${
+                      updated.rejected_in_round_order ? `Round ${updated.rejected_in_round_order}` : "the current round"
+                    }.`
+                  : `Congratulations! You are confirmed for ${
+                      updated.current_interview_round_order ? `Round ${updated.current_interview_round_order}` : "the next round"
+                    }. We will share the info shortly.`;
+            await transporter.sendMail({
+              from: `"Aasthix Talent" <${SMTP_USER}>`,
+              to: candidateEmail,
+              subject,
+              text: `Hi ${candidateInfo.rows?.[0]?.candidate_full_name || "Candidate"},\n\n${message}`,
+            });
+          }
         }
+      } catch (err) {
+        console.error("Failed to prepare or send progress email:", err);
       }
     }
 
@@ -985,7 +1003,7 @@ export async function PATCH(request: Request) {
       }
     }
 
-    const card = await fetchApplicationCardRow(updated.id, user.user_id);
+    const card = await safeFetchApplicationCardRow(updated.id, user.user_id);
     return NextResponse.json(card ?? updated);
   } catch (error) {
     console.error("Error updating application stage", error);
