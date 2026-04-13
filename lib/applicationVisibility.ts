@@ -9,8 +9,16 @@ export async function hasJobTeamTable(): Promise<boolean> {
   }
 }
 
-/** SQL predicate: current user may access this application (creator or job team). */
+/**
+ * Single-tenant ATS visibility:
+ * once a user has the relevant pipeline permission, row-level application access
+ * should not be restricted by creator or job team membership.
+ *
+ * We keep the helper signature intact so existing callers do not need to change.
+ */
 export function applicationAccessPredicate(alias: string, userParam: string, hasTeam: boolean): string {
-  if (!hasTeam) return `${alias}.created_by_user_id = ${userParam}`;
-  return `(${alias}.created_by_user_id = ${userParam} OR EXISTS (SELECT 1 FROM job_team jt WHERE jt.job_id = ${alias}.job_id AND jt.user_id = ${userParam}))`;
+  void alias;
+  void userParam;
+  void hasTeam;
+  return "TRUE";
 }
