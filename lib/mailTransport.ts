@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import SMTPTransport from "nodemailer/lib/smtp-transport";
+import dns from "node:dns";
 
 export function getSmtpConfig() {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
@@ -29,14 +30,18 @@ export function createSmtpTransport() {
     port: config.port,
     secure: config.secure,
     auth: config.auth,
-    family: 4,
     connectionTimeout: 20_000,
     greetingTimeout: 20_000,
     socketTimeout: 30_000,
+    lookup(hostname: string, _options: unknown, callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void) {
+      dns.lookup(hostname, { family: 4, all: false }, callback);
+    },
     tls: {
       servername: config.host,
     },
-  } as SMTPTransport.Options & { family: number };
+  } as SMTPTransport.Options & {
+    lookup: (hostname: string, options: unknown, callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void) => void;
+  };
 
   return nodemailer.createTransport(transportOptions as SMTPTransport.Options);
 }
