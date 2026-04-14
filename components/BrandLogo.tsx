@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import Image from "next/image";
+import brandMark from "../public/aasthix-brand.png";
 import { APP_CONFIG } from "@/lib/config";
 
 type BrandLogoProps = {
@@ -18,38 +19,28 @@ export default function BrandLogo({
   imageClassName = "",
   showFallback = true,
 }: BrandLogoProps) {
-  const brandLogo = APP_CONFIG.brandLogoSrc?.trim();
   const brandInitials = APP_CONFIG.brandInitials || "AT";
-  const [imageFailed, setImageFailed] = useState(false);
-  const shouldShowImage = Boolean(brandLogo) && !imageFailed;
 
-  if (!shouldShowImage) {
-    if (!showFallback) return null;
-    return (
-      <div
-        className={`grid place-items-center overflow-hidden rounded-xl bg-[var(--ats-bg-panel-strong)] text-[10px] font-extrabold tracking-wide text-[var(--ats-text)] ring-1 ring-[var(--ats-border)] ${className}`.trim()}
-        style={{ width: size, height: size }}
-      >
-        {brandInitials}
-      </div>
-    );
-  }
+  if (!showFallback && !brandMark) return null;
 
   return (
     <div
       className={`relative overflow-hidden rounded-xl bg-transparent ${className}`.trim()}
       style={{ width: size, height: size }}
     >
-      <img
-        src={brandLogo}
+      <Image
+        src={brandMark}
         alt={alt || `${APP_CONFIG.appName} logo`}
-        width={size}
-        height={size}
-        loading="eager"
-        decoding="async"
-        onError={() => setImageFailed(true)}
-        className={`block h-full w-full object-contain object-center ${imageClassName}`.trim()}
+        fill
+        sizes={`${size}px`}
+        priority={size >= 44}
+        className={`object-contain object-center ${imageClassName}`.trim()}
       />
+      {!brandMark && showFallback ? (
+        <div className="grid h-full w-full place-items-center bg-[var(--ats-bg-panel-strong)] text-[10px] font-extrabold tracking-wide text-[var(--ats-text)] ring-1 ring-[var(--ats-border)]">
+          {brandInitials}
+        </div>
+      ) : null}
     </div>
   );
 }
