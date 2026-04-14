@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { useState } from "react";
 import { APP_CONFIG } from "@/lib/config";
 
 type BrandLogoProps = {
@@ -20,12 +20,14 @@ export default function BrandLogo({
 }: BrandLogoProps) {
   const brandLogo = APP_CONFIG.brandLogoSrc?.trim();
   const brandInitials = APP_CONFIG.brandInitials || "AT";
+  const [imageFailed, setImageFailed] = useState(false);
+  const shouldShowImage = Boolean(brandLogo) && !imageFailed;
 
-  if (!brandLogo) {
+  if (!shouldShowImage) {
     if (!showFallback) return null;
     return (
       <div
-        className={`grid place-items-center overflow-hidden rounded-xl bg-white/10 text-[10px] font-extrabold tracking-wide text-white ring-1 ring-white/20 ${className}`.trim()}
+        className={`grid place-items-center overflow-hidden rounded-xl bg-[var(--ats-bg-panel-strong)] text-[10px] font-extrabold tracking-wide text-[var(--ats-text)] ring-1 ring-[var(--ats-border)] ${className}`.trim()}
         style={{ width: size, height: size }}
       >
         {brandInitials}
@@ -38,13 +40,15 @@ export default function BrandLogo({
       className={`relative overflow-hidden rounded-xl bg-transparent ${className}`.trim()}
       style={{ width: size, height: size }}
     >
-      <Image
+      <img
         src={brandLogo}
         alt={alt || `${APP_CONFIG.appName} logo`}
-        fill
-        sizes={`${size}px`}
-        className={`object-contain object-center ${imageClassName}`.trim()}
-        priority
+        width={size}
+        height={size}
+        loading="eager"
+        decoding="async"
+        onError={() => setImageFailed(true)}
+        className={`block h-full w-full object-contain object-center ${imageClassName}`.trim()}
       />
     </div>
   );
