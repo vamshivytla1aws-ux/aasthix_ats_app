@@ -5,10 +5,10 @@ export const APP_CONFIG = {
   /** Short initials when no image mark is set */
   brandInitials: "AT",
   /**
-   * Navbar mark: file in `public/` (e.g. `/brand-logo.png`).
-   * Use a PNG/SVG with transparency for best results on light & dark headers.
+   * Navbar mark: file in `public/` (e.g. `/aasthix-brand.png`).
+   * Keep this as a single source of truth so auth, dashboard, and careers stay in sync.
    */
-  brandLogoSrc: "/brand-logo.png",
+  brandLogoSrc: "/aasthix-brand.png",
   /**
    * Shown on Access Gate / error surfaces. Set via env at build time.
    * Example: NEXT_PUBLIC_SUPPORT_EMAIL=help@company.com
@@ -17,4 +17,3 @@ export const APP_CONFIG = {
   /** Optional URL for access requests (e.g. ITSM form). */
   supportRequestUrl: typeof process !== "undefined" ? process.env.NEXT_PUBLIC_SUPPORT_REQUEST_URL?.trim() || "" : "",
 };
-
