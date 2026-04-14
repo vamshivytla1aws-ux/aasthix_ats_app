@@ -390,6 +390,23 @@ export default function PipelineBoard({
     });
   }, []);
 
+  const optimisticallyPatchApplication = useCallback((applicationId: number, patch: Partial<ApplicationRow>) => {
+    lastOptimisticMoveAtRef.current = Date.now();
+    flushSync(() => {
+      setLocalApplications((prev) =>
+        prev.map((row) =>
+          row.id === applicationId
+            ? {
+                ...row,
+                ...patch,
+                stage: (patch.stage ?? row.stage) as Stage,
+              }
+            : row
+        )
+      );
+    });
+  }, []);
+
   // Keep local UI state in sync with parent updates.
   // Preserve very recent optimistic stage changes briefly to avoid snap-back while
   // parent state catches up after PATCH.
@@ -451,7 +468,14 @@ export default function PipelineBoard({
     }
     setBusyId(id);
     setError(null);
+    const previousApplications = localApplications;
+    const optimisticRow = localApplications.find((a) => a.id === id);
     try {
+      if (optimisticRow) {
+        const optimisticUpdated = { ...optimisticRow, stage, updated_at: new Date().toISOString() };
+        optimisticallyPatchApplication(id, optimisticUpdated);
+        onStageUpdated(optimisticUpdated);
+      }
       const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -460,6 +484,8 @@ export default function PipelineBoard({
       reconcileLocalApplication(updated);
       onStageUpdated(updated);
     } catch (err: any) {
+      flushSync(() => setLocalApplications(previousApplications));
+      if (optimisticRow) onStageUpdated(optimisticRow);
       if (!notifyForbidden(err)) {
         const status = typeof err?.status === "number" ? ` (${err.status})` : "";
         setError((err?.message || "Something went wrong") + status);
@@ -713,7 +739,17 @@ export default function PipelineBoard({
     setBusyId(scheduleApp.id);
     setError(null);
     setSuccess(null);
+    const previousApplications = localApplications;
+    const optimisticUpdated: ApplicationRow = {
+      ...scheduleApp,
+      stage: "Interview",
+      interview_scheduled: true,
+      interview_datetime: confirmScheduleIso,
+      updated_at: new Date().toISOString(),
+    };
     try {
+      optimisticallyPatchApplication(scheduleApp.id, optimisticUpdated);
+      onStageUpdated(optimisticUpdated);
       const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -737,6 +773,8 @@ export default function PipelineBoard({
       setScheduleTime("");
       setConfirmScheduleIso("");
     } catch (err: any) {
+      flushSync(() => setLocalApplications(previousApplications));
+      onStageUpdated(scheduleApp);
       if (!notifyForbidden(err)) setError(err.message || "Something went wrong");
     } finally {
       setBusyId(null);
