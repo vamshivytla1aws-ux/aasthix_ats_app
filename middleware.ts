@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { tokenCookieName } from "@/lib/auth";
 
+const PUBLIC_FILE_REGEX = /\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|xml|woff|woff2|ttf|otf)$/i;
+
 const PUBLIC_PATHS = new Set([
   "/login",
   "/signup",
@@ -14,11 +16,13 @@ const PUBLIC_PATHS = new Set([
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const isPublicFile = PUBLIC_FILE_REGEX.test(pathname);
   const shouldNoIndex =
     !pathname.startsWith("/api") &&
     !pathname.startsWith("/_next") &&
     !pathname.startsWith("/favicon") &&
     !pathname.startsWith("/assets") &&
+    !isPublicFile &&
     !pathname.startsWith("/careers");
 
   // Never redirect API routes: APIs must return JSON (e.g. 401) themselves.
@@ -30,7 +34,8 @@ export async function middleware(req: NextRequest) {
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
-    pathname.startsWith("/assets")
+    pathname.startsWith("/assets") ||
+    isPublicFile
   ) {
     return NextResponse.next();
   }
