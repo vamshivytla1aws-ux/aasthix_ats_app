@@ -380,6 +380,16 @@ export default function PipelineBoard({
     return map;
   }, [localApplications]);
 
+  const reconcileLocalApplication = useCallback((updated: ApplicationRow) => {
+    setLocalApplications((prev) => {
+      const hasRow = prev.some((row) => row.id === updated.id);
+      if (!hasRow) return prev;
+      return prev.map((row) =>
+        row.id === updated.id ? { ...row, ...updated, stage: updated.stage } : row
+      );
+    });
+  }, []);
+
   // Keep local UI state in sync with parent updates.
   // Preserve very recent optimistic stage changes briefly to avoid snap-back while
   // parent state catches up after PATCH.
@@ -447,6 +457,7 @@ export default function PipelineBoard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, stage }),
       });
+      reconcileLocalApplication(updated);
       onStageUpdated(updated);
     } catch (err: any) {
       if (!notifyForbidden(err)) {
@@ -715,6 +726,7 @@ export default function PipelineBoard({
         }),
       });
 
+      reconcileLocalApplication(updated);
       onStageUpdated(updated);
       await saveChecklist(scheduleApp.id);
       setSuccess("Email has sent successfully");
@@ -775,6 +787,7 @@ export default function PipelineBoard({
         }),
       });
 
+      reconcileLocalApplication(updated);
       onStageUpdated(updated);
       await saveChecklist(rescheduleApp.id);
       setRescheduleOpen(false);
@@ -814,6 +827,7 @@ export default function PipelineBoard({
           interview_decision_audience: audience,
         }),
       });
+      reconcileLocalApplication(updated);
       onStageUpdated(updated);
       if (decision === "next_round")
         setSuccess(
@@ -858,6 +872,7 @@ export default function PipelineBoard({
             disposition_reason_id: reasonId,
           }),
         });
+        reconcileLocalApplication(updated);
         onStageUpdated(updated);
         setSuccess("Candidate marked rejected at current round.");
       } else {
@@ -871,6 +886,7 @@ export default function PipelineBoard({
             disposition_reason_id: reasonId,
           }),
         });
+        reconcileLocalApplication(updated);
         onStageUpdated(updated);
         setSuccess("Candidate moved to Rejected.");
       }
@@ -1738,4 +1754,3 @@ export default function PipelineBoard({
     </div>
   );
 }
-
