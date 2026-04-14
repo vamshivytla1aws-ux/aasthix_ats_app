@@ -1,4 +1,4 @@
-import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
+import { sendEmailMessage } from "@/lib/sendEmail";
 
 export async function sendCareersApplicationConfirmation(opts: {
   to: string;
@@ -6,16 +6,6 @@ export async function sendCareersApplicationConfirmation(opts: {
   jobTitle: string;
   companyName: string;
 }) {
-  const config = getSmtpConfig();
-  if (!config) {
-    return { sent: false as const, reason: "smtp_not_configured" };
-  }
-
-  const transporter = createSmtpTransport();
-  if (!transporter) {
-    return { sent: false as const, reason: "smtp_not_configured" };
-  }
-
   const subject = `Application received - ${opts.jobTitle}`;
   const text = `Hi ${opts.candidateName},
 
@@ -26,12 +16,18 @@ We have received your application and our recruiting team will review it shortly
 Best regards,
 ${opts.companyName} Talent Team`;
 
-  await transporter.sendMail({
-    from: config.from,
-    to: opts.to,
+  const result = await sendEmailMessage({
+    to: [opts.to],
     subject,
     text,
   });
+
+  if (!result.sent && result.reason === "email_not_configured") {
+    return { sent: false as const, reason: "smtp_not_configured" };
+  }
+  if (!result.sent) {
+    throw new Error(result.detail || "Failed to send careers confirmation email");
+  }
 
   return { sent: true as const };
 }

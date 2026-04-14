@@ -1,4 +1,4 @@
-import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
+import { sendEmailMessage } from "@/lib/sendEmail";
 
 export type SendEmailResult = { sent: true } | { sent: false; reason: "smtp_not_configured" | "send_failed"; detail?: string };
 
@@ -9,28 +9,10 @@ export async function sendTransactionalEmail(opts: {
   text: string;
   html?: string;
 }): Promise<SendEmailResult> {
-  const config = getSmtpConfig();
-  if (!config) {
-    return { sent: false, reason: "smtp_not_configured" };
+  const result = await sendEmailMessage(opts);
+  if (result.sent) return { sent: true };
+  if (result.reason === "email_not_configured") {
+    return { sent: false, reason: "smtp_not_configured", detail: result.detail };
   }
-
-  const transporter = createSmtpTransport();
-  if (!transporter) {
-    return { sent: false, reason: "smtp_not_configured" };
-  }
-
-  try {
-    await transporter.sendMail({
-      from: config.from,
-      to: opts.to.join(", "),
-      subject: opts.subject.slice(0, 998),
-      text: opts.text,
-      html: opts.html,
-    });
-    return { sent: true };
-  } catch (e) {
-    console.error("sendTransactionalEmail", e);
-    const detail = e instanceof Error ? e.message : String(e);
-    return { sent: false, reason: "send_failed", detail };
-  }
+  return { sent: false, reason: "send_failed", detail: result.detail };
 }

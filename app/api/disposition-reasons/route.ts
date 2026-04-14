@@ -4,6 +4,7 @@ import { getAuthAccess } from "@/lib/rbac";
 import type { DispositionCategory } from "@/lib/dispositionAudit";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const CATEGORIES: DispositionCategory[] = ["reject", "withdraw", "job_close"];
 

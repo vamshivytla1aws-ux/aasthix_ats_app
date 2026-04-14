@@ -1,4 +1,4 @@
-import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
+import { sendEmailMessage } from "@/lib/sendEmail";
 
 export type RenewalEmailPayload = {
   to: string;
@@ -11,16 +11,6 @@ export type RenewalEmailPayload = {
 export async function sendClientAgreementRenewalEmail(
   opts: RenewalEmailPayload
 ): Promise<{ sent: true } | { sent: false; reason: string }> {
-  const config = getSmtpConfig();
-  if (!config) {
-    return { sent: false, reason: "smtp_not_configured" };
-  }
-
-  const transporter = createSmtpTransport();
-  if (!transporter) {
-    return { sent: false, reason: "smtp_not_configured" };
-  }
-
   const subject = `Action needed: client agreement renewal - ${opts.clientName}`;
   const text = `Hello,
 
@@ -48,13 +38,15 @@ Please review and renew the agreement in the Clients section of the app.
   <p style="color:#64748b;font-size:12px;">- ATS renewal notices</p>
   `;
 
-  await transporter.sendMail({
-    from: config.from,
-    to: opts.to,
+  const result = await sendEmailMessage({
+    to: [opts.to],
     subject,
     text,
     html,
   });
+  if (!result.sent) {
+    return { sent: false, reason: result.reason === "email_not_configured" ? "smtp_not_configured" : result.detail || "send_failed" };
+  }
 
   return { sent: true };
 }

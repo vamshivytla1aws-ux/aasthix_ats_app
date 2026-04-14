@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
+import { sendEmailMessage } from "@/lib/sendEmail";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -65,13 +65,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
       String(body?.message || "").trim() ||
       `We are hiring for ${job.title}. Please find the job details below and share interested profiles.`;
 
-    const config = getSmtpConfig();
-    if (!config) {
-      return NextResponse.json({ error: "SMTP is not configured" }, { status: 500 });
-    }
-    const transporter = createSmtpTransport();
-    if (!transporter) {
-      return NextResponse.json({ error: "SMTP is not configured" }, { status: 500 });
+    if (!process.env.RESEND_API_KEY && !process.env.SMTP_HOST) {
+      return NextResponse.json({ error: "Email provider is not configured" }, { status: 500 });
     }
 
     let sent = 0;
@@ -131,13 +126,18 @@ ${job.description || "Not provided"}
 Thanks,
 Aasthix Talent.
 www.aasthix.com`;
-      await transporter.sendMail({
-        from: config.from,
-        to,
+      const result = await sendEmailMessage({
+        to: [to],
         subject,
         html,
         text,
       });
+      if (!result.sent) {
+        return NextResponse.json(
+          { error: result.detail || "Failed to send JD" },
+          { status: result.reason === "email_not_configured" ? 503 : 502 }
+        );
+      }
       sent += 1;
     }
 

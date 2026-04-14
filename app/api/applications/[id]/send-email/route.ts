@@ -100,7 +100,7 @@ export async function POST(request: Request, context: { params: { id: string } }
     if (!sendResult.sent) {
       if (sendResult.reason === "smtp_not_configured") {
         return NextResponse.json(
-          { error: "Email is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS on the server." },
+          { error: "Email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL, or configure SMTP variables on the server." },
           { status: 503 }
         );
       }

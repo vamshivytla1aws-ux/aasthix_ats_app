@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { pool } from "@/lib/db";
 import { generateScreeningQuestions, SCREENING_GEN_MODEL } from "@/lib/screeningAi";
 import { logScreeningAudit } from "@/lib/screeningAudit";
-import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
+import { sendEmailMessage } from "@/lib/sendEmail";
 
 function escapeHtml(unsafe: string) {
   return unsafe
@@ -36,10 +36,6 @@ async function sendScreeningEmail(input: {
   testUrl: string;
   deadlineIso: string;
 }) {
-  const config = getSmtpConfig();
-  if (!config) return false;
-  const transporter = createSmtpTransport();
-  if (!transporter) return false;
   const deadlineLabel = formatDeadline(input.deadlineIso);
   const subject = `Screening Test: ${input.jobTitle || "Job Role"}`;
   const html = `
@@ -73,13 +69,20 @@ async function sendScreeningEmail(input: {
     </div>
   </body>
 </html>`;
-  await transporter.sendMail({
-    from: config.from,
-    to: input.to,
+  const text = `Hi ${input.candidateName || "there"},
+
+Please complete the screening test for the role ${input.jobTitle || "N/A"}.
+
+Deadline: ${deadlineLabel}
+
+Start test: ${input.testUrl}`;
+  const result = await sendEmailMessage({
+    to: [input.to],
     subject,
     html,
+    text,
   });
-  return true;
+  return result.sent;
 }
 
 export async function createAndSendScreeningTest(input: {

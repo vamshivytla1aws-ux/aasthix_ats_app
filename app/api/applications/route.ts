@@ -6,7 +6,7 @@ import { fetchApplicationCardRow, fetchApplicationsRows } from "@/lib/applicatio
 import { createAndSendScreeningTest } from "@/lib/screeningWorkflow";
 import { logScreeningAudit } from "@/lib/screeningAudit";
 import { recordDispositionEvent, validateDispositionReason } from "@/lib/dispositionAudit";
-import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
+import { sendEmailMessage } from "@/lib/sendEmail";
 
 export const runtime = "nodejs";
 
@@ -923,14 +923,9 @@ export async function PATCH(request: Request) {
           interviewDatetime: updated.interview_datetime,
           prevInterviewScheduled,
         });
-        const config = getSmtpConfig();
-        if (!config) {
-          console.error("Missing SMTP env vars; cannot send scheduled interview email.");
+        if (!process.env.RESEND_API_KEY && !process.env.SMTP_HOST) {
+          console.error("Missing email provider config; cannot send scheduled interview email.");
         } else {
-          const transporter = createSmtpTransport();
-          if (!transporter) {
-            console.error("Unable to create SMTP transport for scheduled interview email.");
-          } else {
 
           const candidateInfo = await query(
             `
@@ -1029,19 +1024,29 @@ export async function PATCH(request: Request) {
   </body>
 </html>
 `;
-            await transporter.sendMail({
-              from: config.from,
-              to: candidateEmail,
+            const sendResult = await sendEmailMessage({
+              to: [candidateEmail],
               subject,
               html,
+              text: `Hi ${candidateName || "there"},
+
+${isReschedule ? "Your interview has been rescheduled." : "Your interview has been scheduled."}
+
+Role: ${roleText}
+Interview Date & Time: ${whenText}
+
+Regards,
+Aasthix Talent`,
             });
+            if (!sendResult.sent) {
+              throw new Error(sendResult.detail || "Failed to send scheduled interview email");
+            }
             console.log("[interview-schedule-email] email sent", {
               applicationId: updated.id,
               to: candidateEmail,
             });
           } else {
             console.error(`No candidate email found for application ${updated.id}.`);
-          }
           }
         }
       } catch (err) {
@@ -1057,12 +1062,7 @@ export async function PATCH(request: Request) {
         interview_decision === "rejected");
     if (shouldSendProgressEmail) {
       try {
-        const config = getSmtpConfig();
-        if (config) {
-          const transporter = createSmtpTransport();
-          if (!transporter) {
-            throw new Error("Unable to create SMTP transport for progress email");
-          }
+        if (process.env.RESEND_API_KEY || process.env.SMTP_HOST) {
           const candidateInfo = await query(
             `
             SELECT c.email AS candidate_email, c.full_name AS candidate_full_name, j.title AS job_title
@@ -1092,12 +1092,14 @@ export async function PATCH(request: Request) {
                   : `Congratulations! You are confirmed for ${
                       updated.current_interview_round_order ? `Round ${updated.current_interview_round_order}` : "the next round"
                     }. We will share the info shortly.`;
-            await transporter.sendMail({
-              from: config.from,
-              to: candidateEmail,
+            const sendResult = await sendEmailMessage({
+              to: [candidateEmail],
               subject,
               text: `Hi ${candidateInfo.rows?.[0]?.candidate_full_name || "Candidate"},\n\n${message}`,
             });
+            if (!sendResult.sent) {
+              throw new Error(sendResult.detail || "Failed to send progress email");
+            }
           }
         }
       } catch (err) {
