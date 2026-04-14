@@ -3,10 +3,10 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { applicationAccessPredicate, hasJobTeamTable } from "@/lib/applicationVisibility";
 import { fetchApplicationCardRow, fetchApplicationsRows } from "@/lib/applicationCard";
-import nodemailer from "nodemailer";
 import { createAndSendScreeningTest } from "@/lib/screeningWorkflow";
 import { logScreeningAudit } from "@/lib/screeningAudit";
 import { recordDispositionEvent, validateDispositionReason } from "@/lib/dispositionAudit";
+import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
 
 export const runtime = "nodejs";
 
@@ -923,19 +923,14 @@ export async function PATCH(request: Request) {
           interviewDatetime: updated.interview_datetime,
           prevInterviewScheduled,
         });
-        const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
-        if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+        const config = getSmtpConfig();
+        if (!config) {
           console.error("Missing SMTP env vars; cannot send scheduled interview email.");
         } else {
-          const transporter = nodemailer.createTransport({
-            host: SMTP_HOST,
-            port: Number(SMTP_PORT),
-            secure: Number(SMTP_PORT) === 465,
-            auth: {
-              user: SMTP_USER,
-              pass: SMTP_PASS,
-            },
-          });
+          const transporter = createSmtpTransport();
+          if (!transporter) {
+            console.error("Unable to create SMTP transport for scheduled interview email.");
+          } else {
 
           const candidateInfo = await query(
             `
@@ -1030,12 +1025,12 @@ export async function PATCH(request: Request) {
       <div style="text-align:center;margin-top:12px;font-family:Arial,sans-serif;color:#6B7280;font-size:12px;">
         © 2026 Aasthix Talent
       </div>
-    </div>
+            </div>
   </body>
 </html>
 `;
             await transporter.sendMail({
-              from: `"Aasthix Talent" <${SMTP_USER}>`,
+              from: config.from,
               to: candidateEmail,
               subject,
               html,
@@ -1046,6 +1041,7 @@ export async function PATCH(request: Request) {
             });
           } else {
             console.error(`No candidate email found for application ${updated.id}.`);
+          }
           }
         }
       } catch (err) {
@@ -1061,14 +1057,12 @@ export async function PATCH(request: Request) {
         interview_decision === "rejected");
     if (shouldSendProgressEmail) {
       try {
-        const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-        if (SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS) {
-          const transporter = nodemailer.createTransport({
-            host: SMTP_HOST,
-            port: Number(SMTP_PORT),
-            secure: Number(SMTP_PORT) === 465,
-            auth: { user: SMTP_USER, pass: SMTP_PASS },
-          });
+        const config = getSmtpConfig();
+        if (config) {
+          const transporter = createSmtpTransport();
+          if (!transporter) {
+            throw new Error("Unable to create SMTP transport for progress email");
+          }
           const candidateInfo = await query(
             `
             SELECT c.email AS candidate_email, c.full_name AS candidate_full_name, j.title AS job_title
@@ -1099,7 +1093,7 @@ export async function PATCH(request: Request) {
                       updated.current_interview_round_order ? `Round ${updated.current_interview_round_order}` : "the next round"
                     }. We will share the info shortly.`;
             await transporter.sendMail({
-              from: `"Aasthix Talent" <${SMTP_USER}>`,
+              from: config.from,
               to: candidateEmail,
               subject,
               text: `Hi ${candidateInfo.rows?.[0]?.candidate_full_name || "Candidate"},\n\n${message}`,

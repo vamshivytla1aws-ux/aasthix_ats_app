@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
 
 export async function sendCareersApplicationConfirmation(opts: {
   to: string;
@@ -6,20 +6,17 @@ export async function sendCareersApplicationConfirmation(opts: {
   jobTitle: string;
   companyName: string;
 }) {
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
-  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+  const config = getSmtpConfig();
+  if (!config) {
     return { sent: false as const, reason: "smtp_not_configured" };
   }
 
-  const transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT),
-    secure: Number(SMTP_PORT) === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-  });
+  const transporter = createSmtpTransport();
+  if (!transporter) {
+    return { sent: false as const, reason: "smtp_not_configured" };
+  }
 
-  const from = SMTP_FROM || SMTP_USER;
-  const subject = `Application received — ${opts.jobTitle}`;
+  const subject = `Application received - ${opts.jobTitle}`;
   const text = `Hi ${opts.candidateName},
 
 Thank you for applying for the ${opts.jobTitle} role at ${opts.companyName}.
@@ -30,7 +27,7 @@ Best regards,
 ${opts.companyName} Talent Team`;
 
   await transporter.sendMail({
-    from,
+    from: config.from,
     to: opts.to,
     subject,
     text,

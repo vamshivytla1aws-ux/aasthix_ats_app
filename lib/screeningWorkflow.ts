@@ -1,8 +1,8 @@
-import nodemailer from "nodemailer";
 import { randomUUID } from "crypto";
 import { pool } from "@/lib/db";
 import { generateScreeningQuestions, SCREENING_GEN_MODEL } from "@/lib/screeningAi";
 import { logScreeningAudit } from "@/lib/screeningAudit";
+import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
 
 function escapeHtml(unsafe: string) {
   return unsafe
@@ -36,14 +36,10 @@ async function sendScreeningEmail(input: {
   testUrl: string;
   deadlineIso: string;
 }) {
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) return false;
-  const transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT),
-    secure: Number(SMTP_PORT) === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-  });
+  const config = getSmtpConfig();
+  if (!config) return false;
+  const transporter = createSmtpTransport();
+  if (!transporter) return false;
   const deadlineLabel = formatDeadline(input.deadlineIso);
   const subject = `Screening Test: ${input.jobTitle || "Job Role"}`;
   const html = `
@@ -78,7 +74,7 @@ async function sendScreeningEmail(input: {
   </body>
 </html>`;
   await transporter.sendMail({
-    from: `"Aasthix Talent" <${SMTP_USER}>`,
+    from: config.from,
     to: input.to,
     subject,
     html,

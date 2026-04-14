@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import nodemailer from "nodemailer";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
+import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -52,10 +52,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
       `
       SELECT id, title, company, location, description, employment_type, open_positions
       FROM jobs
-      WHERE id = $1 AND created_by_user_id = $2
+      WHERE id = $1
       LIMIT 1
       `,
-      [jobId, user.user_id]
+      [jobId]
     );
     if (jobRes.rowCount === 0) return NextResponse.json({ error: "Job not found" }, { status: 404 });
     const job = jobRes.rows[0] as any;
@@ -65,16 +65,14 @@ export async function POST(request: Request, { params }: { params: { id: string 
       String(body?.message || "").trim() ||
       `We are hiring for ${job.title}. Please find the job details below and share interested profiles.`;
 
-    const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-    if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+    const config = getSmtpConfig();
+    if (!config) {
       return NextResponse.json({ error: "SMTP is not configured" }, { status: 500 });
     }
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: Number(SMTP_PORT),
-      secure: Number(SMTP_PORT) === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    });
+    const transporter = createSmtpTransport();
+    if (!transporter) {
+      return NextResponse.json({ error: "SMTP is not configured" }, { status: 500 });
+    }
 
     let sent = 0;
     for (const to of recipients) {
@@ -134,7 +132,7 @@ Thanks,
 Aasthix Talent.
 www.aasthix.com`;
       await transporter.sendMail({
-        from: `"Aasthix Talent" <${SMTP_USER}>`,
+        from: config.from,
         to,
         subject,
         html,

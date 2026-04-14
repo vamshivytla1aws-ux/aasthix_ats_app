@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+import { createSmtpTransport, getSmtpConfig } from "@/lib/mailTransport";
 
 export type RenewalEmailPayload = {
   to: string;
@@ -8,23 +8,20 @@ export type RenewalEmailPayload = {
   renewalNoticeDays: number;
 };
 
-export async function sendClientAgreementRenewalEmail(opts: RenewalEmailPayload): Promise<
-  { sent: true } | { sent: false; reason: string }
-> {
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
-  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+export async function sendClientAgreementRenewalEmail(
+  opts: RenewalEmailPayload
+): Promise<{ sent: true } | { sent: false; reason: string }> {
+  const config = getSmtpConfig();
+  if (!config) {
     return { sent: false, reason: "smtp_not_configured" };
   }
 
-  const transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT),
-    secure: Number(SMTP_PORT) === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-  });
+  const transporter = createSmtpTransport();
+  if (!transporter) {
+    return { sent: false, reason: "smtp_not_configured" };
+  }
 
-  const from = SMTP_FROM || SMTP_USER;
-  const subject = `Action needed: client agreement renewal — ${opts.clientName}`;
+  const subject = `Action needed: client agreement renewal - ${opts.clientName}`;
   const text = `Hello,
 
 This is an automated reminder from your ATS.
@@ -36,23 +33,23 @@ Approx. calendar days remaining: ${opts.daysLeft}
 
 Please review and renew the agreement in the Clients section of the app.
 
-— ATS renewal notices`;
+- ATS renewal notices`;
 
   const html = `
   <p>Hello,</p>
   <p>This is an automated reminder from your ATS.</p>
-  <p><strong>${escapeHtml(opts.clientName)}</strong> — company agreement is in the renewal notice period
+  <p><strong>${escapeHtml(opts.clientName)}</strong> - company agreement is in the renewal notice period
   (<strong>${opts.renewalNoticeDays}</strong> day notice window).</p>
   <ul>
     <li><strong>Agreement end date:</strong> ${escapeHtml(opts.agreementEndDate)}</li>
     <li><strong>Days left (approx.):</strong> ${opts.daysLeft}</li>
   </ul>
   <p>Please review and renew the agreement in the <strong>Clients</strong> section.</p>
-  <p style="color:#64748b;font-size:12px;">— ATS renewal notices</p>
+  <p style="color:#64748b;font-size:12px;">- ATS renewal notices</p>
   `;
 
   await transporter.sendMail({
-    from,
+    from: config.from,
     to: opts.to,
     subject,
     text,
