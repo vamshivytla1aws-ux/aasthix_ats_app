@@ -24,6 +24,47 @@ type AlertRow = {
   candidate_id?: number | null;
 };
 
+function buildAlertActions(
+  row: AlertRow,
+  onMarkRead: (id: number) => void
+): RowActionItem[] {
+  const items: RowActionItem[] = [];
+
+  if (row.candidate_id != null && row.candidate_id > 0) {
+    items.push({
+      type: "link",
+      label: "Candidate profile",
+      href: `/candidates/${row.candidate_id}`,
+    });
+  }
+
+  if (row.application_id != null && row.application_id > 0) {
+    items.push({
+      type: "link",
+      label: "Open in pipeline",
+      href: `/pipeline?application=${row.application_id}`,
+    });
+  }
+
+  if (row.status === "unread") {
+    items.push({
+      type: "button",
+      label: "Mark read",
+      onClick: () => onMarkRead(row.id),
+    });
+  }
+
+  if (items.length === 0) {
+    items.push({
+      type: "link",
+      label: "Open alerts",
+      href: "/alerts",
+    });
+  }
+
+  return items;
+}
+
 function num(v: unknown): number | null {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : null;
@@ -246,26 +287,9 @@ export default function AlertsPage() {
                       <td className="px-4 py-3 text-right">
                         <RowActionsMenu
                           ariaLabel="Alert actions"
-                          items={(() => {
-                            const items: RowActionItem[] = [];
-                            if (r.candidate_id != null && r.candidate_id > 0) {
-                              items.push({
-                                type: "link",
-                                label: "Candidate profile",
-                                href: `/candidates/${r.candidate_id}`,
-                              });
-                            }
-                            if (r.status === "unread") {
-                              items.push({
-                                type: "button",
-                                label: "Mark read",
-                                onClick: () => {
-                                  void markRead(r.id);
-                                },
-                              });
-                            }
-                            return items;
-                          })()}
+                          items={buildAlertActions(r, (id) => {
+                            void markRead(id);
+                          })}
                         />
                       </td>
                     </tr>

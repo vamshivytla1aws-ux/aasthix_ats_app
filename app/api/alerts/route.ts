@@ -192,7 +192,6 @@ export async function GET(request: Request) {
       FROM alerts al
       LEFT JOIN applications app
         ON app.id = al.application_id
-       AND app.created_by_user_id = al.user_id
       WHERE ${where.join(" AND ")}
       ORDER BY al.created_at DESC
       LIMIT $${params.length}
