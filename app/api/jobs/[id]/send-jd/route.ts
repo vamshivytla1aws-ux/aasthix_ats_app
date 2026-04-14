@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { sendEmailMessage } from "@/lib/sendEmail";
+import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -22,15 +23,6 @@ function displayNameFromEmail(email: string) {
     .split(/\s+/)
     .map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
     .join(" ");
-}
-
-function escapeHtml(value: string) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
@@ -72,60 +64,18 @@ export async function POST(request: Request, { params }: { params: { id: string 
     let sent = 0;
     for (const to of recipients) {
       const candidateName = displayNameFromEmail(to);
-      const safeName = escapeHtml(candidateName);
-      const safeTitle = escapeHtml(String(job.title || ""));
-      const safeCompany = escapeHtml(String(job.company || ""));
-      const safeLocation = escapeHtml(String(job.location || ""));
-      const safeEmploymentType = escapeHtml(String(job.employment_type || "Full Time"));
-      const safeOpenPositions = escapeHtml(String(job.open_positions ?? 1));
-      const safeDescription = escapeHtml(String(job.description || "Not provided"));
-      const safeMessage = escapeHtml(message).replaceAll("\n", "<br/>");
-
-      const html = `
-<!doctype html>
-<html>
-  <body style="margin:0;padding:0;background:#F8FAFC;">
-    <div style="max-width:640px;margin:0 auto;padding:24px;">
-      <div style="background:#ffffff;border:1px solid #E5E7EB;border-radius:12px;overflow:hidden;">
-        <div style="padding:18px 22px;background:#0F172A;">
-          <div style="font-family:Arial,sans-serif;color:#ffffff;font-size:18px;font-weight:700;">Aasthix Talent</div>
-        </div>
-        <div style="padding:20px 22px;font-family:Arial,sans-serif;color:#0F172A;">
-          <p style="margin:0 0 10px;font-size:14px;">Hi ${safeName},</p>
-          <p style="margin:0 0 12px;font-size:14px;">${safeMessage}</p>
-          <p style="margin:0 0 12px;font-size:14px;">Please find the job description for <strong>${safeTitle}</strong>.</p>
-          <div style="background:#F8FAFC;border:1px solid #E5E7EB;border-radius:10px;padding:14px;">
-            <div style="font-size:14px;font-weight:700;margin-bottom:8px;">${safeTitle}</div>
-            <div style="font-size:13px;color:#334155;margin-bottom:6px;"><strong>Company:</strong> ${safeCompany}</div>
-            <div style="font-size:13px;color:#334155;margin-bottom:6px;"><strong>Location:</strong> ${safeLocation}</div>
-            <div style="font-size:13px;color:#334155;margin-bottom:6px;"><strong>Employment Type:</strong> ${safeEmploymentType}</div>
-            <div style="font-size:13px;color:#334155;margin-bottom:10px;"><strong>Open Positions:</strong> ${safeOpenPositions}</div>
-            <div style="font-size:13px;color:#0F172A;line-height:1.5;white-space:pre-wrap;">${safeDescription}</div>
-          </div>
-          <p style="margin:16px 0 0;font-size:14px;">Thanks,</p>
-          <p style="margin:2px 0 0;font-size:14px;">Aasthix Talent.</p>
-          <p style="margin:2px 0 0;font-size:14px;">www.aasthix.com</p>
-        </div>
-      </div>
-    </div>
-  </body>
-</html>`;
-      const text = `Hi ${candidateName},
-
-Please find the job description for ${job.title}.
-
-Job Title: ${job.title}
-Company: ${job.company}
-Location: ${job.location}
-Employment Type: ${job.employment_type ?? "Full Time"}
-Open Positions: ${job.open_positions ?? 1}
-
-Description:
-${job.description || "Not provided"}
-
-Thanks,
-Aasthix Talent.
-www.aasthix.com`;
+      const { html, text } = buildCandidateEmailTemplate({
+        candidateName,
+        paragraphs: [message, `Please find the job description for ${job.title}.`],
+        job: {
+          title: job.title,
+          company: job.company,
+          location: job.location,
+          employmentType: job.employment_type ?? "Full Time",
+          openPositions: job.open_positions ?? 1,
+          description: job.description || "Not provided",
+        },
+      });
       const result = await sendEmailMessage({
         to: [to],
         subject,

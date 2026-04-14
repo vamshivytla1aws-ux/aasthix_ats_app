@@ -167,6 +167,7 @@ export default function InterviewsPage() {
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
+  const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [debouncedSearchQ, setDebouncedSearchQ] = useState("");
   const [tableViewPreset, setTableViewPreset] = useState<"all" | "scheduled" | "upcoming" | "today" | "this_week" | "overdue">("all");
@@ -466,7 +467,7 @@ export default function InterviewsPage() {
           id: appId,
           interview_datetime: newIso,
           reminder_sent: false,
-          send_email: true,
+          send_email: false,
         }),
       });
 
@@ -514,14 +515,15 @@ export default function InterviewsPage() {
           interview_cancel_reason: "",
           interview_no_show: false,
           reminder_sent: false,
-          send_email: true,
+          send_email: rescheduleSendEmail,
         }),
       });
       await updateInterviewInState(updated);
       setRescheduleOpen(false);
       setDetailsOpen(false);
       setRescheduleReason("");
-      showSuccessToast("Interview rescheduled.");
+      setRescheduleSendEmail(false);
+      showSuccessToast(rescheduleSendEmail ? "Interview rescheduled and candidate email sent." : "Interview rescheduled.");
       void mutateAlerts();
     } catch (err: any) {
       showPermissionToast(err);
@@ -573,6 +575,7 @@ export default function InterviewsPage() {
     const { date, time } = getLocalDateTimeInputs(app.interview_datetime);
     setRescheduleDate(date);
     setRescheduleTime(time);
+    setRescheduleSendEmail(false);
     setRescheduleReason(app.interview_reschedule_reason || "");
     setError(null);
     setRescheduleOpen(true);
@@ -1432,6 +1435,16 @@ export default function InterviewsPage() {
                 />
               </div>
 
+              <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={rescheduleSendEmail}
+                  onChange={(e) => setRescheduleSendEmail(e.target.checked)}
+                  disabled={actionBusyId === selectedInterview.id}
+                />
+                Send email to candidate
+              </label>
+
               <div className="mt-6">
                 <button
                   type="button"
@@ -1451,4 +1464,3 @@ export default function InterviewsPage() {
     </AccessGate>
   );
 }
-

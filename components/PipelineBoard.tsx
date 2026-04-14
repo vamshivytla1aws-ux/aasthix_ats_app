@@ -291,11 +291,13 @@ export default function PipelineBoard({
 
   const [confirmScheduleOpen, setConfirmScheduleOpen] = useState(false);
   const [confirmScheduleIso, setConfirmScheduleIso] = useState<string>("");
+  const [scheduleSendEmail, setScheduleSendEmail] = useState(false);
 
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleApp, setRescheduleApp] = useState<ApplicationRow | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
+  const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
   const [decisionOpen, setDecisionOpen] = useState(false);
   const [decisionApp, setDecisionApp] = useState<ApplicationRow | null>(null);
   const [checklistLoading, setChecklistLoading] = useState(false);
@@ -307,13 +309,14 @@ export default function PipelineBoard({
   const [changeRecruiterUserId, setChangeRecruiterUserId] = useState<string>("");
   const [removeConfirmApp, setRemoveConfirmApp] = useState<ApplicationRow | null>(null);
   const [pendingReject, setPendingReject] = useState<
-    | { kind: "interview"; app: ApplicationRow }
+    | { kind: "interview"; app: ApplicationRow; sendEmail?: boolean }
     | { kind: "stage"; app: ApplicationRow }
     | { kind: "drag"; app: ApplicationRow }
     | null
   >(null);
   const [emailModalApp, setEmailModalApp] = useState<ApplicationRow | null>(null);
   const [decisionAudience, setDecisionAudience] = useState<"client" | "internal">("client");
+  const [decisionSendEmail, setDecisionSendEmail] = useState(false);
   const [undoStage, setUndoStage] = useState<{ applicationId: number; stage: Stage } | null>(null);
   const [drawerApp, setDrawerApp] = useState<ApplicationRow | null>(null);
 
@@ -527,6 +530,7 @@ export default function PipelineBoard({
     setScheduleTime("");
     setConfirmScheduleIso("");
     setConfirmScheduleOpen(false);
+    setScheduleSendEmail(false);
     setScheduleOpen(true);
     void loadChecklist(app.id);
   }
@@ -758,20 +762,21 @@ export default function PipelineBoard({
           stage: "Interview",
           interview_scheduled: true,
           interview_datetime: confirmScheduleIso,
-          send_email: true,
+          send_email: scheduleSendEmail,
         }),
       });
 
       reconcileLocalApplication(updated);
       onStageUpdated(updated);
       await saveChecklist(scheduleApp.id);
-      setSuccess("Email has sent successfully");
+      setSuccess(scheduleSendEmail ? "Interview scheduled and candidate email sent." : "Interview scheduled.");
       setConfirmScheduleOpen(false);
       setScheduleOpen(false);
       setScheduleApp(null);
       setScheduleDate("");
       setScheduleTime("");
       setConfirmScheduleIso("");
+      setScheduleSendEmail(false);
     } catch (err: any) {
       flushSync(() => setLocalApplications(previousApplications));
       onStageUpdated(scheduleApp);
@@ -798,6 +803,7 @@ export default function PipelineBoard({
     setRescheduleApp(app);
     setRescheduleDate(date);
     setRescheduleTime(time);
+    setRescheduleSendEmail(false);
     setRescheduleOpen(true);
     setError(null);
     void loadChecklist(app.id);
@@ -821,7 +827,7 @@ export default function PipelineBoard({
           id: rescheduleApp.id,
           interview_datetime: iso,
           reminder_sent: false,
-          send_email: true,
+          send_email: rescheduleSendEmail,
         }),
       });
 
@@ -832,6 +838,8 @@ export default function PipelineBoard({
       setRescheduleApp(null);
       setRescheduleDate("");
       setRescheduleTime("");
+      setRescheduleSendEmail(false);
+      setSuccess(rescheduleSendEmail ? "Interview rescheduled and candidate email sent." : "Interview rescheduled.");
     } catch (err: any) {
       if (!notifyForbidden(err)) setError(err.message || "Something went wrong");
     } finally {
@@ -848,7 +856,9 @@ export default function PipelineBoard({
     if (decision === "rejected") {
       setDecisionOpen(false);
       setDecisionApp(null);
-      setPendingReject({ kind: "interview", app });
+      setDecisionSendEmail(false);
+      setDecisionSendEmail(false);
+      setPendingReject({ kind: "interview", app, sendEmail: decisionSendEmail });
       return;
     }
     setBusyId(app.id);
@@ -861,8 +871,8 @@ export default function PipelineBoard({
         body: JSON.stringify({
           id: app.id,
           interview_decision: decision,
-          send_email: true,
-          interview_decision_audience: audience,
+          send_email: decisionSendEmail,
+          interview_decision_audience: decisionSendEmail ? audience : "internal",
         }),
       });
       reconcileLocalApplication(updated);
@@ -871,13 +881,17 @@ export default function PipelineBoard({
         setSuccess(
           audience === "internal"
             ? "Moved to next round (internal — no candidate email)."
-            : "Moved to next round and notification sent."
+            : decisionSendEmail
+              ? "Moved to next round and candidate email sent."
+              : "Moved to next round."
         );
       if (decision === "final_selected")
         setSuccess(
           audience === "internal"
             ? "Marked selected (internal — no candidate email)."
-            : "Candidate marked selected and moved from Interview."
+            : decisionSendEmail
+              ? "Candidate marked selected and email sent."
+              : "Candidate marked selected and moved from Interview."
         );
       setDecisionOpen(false);
       setDecisionApp(null);
@@ -906,13 +920,13 @@ export default function PipelineBoard({
           body: JSON.stringify({
             id: app.id,
             interview_decision: "rejected",
-            send_email: true,
+            send_email: pendingReject.sendEmail === true,
             disposition_reason_id: reasonId,
           }),
         });
         reconcileLocalApplication(updated);
         onStageUpdated(updated);
-        setSuccess("Candidate marked rejected at current round.");
+        setSuccess(pendingReject.sendEmail ? "Candidate marked rejected and candidate email sent." : "Candidate marked rejected at current round.");
       } else {
         // `stage` + `drag` both PATCH stage to Rejected with audit reason (no PATCH is sent until the user picks a reason).
         const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
@@ -1036,6 +1050,7 @@ export default function PipelineBoard({
         onClick: () => {
           setDecisionApp(a);
           setDecisionAudience("client");
+          setDecisionSendEmail(false);
           setDecisionOpen(true);
         },
       });
@@ -1098,6 +1113,7 @@ export default function PipelineBoard({
           if (drawerApp) {
             setDecisionApp(drawerApp);
             setDecisionAudience("client");
+            setDecisionSendEmail(false);
             setDecisionOpen(true);
           }
         }}
@@ -1367,9 +1383,15 @@ export default function PipelineBoard({
                 </div>
               </div>
 
-              <div className="mt-5 text-sm text-slate-700">
-                Do you want to schedule this interview and send email to candidate?
-              </div>
+              <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={scheduleSendEmail}
+                  onChange={(e) => setScheduleSendEmail(e.target.checked)}
+                  disabled={busyId === scheduleApp.id}
+                />
+                Send email to candidate
+              </label>
 
               <div className="mt-6">
                 <button
@@ -1431,6 +1453,16 @@ export default function PipelineBoard({
                 </div>
               </div>
 
+              <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={rescheduleSendEmail}
+                  onChange={(e) => setRescheduleSendEmail(e.target.checked)}
+                  disabled={busyId === rescheduleApp.id}
+                />
+                Send updated schedule to candidate
+              </label>
+
               <div className="mt-6">
                 <button
                   type="button"
@@ -1462,10 +1494,19 @@ export default function PipelineBoard({
                 <div className="text-xs font-semibold text-slate-700">Candidate email</div>
                 <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-slate-800">
                   <input
+                    type="checkbox"
+                    checked={decisionSendEmail}
+                    onChange={(e) => setDecisionSendEmail(e.target.checked)}
+                  />
+                  Send email to candidate
+                </label>
+                <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-slate-800">
+                  <input
                     type="radio"
                     name="dec-aud"
                     checked={decisionAudience === "client"}
                     onChange={() => setDecisionAudience("client")}
+                    disabled={!decisionSendEmail}
                   />
                   Client-facing (notify candidate)
                 </label>
@@ -1475,6 +1516,7 @@ export default function PipelineBoard({
                     name="dec-aud"
                     checked={decisionAudience === "internal"}
                     onChange={() => setDecisionAudience("internal")}
+                    disabled={!decisionSendEmail}
                   />
                   Internal only (audit only, no candidate email)
                 </label>

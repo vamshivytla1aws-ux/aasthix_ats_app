@@ -1,4 +1,5 @@
 import { sendEmailMessage } from "@/lib/sendEmail";
+import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
 
 export async function sendCareersApplicationConfirmation(opts: {
   to: string;
@@ -7,19 +8,23 @@ export async function sendCareersApplicationConfirmation(opts: {
   companyName: string;
 }) {
   const subject = `Application received - ${opts.jobTitle}`;
-  const text = `Hi ${opts.candidateName},
-
-Thank you for applying for the ${opts.jobTitle} role at ${opts.companyName}.
-
-We have received your application and our recruiting team will review it shortly.
-
-Best regards,
-${opts.companyName} Talent Team`;
+  const emailBody = buildCandidateEmailTemplate({
+    candidateName: opts.candidateName,
+    paragraphs: [
+      `Thank you for applying for the ${opts.jobTitle} role at ${opts.companyName}.`,
+      "We have received your application and our recruiting team will review it shortly.",
+    ],
+    job: {
+      title: opts.jobTitle,
+      company: opts.companyName,
+    },
+  });
 
   const result = await sendEmailMessage({
     to: [opts.to],
     subject,
-    text,
+    text: emailBody.text,
+    html: emailBody.html,
   });
 
   if (!result.sent && result.reason === "email_not_configured") {

@@ -3,15 +3,7 @@ import { pool } from "@/lib/db";
 import { generateScreeningQuestions, SCREENING_GEN_MODEL } from "@/lib/screeningAi";
 import { logScreeningAudit } from "@/lib/screeningAudit";
 import { sendEmailMessage } from "@/lib/sendEmail";
-
-function escapeHtml(unsafe: string) {
-  return unsafe
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
 
 function formatDeadline(value: string) {
   const d = new Date(value);
@@ -38,44 +30,20 @@ async function sendScreeningEmail(input: {
 }) {
   const deadlineLabel = formatDeadline(input.deadlineIso);
   const subject = `Screening Test: ${input.jobTitle || "Job Role"}`;
-  const html = `
-<!doctype html>
-<html>
-  <body style="margin:0;padding:0;background:#F8FAFC;">
-    <div style="max-width:620px;margin:0 auto;padding:24px;">
-      <div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;overflow:hidden;">
-        <div style="padding:20px 24px;background:#0F172A;">
-          <div style="font-family:Arial,sans-serif;color:#FFFFFF;font-size:18px;font-weight:700;">Aasthix Talent</div>
-        </div>
-        <div style="padding:20px 24px;font-family:Arial,sans-serif;color:#0F172A;">
-          <p style="margin:0 0 12px;">Hi ${escapeHtml(input.candidateName || "there")},</p>
-          <p style="margin:0 0 12px;">
-            Please complete the screening test for the role <strong>${escapeHtml(input.jobTitle || "N/A")}</strong>.
-          </p>
-          <p style="margin:0 0 14px;">
-            Deadline: <strong>${escapeHtml(deadlineLabel)}</strong> (valid for 4 hours, one-time submission).
-          </p>
-          <p style="margin:0 0 18px;">
-            <a href="${escapeHtml(input.testUrl)}" style="display:inline-block;background:#2563EB;color:#FFFFFF;text-decoration:none;padding:10px 14px;border-radius:8px;font-weight:700;">
-              Start Screening Test
-            </a>
-          </p>
-          <p style="margin:0;color:#475569;font-size:13px;">
-            If the link does not open, copy this URL in your browser:<br/>
-            <span style="word-break:break-all;">${escapeHtml(input.testUrl)}</span>
-          </p>
-        </div>
-      </div>
-    </div>
-  </body>
-</html>`;
-  const text = `Hi ${input.candidateName || "there"},
-
-Please complete the screening test for the role ${input.jobTitle || "N/A"}.
-
-Deadline: ${deadlineLabel}
-
-Start test: ${input.testUrl}`;
+  const { html, text } = buildCandidateEmailTemplate({
+    candidateName: input.candidateName,
+    paragraphs: [
+      `Please complete the screening test for the role ${input.jobTitle || "N/A"}.`,
+      `Deadline: ${deadlineLabel} (valid for 4 hours, one-time submission).`,
+    ],
+    job: {
+      title: input.jobTitle || "N/A",
+    },
+    cta: {
+      label: "Start Screening Test",
+      url: input.testUrl,
+    },
+  });
   const result = await sendEmailMessage({
     to: [input.to],
     subject,
@@ -90,6 +58,7 @@ export async function createAndSendScreeningTest(input: {
   userId: number;
   origin: string;
   reason: "auto" | "manual_resend";
+  sendEmail?: boolean;
 }) {
   const client = await pool.connect();
   let testId = 0;
@@ -228,7 +197,7 @@ export async function createAndSendScreeningTest(input: {
   }
 
   const testUrl = `${input.origin}/test/${testId}?token=${encodeURIComponent(token)}`;
-  if (candidateEmail) {
+  if (candidateEmail && input.sendEmail !== false) {
     try {
       await sendScreeningEmail({
         to: candidateEmail,

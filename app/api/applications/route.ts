@@ -7,6 +7,7 @@ import { createAndSendScreeningTest } from "@/lib/screeningWorkflow";
 import { logScreeningAudit } from "@/lib/screeningAudit";
 import { recordDispositionEvent, validateDispositionReason } from "@/lib/dispositionAudit";
 import { sendEmailMessage } from "@/lib/sendEmail";
+import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
 
 export const runtime = "nodejs";
 
@@ -32,15 +33,6 @@ function formatEmailDateTime(value: string | null | undefined) {
   } catch {
     return d.toLocaleString();
   }
-}
-
-function escapeHtml(unsafe: string) {
-  return unsafe
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 async function safeFetchApplicationCardRow(applicationId: number, userId: number) {
@@ -875,6 +867,7 @@ export async function PATCH(request: Request) {
           userId: Number(user.user_id),
           origin,
           reason: "auto",
+          sendEmail: send_email === true,
         });
       } catch (e) {
         console.error("Failed to auto-trigger screening test", e);
@@ -954,89 +947,24 @@ export async function PATCH(request: Request) {
             const whenText = when || "-";
             const descriptionText = jobDescription ? jobDescription : "Not provided";
 
-            const html = `
-<!doctype html>
-<html>
-  <body style="margin:0;padding:0;background:#F8FAFC;">
-    <div style="max-width:600px;margin:0 auto;padding:24px;">
-      <div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;overflow:hidden;">
-        <div style="padding:20px 24px;background:#0F172A;">
-          <div style="font-family:Arial, sans-serif;color:#FFFFFF;font-size:18px;font-weight:700;">Aasthix Talent</div>
-        </div>
-
-        <div style="padding:20px 24px;">
-          <p style="margin:0 0 12px;font-family:Arial,sans-serif;color:#0F172A;font-size:14px;">
-            Hi ${escapeHtml(candidateName || "there")},
-          </p>
-
-          ${
-            isReschedule
-              ? `
-          <p style="margin:0 0 12px;font-family:Arial,sans-serif;color:#0F172A;font-size:14px;">
-            We would like to inform you that your interview has been rescheduled. The new time window is provided below.
-          </p>
-          `
-              : `
-          <p style="margin:0 0 12px;font-family:Arial,sans-serif;color:#0F172A;font-size:14px;">
-            Thanks for your application.
-          </p>
-
-          <p style="margin:0 0 16px;font-family:Arial,sans-serif;color:#0F172A;font-size:14px;">
-            Your interview has been scheduled.
-          </p>
-          `
-          }
-
-          <div style="display:flex;gap:12px;flex-wrap:wrap;margin:0 0 16px;">
-            <div style="flex:1;min-width:220px;background:#EEF2FF;border:1px solid #E0E7FF;border-radius:10px;padding:12px;">
-              <div style="font-family:Arial,sans-serif;font-size:12px;color:#4B5563;margin:0 0 6px;">Role</div>
-              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#1D4ED8;">${escapeHtml(roleText)}</div>
-            </div>
-            <div style="flex:1;min-width:220px;background:#ECFDF5;border:1px solid #D1FAE5;border-radius:10px;padding:12px;">
-              <div style="font-family:Arial,sans-serif;font-size:12px;color:#4B5563;margin:0 0 6px;">Interview Date &amp; Time</div>
-              <div style="font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#059669;">${escapeHtml(whenText)}</div>
-            </div>
-          </div>
-
-          <div style="margin:0 0 12px;font-family:Arial,sans-serif;color:#0F172A;font-size:14px;font-weight:700;">
-            Below is the Job Description:
-          </div>
-          <div style="white-space:pre-wrap;background:#F8FAFC;border:1px solid #E5E7EB;border-radius:10px;padding:12px 14px;margin:0 0 18px;font-family:Arial,sans-serif;color:#111827;font-size:13px;line-height:1.4;">
-            ${escapeHtml(descriptionText)}
-          </div>
-
-          <p style="margin:0;font-family:Arial,sans-serif;color:#0F172A;font-size:14px;">
-            Thanks,
-          </p>
-		  <p style="margin:0;font-family:Arial,sans-serif;color:#0F172A;font-size:14px;">
-			Aasthix Talent.
-          </p>
-		  <p style="margin:0;font-family:Arial,sans-serif;color:#0F172A;font-size:14px;">
-			www.aasthix.com
-          </p>
-        </div>
-      </div>
-
-      <div style="text-align:center;margin-top:12px;font-family:Arial,sans-serif;color:#6B7280;font-size:12px;">
-        © 2026 Aasthix Talent
-      </div>
-            </div>
-  </body>
-</html>
-`;
+            const emailBody = buildCandidateEmailTemplate({
+              candidateName: candidateName || "there",
+              paragraphs: isReschedule
+                ? [
+                    "We would like to inform you that your interview has been rescheduled. The new time window is provided below.",
+                    `Interview Date & Time: ${whenText}`,
+                  ]
+                : ["Thanks for your application.", `Your interview has been scheduled for ${whenText}.`],
+              job: {
+                title: roleText,
+                description: descriptionText,
+              },
+            });
             const sendResult = await sendEmailMessage({
               to: [candidateEmail],
               subject,
-              html,
-              text: `Hi ${candidateName || "there"},
-
-${isReschedule ? "Your interview has been rescheduled." : "Your interview has been scheduled."}
-
-Role: ${roleText}
-Interview Date & Time: ${whenText}
-
-Regards,
-Aasthix Talent`,
+              html: emailBody.html,
+              text: emailBody.text,
             });
             if (!sendResult.sent) {
               throw new Error(sendResult.detail || "Failed to send scheduled interview email");
@@ -1092,10 +1020,18 @@ Aasthix Talent`,
                   : `Congratulations! You are confirmed for ${
                       updated.current_interview_round_order ? `Round ${updated.current_interview_round_order}` : "the next round"
                     }. We will share the info shortly.`;
+            const emailBody = buildCandidateEmailTemplate({
+              candidateName: candidateInfo.rows?.[0]?.candidate_full_name || "Candidate",
+              paragraphs: [message],
+              job: {
+                title: candidateInfo.rows?.[0]?.job_title as string | undefined,
+              },
+            });
             const sendResult = await sendEmailMessage({
               to: [candidateEmail],
               subject,
-              text: `Hi ${candidateInfo.rows?.[0]?.candidate_full_name || "Candidate"},\n\n${message}`,
+              text: emailBody.text,
+              html: emailBody.html,
             });
             if (!sendResult.sent) {
               throw new Error(sendResult.detail || "Failed to send progress email");

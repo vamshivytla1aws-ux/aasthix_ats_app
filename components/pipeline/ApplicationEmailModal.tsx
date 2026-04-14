@@ -34,6 +34,7 @@ export default function ApplicationEmailModal({
   const [to, setTo] = useState("");
   const [draftBusy, setDraftBusy] = useState(false);
   const [sendBusy, setSendBusy] = useState(false);
+  const [confirmSend, setConfirmSend] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -73,6 +74,7 @@ export default function ApplicationEmailModal({
     setCustomPrompt("");
     setIntent("next_steps");
     setCopied(false);
+    setConfirmSend(false);
     setError(null);
     let cancelled = false;
     (async () => {
@@ -157,6 +159,15 @@ export default function ApplicationEmailModal({
           >
             <X className="h-5 w-5" />
           </button>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <input
+              type="checkbox"
+              checked={confirmSend}
+              onChange={(e) => setConfirmSend(e.target.checked)}
+              disabled={sendBusy}
+            />
+            Send this email to the candidate
+          </label>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
@@ -252,7 +263,7 @@ export default function ApplicationEmailModal({
           <button
             type="button"
             onClick={() => void handleSend()}
-            disabled={sendBusy || draftBusy || !to.trim() || !subject.trim() || !body.trim()}
+            disabled={sendBusy || draftBusy || !to.trim() || !subject.trim() || !body.trim() || !confirmSend}
             className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 dark:bg-indigo-500"
           >
             {sendBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

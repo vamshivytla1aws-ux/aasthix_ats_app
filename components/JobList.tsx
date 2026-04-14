@@ -77,6 +77,7 @@ export function JobList({
   const [sendJdBusy, setSendJdBusy] = useState(false);
   const [sendJdError, setSendJdError] = useState<string | null>(null);
   const [sendJdSuccess, setSendJdSuccess] = useState<string | null>(null);
+  const [sendJdConfirmed, setSendJdConfirmed] = useState(false);
   const [matchHubJob, setMatchHubJob] = useState<Job | null>(null);
   const [jobDisposition, setJobDisposition] = useState<{ job: Job; nextStatus: string } | null>(null);
   const [questionsOpen, setQuestionsOpen] = useState(false);
@@ -302,6 +303,7 @@ export function JobList({
           setSendJdMessage("");
           setSendJdError(null);
           setSendJdSuccess(null);
+          setSendJdConfirmed(false);
         },
       },
       { type: "button", label: "Edit", onClick: () => onEdit(job) },
@@ -802,6 +804,15 @@ export function JobList({
                   <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">Message</label>
                   <textarea className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm min-h-[120px] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" value={sendJdMessage} onChange={(e) => setSendJdMessage(e.target.value)} />
                 </div>
+                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={sendJdConfirmed}
+                    onChange={(e) => setSendJdConfirmed(e.target.checked)}
+                    disabled={sendJdBusy}
+                  />
+                  Send this email to the candidate
+                </label>
               </div>
               {sendJdError ? <div className="mt-3 text-sm text-rose-600">{sendJdError}</div> : null}
               {sendJdSuccess ? <div className="mt-3 text-sm text-emerald-700">{sendJdSuccess}</div> : null}
@@ -809,7 +820,7 @@ export function JobList({
                 <button className="rounded-xl border border-gray-200 px-3 py-2 text-sm dark:border-slate-600 dark:text-slate-300" onClick={() => setSendJdOpen(false)}>Cancel</button>
                 <button
                   className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  disabled={sendJdBusy}
+                  disabled={sendJdBusy || !sendJdConfirmed}
                   onClick={async () => {
                     setSendJdError(null);
                     setSendJdSuccess(null);

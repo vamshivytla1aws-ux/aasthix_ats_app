@@ -4,6 +4,7 @@ import { fetchApplicationCardRow } from "@/lib/applicationCard";
 import { sendTransactionalEmail } from "@/lib/sendTransactionalEmail";
 import { checkApplicationEmailSendRateLimit } from "@/lib/applicationEmail/rateLimit";
 import { writeAuditLog } from "@/lib/auditLog";
+import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,10 +92,31 @@ export async function POST(request: Request, context: { params: { id: string } }
       return NextResponse.json({ error: "Application not found or not accessible." }, { status: 404 });
     }
 
+    const card = row as {
+      candidate_full_name?: string | null;
+      job_title?: string | null;
+      job_company?: string | null;
+      job_location?: string | null;
+    };
+    const messageParagraphs = text
+      .split(/\n\s*\n/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const emailBody = buildCandidateEmailTemplate({
+      candidateName: card.candidate_full_name,
+      paragraphs: messageParagraphs.length > 0 ? messageParagraphs : [text.trim()],
+      job: {
+        title: card.job_title,
+        company: card.job_company,
+        location: card.job_location,
+      },
+    });
+
     const sendResult = await sendTransactionalEmail({
       to: parsed.emails,
       subject,
-      text,
+      text: emailBody.text,
+      html: emailBody.html,
     });
 
     if (!sendResult.sent) {

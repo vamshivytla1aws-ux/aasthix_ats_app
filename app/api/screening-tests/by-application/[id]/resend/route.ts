@@ -32,6 +32,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       userId: Number(user.user_id),
       origin,
       reason: "manual_resend",
+      sendEmail: true,
     });
 
     return NextResponse.json({ ok: true, ...created });
