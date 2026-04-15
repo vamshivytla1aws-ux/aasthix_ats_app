@@ -104,6 +104,14 @@ type CandidateProfileResponse = {
   }>;
 };
 
+function normalizeResumeLink(url: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith("/uploads/resumes/")) {
+    return `/api/resume/${url.replace(/^\/uploads\/resumes\//, "")}`;
+  }
+  return url;
+}
+
 const TABS = [
   { id: "details", label: "Details" },
   { id: "screening", label: "Screening" },
@@ -225,6 +233,7 @@ function CandidateProfilePageContent() {
   }
 
   const c = data.candidate;
+  const normalizedResumeUrl = normalizeResumeLink(c.resume_url);
   const stageLabel = c.stage || "Applied";
   const stageProgressWidth =
     stageLabel === "Selected"
@@ -275,8 +284,8 @@ function CandidateProfilePageContent() {
       <CandidateHeader candidate={c} density={density} />
       <div className={[`border-b border-slate-200 dark:border-slate-700`, sectionPad].join(" ")}>
         <div className={["mb-0.5 text-slate-500 dark:text-slate-400", titleClass].join(" ")}>Resume</div>
-        {c.resume_url ? (
-          <a href={c.resume_url} target="_blank" rel="noopener noreferrer" className={btnClass}>
+        {normalizedResumeUrl ? (
+          <a href={normalizedResumeUrl} target="_blank" rel="noopener noreferrer" className={btnClass}>
             <Download size={density === "ultra" ? 12 : 14} />
             Download resume
           </a>
