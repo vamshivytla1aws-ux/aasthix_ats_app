@@ -45,6 +45,10 @@ Recommended domain setup for Aasthix:
 - add a Hostinger DNS record: `CNAME app -> web-production-51c20.up.railway.app`
 - set `APP_PUBLIC_URL=https://app.aasthix.com`
 
+Deployment note:
+
+- if Railway appears stuck on an older successful GitHub deploy, push a fresh commit to `initial-upload` to force the web service to rebuild from the latest branch head
+
 This keeps:
 
 - public careers pages on `https://app.aasthix.com/careers`
