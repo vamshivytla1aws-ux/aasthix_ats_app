@@ -152,45 +152,20 @@ export async function listSingleMatchHistoryForJob(opts: {
   limit?: number;
 }): Promise<{ runs: SingleMatchHistoryRun[]; migrationRequired: boolean }> {
   const limit = Math.min(100, Math.max(1, opts.limit ?? 50));
+  void opts.ownerUserId;
 
   try {
-    try {
-      const res = await query(
-        `
-        ${SELECT_HISTORY_COLUMNS}
-        WHERE h.job_id = $1
-          AND (
-            j.created_by_user_id = $2
-            OR EXISTS (
-              SELECT 1
-              FROM job_team jt
-              WHERE jt.job_id = h.job_id
-                AND jt.user_id = $2
-            )
-          )
-        ORDER BY h.created_at DESC
-        LIMIT $3
-        `,
-        [opts.jobId, opts.ownerUserId, limit]
-      );
+    const res = await query(
+      `
+      ${SELECT_HISTORY_COLUMNS}
+      WHERE h.job_id = $1
+      ORDER BY h.created_at DESC
+      LIMIT $2
+      `,
+      [opts.jobId, limit]
+    );
 
-      return { runs: mapHistoryRuns(res.rows as DbRow[]), migrationRequired: false };
-    } catch (error: unknown) {
-      if (!isUndefinedTable(error)) throw error;
-
-      const res = await query(
-        `
-        ${SELECT_HISTORY_COLUMNS}
-        WHERE h.job_id = $1
-          AND j.created_by_user_id = $2
-        ORDER BY h.created_at DESC
-        LIMIT $3
-        `,
-        [opts.jobId, opts.ownerUserId, limit]
-      );
-
-      return { runs: mapHistoryRuns(res.rows as DbRow[]), migrationRequired: false };
-    }
+    return { runs: mapHistoryRuns(res.rows as DbRow[]), migrationRequired: false };
   } catch (error: unknown) {
     if (isUndefinedTable(error)) {
       return { runs: [], migrationRequired: true };
