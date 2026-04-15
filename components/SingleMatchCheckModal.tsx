@@ -61,6 +61,7 @@ export default function SingleMatchCheckModal({
   const [modalHistory, setModalHistory] = useState<SingleMatchHistoryRun[]>([]);
   const [modalHistoryMigration, setModalHistoryMigration] = useState(false);
   const [modalHistoryLoading, setModalHistoryLoading] = useState(false);
+  const [loadedFromHistoryAt, setLoadedFromHistoryAt] = useState<string | null>(null);
 
   const loadModalHistory = useCallback(async () => {
     if (!jobId) return;
@@ -137,8 +138,38 @@ export default function SingleMatchCheckModal({
       setModalHistory([]);
       setModalHistoryMigration(false);
       setModalHistoryLoading(false);
+      setLoadedFromHistoryAt(null);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setLoadedFromHistoryAt(null);
+      return;
+    }
+
+    const latestRun = modalHistory.find((run) => run.candidate_id === selectedId);
+    if (!latestRun) {
+      setLoadedFromHistoryAt(null);
+      return;
+    }
+
+    setResult({
+      match_score: latestRun.match_score,
+      match_score_no_ai: latestRun.match_score_no_ai,
+      ai_match_score: latestRun.ai_match_score,
+      decision: latestRun.decision,
+      decision_no_ai: latestRun.decision_no_ai,
+      ai_decision: latestRun.ai_decision,
+      matched_skills: latestRun.matched_skills,
+      missing_required_skills: latestRun.missing_required_skills,
+      reasoning: latestRun.reasoning,
+      summary: latestRun.summary,
+    });
+    setLastUseAI(Boolean(latestRun.use_ai));
+    setRunError(null);
+    setLoadedFromHistoryAt(latestRun.created_at);
+  }, [selectedId, modalHistory]);
 
   const clearCandidateSelection = useCallback(() => {
     setSelectedId(null);
@@ -154,6 +185,7 @@ export default function SingleMatchCheckModal({
     setRunBusy(true);
     setRunError(null);
     setResult(null);
+    setLoadedFromHistoryAt(null);
     setLastUseAI(useAI);
     try {
       const res = await apiFetchJson<SingleMatchCheckApiResponse>(`/api/jobs/${jobId}/single-match-check`, {
@@ -305,6 +337,11 @@ export default function SingleMatchCheckModal({
                   {modeLabel(lastUseAI, result)}
                 </span>
               </div>
+              {loadedFromHistoryAt ? (
+                <p className="mb-2 text-[11px] text-slate-500">
+                  Loaded saved result from {new Date(loadedFromHistoryAt).toLocaleString()}.
+                </p>
+              ) : null}
               <div className="mb-3 flex flex-wrap items-end gap-3">
                 <div>
                   <div className="text-[10px] font-semibold uppercase text-slate-500">Overall</div>
