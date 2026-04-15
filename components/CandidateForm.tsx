@@ -42,6 +42,66 @@ type Job = { id: number; title: string; company?: string | null; vendor_id?: num
 
 const CANDIDATE_DRAFT_KEY = "ats:candidateform-draft-v1";
 
+const INDIA_CITY_ALIASES = [
+  "ahmedabad",
+  "bangalore",
+  "bengaluru",
+  "bombay",
+  "calcutta",
+  "chandigarh",
+  "chennai",
+  "coimbatore",
+  "cochin",
+  "delhi",
+  "greater noida",
+  "gurgaon",
+  "gurugram",
+  "hyderabad",
+  "indore",
+  "jaipur",
+  "kochi",
+  "kolkata",
+  "lucknow",
+  "madras",
+  "mumbai",
+  "mysore",
+  "mysuru",
+  "navi mumbai",
+  "new delhi",
+  "noida",
+  "poona",
+  "pune",
+  "secunderabad",
+  "thiruvananthapuram",
+  "trivandrum",
+  "visakhapatnam",
+  "vizag",
+];
+
+function sanitizeLocationForForm(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const normalized = raw.toLowerCase().replace(/[^a-z0-9, ]+/g, " ").replace(/\s+/g, " ").trim();
+  if (
+    /\b(from multiple data sources|years? of experience|requirements?|power bi|sql server|qlik|data modelling|data visualization|etl|developer|engineer|skills?)\b/i.test(
+      normalized
+    )
+  ) {
+    return "";
+  }
+  if (/^[a-z\s]{25,}$/.test(normalized) && !normalized.includes(",")) {
+    return "";
+  }
+  if (INDIA_CITY_ALIASES.some((city) => normalized.includes(city))) {
+    return raw;
+  }
+  if (/^(remote|hybrid|onsite)$/i.test(raw)) return raw;
+  if (raw.includes(",") && raw.split(",").every((part) => part.trim().length > 1 && part.trim().length <= 30)) {
+    return raw;
+  }
+  return "";
+}
+
 const sectionTitle = "text-xs font-bold uppercase tracking-wider text-slate-500";
 const sectionCard =
   "rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.02] sm:p-5";
@@ -324,7 +384,7 @@ export default function CandidateForm({
       if (parsed.full_name) setFullName(parsed.full_name);
       if (parsed.email) setEmail(parsed.email);
       if (parsed.phone) setPhone(parsed.phone);
-      if (parsed.location) setLocation(parsed.location);
+      setLocation(sanitizeLocationForForm(parsed.location));
       if (parsed.linkedin_url) setLinkedinUrl(parsed.linkedin_url);
       if (parsed.resume_url) setResumeUrl(parsed.resume_url);
       if (parsed.skills) {
