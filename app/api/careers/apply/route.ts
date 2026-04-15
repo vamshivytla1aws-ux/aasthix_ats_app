@@ -201,7 +201,15 @@ export async function POST(request: Request) {
         UPDATE candidates SET
           full_name = $2,
           phone = $3,
-          location = $4,
+          location = CASE
+            WHEN location_source = 'manual' THEN location
+            ELSE $4
+          END,
+          location_source = CASE
+            WHEN location_source = 'manual' THEN 'manual'
+            WHEN NULLIF(BTRIM(COALESCE($4::text, '')), '') IS NULL THEN location_source
+            ELSE 'manual'
+          END,
           resume_url = $5,
           resume_text = COALESCE($6, resume_text),
           experience_summary = $7,
@@ -234,7 +242,15 @@ export async function POST(request: Request) {
         UPDATE candidates SET
           full_name = $2,
           email = $3,
-          location = $4,
+          location = CASE
+            WHEN location_source = 'manual' THEN location
+            ELSE $4
+          END,
+          location_source = CASE
+            WHEN location_source = 'manual' THEN 'manual'
+            WHEN NULLIF(BTRIM(COALESCE($4::text, '')), '') IS NULL THEN location_source
+            ELSE 'manual'
+          END,
           resume_url = $5,
           resume_text = COALESCE($6, resume_text),
           experience_summary = $7,
@@ -264,10 +280,10 @@ export async function POST(request: Request) {
       const ins = await client.query(
         `
         INSERT INTO candidates (
-          full_name, email, phone, linkedin_url, website_url, location, resume_url, resume_text, skills,
+          full_name, email, phone, linkedin_url, website_url, location, location_source, resume_url, resume_text, skills,
           notice_period, current_salary, expected_salary, experience_summary, source, created_by_user_id
         )
-        VALUES ($1, $2, $3, NULL, NULL, $4, $5, $6, NULL, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, NULL, NULL, $4, 'manual', $5, $6, NULL, $7, $8, $9, $10, $11, $12)
         RETURNING id
         `,
         [

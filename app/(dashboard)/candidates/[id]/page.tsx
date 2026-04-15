@@ -3,7 +3,7 @@
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Download, Mail, Phone } from "lucide-react";
+import { Check, Download, Mail, MapPin, Pencil, Phone, X } from "lucide-react";
 import CandidateHeader from "@/components/candidate/CandidateHeader";
 import Timeline from "@/components/candidate/Timeline";
 import NotesSection from "@/components/candidate/NotesSection";
@@ -23,6 +23,7 @@ type Candidate = {
   linkedin_url: string | null;
   website_url: string | null;
   location: string | null;
+  location_source?: "parsed" | "manual" | null;
   skills: string | null;
   current_salary: number | null;
   expected_salary: number | null;
@@ -125,6 +126,10 @@ function CandidateProfilePageContent() {
   const [tab, setTab] = useState<string>("details");
   const [canManageCandidate, setCanManageCandidate] = useState(false);
   const [gdprBusy, setGdprBusy] = useState(false);
+  const [isEditingLocation, setIsEditingLocation] = useState(false);
+  const [locationDraft, setLocationDraft] = useState("");
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const router = useRouter();
 
   const isValidId = useMemo(() => Number.isFinite(candidateId), [candidateId]);
@@ -174,6 +179,12 @@ function CandidateProfilePageContent() {
     };
   }, []);
 
+  useEffect(() => {
+    setLocationDraft(data?.candidate.location || "");
+    setIsEditingLocation(false);
+    setLocationError(null);
+  }, [data?.candidate.location, data?.candidate.id]);
+
   const sectionPad = density === "comfortable" ? "py-3" : density === "compact" ? "py-2" : "py-1.5";
   const titleClass = density === "ultra" ? "text-[10px]" : "text-xs";
   const btnClass =
@@ -222,9 +233,42 @@ function CandidateProfilePageContent() {
         ? "85%"
         : stageLabel === "Interview"
           ? "60%"
-          : stageLabel === "Screening"
-            ? "40%"
-            : "20%";
+        : stageLabel === "Screening"
+          ? "40%"
+          : "20%";
+
+  async function saveLocation() {
+    setLocationBusy(true);
+    setLocationError(null);
+    try {
+      const updated = await apiFetchJson<{ location: string | null; location_source?: "parsed" | "manual" | null }>(
+        `/api/candidates/${candidateId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ location: locationDraft }),
+        }
+      );
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              candidate: {
+                ...current.candidate,
+                location: updated.location ?? null,
+                location_source: updated.location_source ?? null,
+              },
+            }
+          : current
+      );
+      setLocationDraft(updated.location || "");
+      setIsEditingLocation(false);
+    } catch (err: any) {
+      setLocationError(err?.message || "Failed to save location");
+    } finally {
+      setLocationBusy(false);
+    }
+  }
 
   const detailsPanel = (
     <div className="space-y-0">
@@ -261,8 +305,81 @@ function CandidateProfilePageContent() {
       <div className={[`border-b border-slate-200 dark:border-slate-700`, sectionPad].join(" ")}>
         <h3 className={[titleClass, "text-slate-500 dark:text-slate-400"].join(" ")}>Details</h3>
         <div className="mt-1 grid grid-cols-1 gap-1 text-xs text-slate-700 dark:text-slate-200 md:grid-cols-2">
-          <div>
+          <div
+            onDoubleClick={() => {
+              setIsEditingLocation(true);
+              setLocationError(null);
+            }}
+            title="Double-click to edit location"
+          >
             <span className="text-slate-500 dark:text-slate-400">Location:</span> {c.location || "—"}
+          </div>
+          <div className="md:col-span-2">
+            {isEditingLocation ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={locationDraft}
+                  onChange={(e) => setLocationDraft(e.target.value)}
+                  className="min-w-[220px] rounded-md border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1 text-xs text-[var(--ats-text)] outline-none"
+                  placeholder="Enter candidate location"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void saveLocation();
+                    }
+                    if (e.key === "Escape") {
+                      setLocationDraft(c.location || "");
+                      setIsEditingLocation(false);
+                      setLocationError(null);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void saveLocation()}
+                  disabled={locationBusy}
+                  className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                >
+                  <Check size={12} />
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLocationDraft(c.location || "");
+                    setIsEditingLocation(false);
+                    setLocationError(null);
+                  }}
+                  disabled={locationBusy}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  <X size={12} />
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="mt-1 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingLocation(true);
+                    setLocationError(null);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1 text-[11px] font-medium text-[var(--ats-text)] transition hover:bg-[var(--ats-bg-elevated)]"
+                >
+                  <MapPin size={12} />
+                  <Pencil size={12} />
+                  Edit location
+                </button>
+                {c.location_source === "manual" ? (
+                  <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                    Manual override
+                  </span>
+                ) : null}
+              </div>
+            )}
+            {locationError ? <div className="mt-1 text-[11px] text-red-600 dark:text-red-400">{locationError}</div> : null}
           </div>
           <div>
             <span className="text-slate-500 dark:text-slate-400">Notice:</span> {c.notice_period || "—"}

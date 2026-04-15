@@ -14,6 +14,7 @@ type CandidateProfile = {
   linkedin_url: string | null;
   website_url: string | null;
   location: string | null;
+  location_source?: "parsed" | "manual" | null;
   skills: string | null;
   current_salary: number | null;
   expected_salary: number | null;
@@ -151,6 +152,7 @@ export async function GET(
         c.linkedin_url,
         c.website_url,
         c.location,
+        c.location_source,
         c.skills,
         c.notice_period,
         c.current_salary,
@@ -461,5 +463,44 @@ export async function GET(
   } catch (error) {
     console.error("Error fetching candidate profile", error);
     return NextResponse.json({ error: "Failed to fetch candidate profile" }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const auth = await requirePermission("candidates.manage");
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+    const candidateId = Number(params.id);
+    if (!Number.isFinite(candidateId)) {
+      return NextResponse.json({ error: "Invalid candidate id" }, { status: 400 });
+    }
+
+    const body = await request.json().catch(() => null);
+    const rawLocation = typeof body?.location === "string" ? body.location.trim() : "";
+    const location = rawLocation.length > 0 ? rawLocation.slice(0, 120) : null;
+    const locationSource = location ? "manual" : "parsed";
+
+    const result = await query(
+      `
+      UPDATE candidates
+      SET
+        location = $2,
+        location_source = $3,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, location, location_source
+      `,
+      [candidateId, location, locationSource]
+    );
+
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating candidate location", error);
+    return NextResponse.json({ error: "Failed to update candidate location" }, { status: 500 });
   }
 }

@@ -22,6 +22,28 @@ export type ParsedResumeFields = {
   };
 };
 
+const INDIA_LOCATION_CATALOG: Array<{ canonical: string; aliases: string[] }> = [
+  { canonical: "Ahmedabad, India", aliases: ["ahmedabad"] },
+  { canonical: "Bengaluru, India", aliases: ["bengaluru", "bangalore", "banglore"] },
+  { canonical: "Chandigarh, India", aliases: ["chandigarh"] },
+  { canonical: "Chennai, India", aliases: ["chennai", "madras"] },
+  { canonical: "Coimbatore, India", aliases: ["coimbatore"] },
+  { canonical: "Delhi, India", aliases: ["delhi", "new delhi", "ncr"] },
+  { canonical: "Gurugram, India", aliases: ["gurugram", "gurgaon"] },
+  { canonical: "Hyderabad, India", aliases: ["hyderabad", "secunderabad"] },
+  { canonical: "Indore, India", aliases: ["indore"] },
+  { canonical: "Jaipur, India", aliases: ["jaipur"] },
+  { canonical: "Kochi, India", aliases: ["kochi", "cochin"] },
+  { canonical: "Kolkata, India", aliases: ["kolkata", "calcutta"] },
+  { canonical: "Lucknow, India", aliases: ["lucknow"] },
+  { canonical: "Mumbai, India", aliases: ["mumbai", "bombay", "navi mumbai"] },
+  { canonical: "Mysuru, India", aliases: ["mysuru", "mysore"] },
+  { canonical: "Noida, India", aliases: ["noida", "greater noida"] },
+  { canonical: "Pune, India", aliases: ["pune", "poona"] },
+  { canonical: "Thiruvananthapuram, India", aliases: ["thiruvananthapuram", "trivandrum"] },
+  { canonical: "Visakhapatnam, India", aliases: ["visakhapatnam", "vizag"] },
+];
+
 function normalizeWhitespace(s: string) {
   return s.replace(/\r/g, "\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -71,6 +93,39 @@ const GEO_HINT_RE =
 
 function containsGeoHint(s: string) {
   return GEO_HINT_RE.test(s);
+}
+
+function normalizeLocationSearchText(input: string) {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function canonicalizeIndiaLocation(input: string | null | undefined) {
+  const value = cleanHeaderToken(input || "");
+  if (!value) return null;
+  const normalized = normalizeLocationSearchText(value);
+  for (const entry of INDIA_LOCATION_CATALOG) {
+    if (entry.aliases.some((alias) => normalizeLocationSearchText(alias) === normalized)) {
+      return entry.canonical;
+    }
+  }
+  return null;
+}
+
+export function findIndiaLocationFallback(text: string | null | undefined): string | null {
+  const normalized = normalizeLocationSearchText(text || "");
+  if (!normalized) return null;
+  for (const entry of INDIA_LOCATION_CATALOG) {
+    for (const alias of entry.aliases) {
+      const token = normalizeLocationSearchText(alias);
+      const re = new RegExp(`(^|\\s)${token.replace(/\s+/g, "\\s+")}(?=\\s|$)`, "i");
+      if (re.test(normalized)) return entry.canonical;
+    }
+  }
+  return null;
 }
 
 /**
@@ -260,7 +315,16 @@ export function looksLikeCandidateLocation(s: string | null | undefined): boolea
   const t = raw.replace(/^(?:Location|Address|Current\s+address|Current\s+location|Based\s+in|Residing\s+in)\s*:\s*/i, "").trim();
   if (!t) return false;
   if (/^(remote|hybrid|onsite)$/i.test(t)) return true;
-  if (containsGeoHint(t)) return true;
+
+  const directIndiaMatch = canonicalizeIndiaLocation(t);
+  if (directIndiaMatch) return true;
+
+  if (containsGeoHint(t)) {
+    const wordCount = t.split(/\s+/).filter(Boolean).length;
+    if (wordCount > 8 && !/,/.test(t)) return false;
+    if (/[.!?]/.test(t)) return false;
+    return true;
+  }
 
   const parts = t.split(",").map((x) => cleanHeaderToken(x)).filter(Boolean);
   if (parts.length === 0 || parts.length > 3) return false;
@@ -341,7 +405,10 @@ function extractLocation(text: string) {
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
-  return extractLocationFromHeaderLines(earlyLines);
+  const early = extractLocationFromHeaderLines(earlyLines);
+  if (early) return canonicalizeParsedLocation(early);
+
+  return findIndiaLocationFallback(resumeTop.slice(0, 3500));
 }
 
 function extractSkillsRuleBased(text: string) {
@@ -577,6 +644,15 @@ function norm(v: string | null | undefined) {
   return (v || "").trim().toLowerCase();
 }
 
+function canonicalizeParsedLocation(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = cleanHeaderToken(value);
+  if (!trimmed || !looksLikeCandidateLocation(trimmed)) return null;
+  const indiaCanonical = canonicalizeIndiaLocation(trimmed);
+  if (indiaCanonical) return indiaCanonical;
+  return trimmed;
+}
+
 /**
  * Filename prefix (e.g. "Hari Mohan_Sr AI_...pdf") is often the most reliable signal when PDF text order is wrong.
  * Order: file hint > AI > rule (each must pass looksLikePersonName).
@@ -599,8 +675,8 @@ function pickFinalFullName(
 
 /** Prefer validated AI when both exist; if only one is valid, use it; break ties toward comma-style (city, country). */
 function pickFinalLocation(ai: string | null | undefined, rule: string | null | undefined): string | null {
-  const a = ai?.trim() && looksLikeCandidateLocation(ai.trim()) ? ai.trim() : null;
-  const r = rule?.trim() && looksLikeCandidateLocation(rule.trim()) ? rule.trim() : null;
+  const a = canonicalizeParsedLocation(ai);
+  const r = canonicalizeParsedLocation(rule);
   if (!a && !r) return null;
   if (a && !r) return a;
   if (!a && r) return r;

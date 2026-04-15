@@ -39,6 +39,7 @@ async function upsertCandidate(
     phone?: string | null;
     linkedin_url?: string | null;
     location?: string | null;
+    location_source?: "parsed" | "manual";
     skills?: string | null;
     resume_url?: string | null;
   }
@@ -46,14 +47,22 @@ async function upsertCandidate(
   const insert = await query(
     `
     INSERT INTO candidates (
-      full_name, email, phone, linkedin_url, location, resume_url, skills, created_by_user_id
+      full_name, email, phone, linkedin_url, location, location_source, resume_url, skills, created_by_user_id
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
     ON CONFLICT (created_by_user_id, email) DO UPDATE
       SET full_name = EXCLUDED.full_name,
           phone = COALESCE(EXCLUDED.phone, candidates.phone),
           linkedin_url = COALESCE(EXCLUDED.linkedin_url, candidates.linkedin_url),
-          location = COALESCE(EXCLUDED.location, candidates.location),
+          location = CASE
+            WHEN candidates.location_source = 'manual' THEN candidates.location
+            ELSE COALESCE(EXCLUDED.location, candidates.location)
+          END,
+          location_source = CASE
+            WHEN candidates.location_source = 'manual' THEN 'manual'
+            WHEN EXCLUDED.location IS NOT NULL THEN COALESCE(EXCLUDED.location_source, 'parsed')
+            ELSE candidates.location_source
+          END,
           resume_url = COALESCE(EXCLUDED.resume_url, candidates.resume_url),
           skills = COALESCE(EXCLUDED.skills, candidates.skills),
           updated_at = NOW()
@@ -65,6 +74,7 @@ async function upsertCandidate(
       row.phone ?? null,
       row.linkedin_url ?? null,
       row.location ?? null,
+      row.location ? row.location_source ?? "parsed" : "parsed",
       row.resume_url ?? null,
       row.skills ?? null,
       userId,
@@ -159,6 +169,7 @@ export async function POST(request: Request) {
             phone: item.phone || null,
             linkedin_url: item.linkedin_url || null,
             location: item.location || null,
+            location_source: item.location ? "manual" : "parsed",
             skills: item.skills || null,
             resume_url: item.resume_url || null,
           });
@@ -208,6 +219,7 @@ export async function POST(request: Request) {
             phone: parsed.phone ?? null,
             linkedin_url: parsed.linkedin_url ?? null,
             location: parsed.location ?? null,
+            location_source: parsed.location ? "parsed" : "parsed",
             skills: parsed.skills ?? null,
             resume_url: parsed.resume_url ?? null,
           });

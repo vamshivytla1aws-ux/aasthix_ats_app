@@ -201,16 +201,19 @@ export async function POST(request: Request) {
       `
       INSERT INTO candidates (
         full_name, email, phone, linkedin_url, website_url, location, resume_url, skills,
-        notice_period, current_salary, expected_salary, experience_summary, source,
+        notice_period, current_salary, expected_salary, experience_summary, source, location_source,
         created_by_user_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       ON CONFLICT (created_by_user_id, email) DO UPDATE
         SET full_name = EXCLUDED.full_name,
             phone = EXCLUDED.phone,
             linkedin_url = EXCLUDED.linkedin_url,
             website_url = EXCLUDED.website_url,
-            location = EXCLUDED.location,
+            location = CASE
+              WHEN candidates.location_source = 'manual' THEN candidates.location
+              ELSE EXCLUDED.location
+            END,
             resume_url = COALESCE(EXCLUDED.resume_url, candidates.resume_url),
             skills = COALESCE(EXCLUDED.skills, candidates.skills),
             notice_period = COALESCE(EXCLUDED.notice_period, candidates.notice_period),
@@ -218,6 +221,11 @@ export async function POST(request: Request) {
             expected_salary = COALESCE(EXCLUDED.expected_salary, candidates.expected_salary),
             experience_summary = COALESCE(EXCLUDED.experience_summary, candidates.experience_summary),
             source = EXCLUDED.source,
+            location_source = CASE
+              WHEN candidates.location_source = 'manual' THEN 'manual'
+              WHEN EXCLUDED.location IS NOT NULL THEN EXCLUDED.location_source
+              ELSE candidates.location_source
+            END,
             updated_at = NOW()
       RETURNING
         id,
@@ -234,7 +242,8 @@ export async function POST(request: Request) {
         current_salary,
         expected_salary,
         experience_summary,
-        source
+        source,
+        location_source
       `,
       [
         full_name,
@@ -250,6 +259,7 @@ export async function POST(request: Request) {
         expected_salary ?? null,
         typeof experience_summary === "string" ? experience_summary : null,
         src,
+        location ? "manual" : "parsed",
         user.user_id,
       ]
     );
@@ -319,6 +329,10 @@ export async function PUT(request: Request) {
           linkedin_url = $5,
           website_url = $6,
           location = $7,
+          location_source = CASE
+            WHEN NULLIF(BTRIM(COALESCE($7::text, '')), '') IS NULL THEN 'parsed'
+            ELSE 'manual'
+          END,
           resume_url = $8,
           skills = $9,
           notice_period = $10,
@@ -343,7 +357,8 @@ export async function PUT(request: Request) {
           expected_salary,
           notice_period,
           experience_summary,
-          source
+          source,
+          location_source
         `,
         [
           Number(id),
@@ -375,6 +390,10 @@ export async function PUT(request: Request) {
           linkedin_url = $5,
           website_url = $6,
           location = $7,
+          location_source = CASE
+            WHEN NULLIF(BTRIM(COALESCE($7::text, '')), '') IS NULL THEN 'parsed'
+            ELSE 'manual'
+          END,
           resume_url = $8,
           skills = $9,
           current_salary = $10,
@@ -393,7 +412,8 @@ export async function PUT(request: Request) {
           resume_url,
           skills,
           current_salary,
-          expected_salary
+          expected_salary,
+          location_source
         `,
         [
           Number(id),
