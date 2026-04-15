@@ -34,6 +34,12 @@ type LinkedInDraftResponse = {
   error?: string;
 };
 
+type CachedLinkedInDraft = {
+  shareUrl: string;
+  draft: string;
+  updatedAt: string;
+};
+
 function clean(value: string | null | undefined) {
   return String(value || "").trim();
 }
@@ -50,6 +56,42 @@ function buildCaption(job: JobForShare, shareUrl: string) {
 function buildShortCaption(job: JobForShare, shareUrl: string) {
   const detail = clean(job.location) || clean(job.experience_requirement) || clean(job.employment_type);
   return [`We're hiring for ${job.title}.`, detail, shareUrl].filter(Boolean).join(" ");
+}
+
+function linkedinDraftStorageKey(jobId: number) {
+  return `ats-linkedin-draft:${jobId}`;
+}
+
+function readCachedLinkedInDraft(jobId: number): CachedLinkedInDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(linkedinDraftStorageKey(jobId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CachedLinkedInDraft>;
+    if (typeof parsed?.draft !== "string" || !parsed.draft.trim()) return null;
+    if (typeof parsed?.shareUrl !== "string" || !parsed.shareUrl.trim()) return null;
+    return {
+      draft: parsed.draft.trim(),
+      shareUrl: parsed.shareUrl.trim(),
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedLinkedInDraft(jobId: number, draft: string, shareUrl: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const payload: CachedLinkedInDraft = {
+      draft: draft.trim(),
+      shareUrl: shareUrl.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+    window.localStorage.setItem(linkedinDraftStorageKey(jobId), JSON.stringify(payload));
+  } catch {
+    // ignore storage failures
+  }
 }
 
 export default function SocialShareModal({
@@ -139,8 +181,17 @@ export default function SocialShareModal({
   useEffect(() => {
     if (!open || !shareUrl) return;
     let cancelled = false;
-    setLinkedinDraftLoading(true);
     setLinkedinDraftError(null);
+    const cached = readCachedLinkedInDraft(job.id);
+    if (cached && cached.shareUrl === shareUrl) {
+      setLinkedinDraft(cached.draft);
+      setLinkedinDraftLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setLinkedinDraftLoading(true);
     void track("linkedin_ai_draft_requested");
 
     void (async () => {
@@ -158,7 +209,9 @@ export default function SocialShareModal({
           void track("linkedin_ai_draft_failed");
           return;
         }
-        setLinkedinDraft(data.post_text.trim());
+        const nextDraft = data.post_text.trim();
+        setLinkedinDraft(nextDraft);
+        writeCachedLinkedInDraft(job.id, nextDraft, shareUrl);
         setLinkedinDraftLoading(false);
         void track("linkedin_ai_draft_generated");
       } catch {
@@ -253,7 +306,11 @@ export default function SocialShareModal({
               <textarea
                 value={linkedinDraft}
                 onChange={(event) => {
-                  setLinkedinDraft(event.target.value);
+                  const nextDraft = event.target.value;
+                  setLinkedinDraft(nextDraft);
+                  if (shareUrl.trim()) {
+                    writeCachedLinkedInDraft(job.id, nextDraft, shareUrl);
+                  }
                   if (!trackedDraftEdit) {
                     setTrackedDraftEdit(true);
                     void track("linkedin_ai_preview_edited");
