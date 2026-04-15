@@ -25,6 +25,23 @@ function clean(value: unknown) {
   return String(value || "").trim();
 }
 
+function inferWorkMode(job: JobRow) {
+  const text = [clean(job.title), clean(job.description), clean(job.location)].join(" ").toLowerCase();
+  if (/\bremote\b/.test(text)) return "Remote";
+  if (/\bhybrid\b/.test(text)) return "Hybrid";
+  if (/\bon[-\s]?site\b/.test(text) || /\bonsite\b/.test(text)) return "On-site";
+  return "Not specified";
+}
+
+function inferNoticePeriod(job: JobRow) {
+  const text = clean(job.description);
+  const direct =
+    text.match(/notice\s*period\s*[:\-]?\s*([^\n.,;]+)/i)?.[1]?.trim() ||
+    text.match(/join(?:ing)?\s*within\s*([^\n.,;]+)/i)?.[1]?.trim() ||
+    text.match(/immediate\s+joiners?/i)?.[0]?.trim();
+  return direct || "Not specified";
+}
+
 function toHashtag(value: string) {
   const words = clean(value)
     .replace(/[^a-zA-Z0-9\s]/g, " ")
@@ -65,7 +82,7 @@ function inferHashtags(job: JobRow) {
     }
   }
 
-  return Array.from(tags).slice(0, 6);
+  return Array.from(tags).slice(0, 12);
 }
 
 function ensureMandatoryFooter(text: string, shareUrl: string, hashtags: string[]) {
@@ -88,23 +105,43 @@ async function generateLinkedInDraft(job: JobRow, shareUrl: string) {
   const location = clean(job.location);
   const employmentType = clean(job.employment_type);
   const experience = clean(job.experience_requirement);
+  const workMode = inferWorkMode(job);
+  const noticePeriod = inferNoticePeriod(job);
   const hashtags = inferHashtags(job);
 
   const prompt = [
-    "Create a LinkedIn post for the following job description.",
-    "Do not mention the company name.",
-    "Keep it concise, recruiter-friendly, and suitable for a professional LinkedIn audience.",
-    `Include these hashtags naturally at the end: ${hashtags.join(" ")}`,
-    'End with exactly:\nApply here:\n' + shareUrl,
+    "Act as a senior technical recruiter and LinkedIn content writer.",
+    "",
+    "Write a HIGH-QUALITY LinkedIn hiring post based on the below JD.",
+    "",
+    "STRICT INSTRUCTIONS:",
+    "- Follow a structured format (header -> job details -> responsibilities -> skills -> CTA -> hashtags)",
+    "- Use bullet points for responsibilities and skills",
+    "- Keep it crisp, professional, and engaging (not generic)",
+    "- Avoid long paragraphs",
+    "- Include all details: Job Title, Location, Experience, Work Mode, Notice Period",
+    "- Add emojis but keep it minimal and professional",
+    "- Add a strong call-to-action at the end",
+    "- Word limit: 130–170 words",
+    "- Use relevant hashtags (8–12 hashtags)",
+    "- Mandatory hashtag: #AASTHIXTALENT",
+    "- Do NOT skip any important JD details",
+    "- Make it look like a recruiter-written post (not AI-generated)",
+    "- Do not mention the company name",
+    `- End with exactly:\nApply here:\n${shareUrl}`,
     "",
     "Job details:",
-    `Title: ${job.title}`,
-    location ? `Location: ${location}` : "",
-    employmentType ? `Employment type: ${employmentType}` : "",
-    experience ? `Experience: ${experience}` : "",
+    `Job Title: ${job.title}`,
+    `Location: ${location || "Not specified"}`,
+    `Experience: ${experience || "Not specified"}`,
+    `Work Mode: ${workMode}`,
+    `Notice Period: ${noticePeriod}`,
+    `Employment Type: ${employmentType || "Not specified"}`,
     description ? `Description:\n${description}` : "",
     "",
-    'Return only plain text for the post body. Do not return JSON or markdown.',
+    `Relevant hashtags to use where appropriate: ${hashtags.join(" ")}`,
+    "",
+    "Return only plain text for the post body. Do not return JSON or markdown.",
   ]
     .filter(Boolean)
     .join("\n");
