@@ -122,7 +122,7 @@ async function generateLinkedInDraft(job: JobRow, shareUrl: string) {
     "- Include all details: Job Title, Location, Experience, Work Mode, Notice Period",
     "- Add emojis but keep it minimal and professional",
     "- Add a strong call-to-action at the end",
-    "- Word limit: 130–170 words",
+    "- Word limit: 200–250 words",
     "- Use relevant hashtags (8–12 hashtags)",
     "- Mandatory hashtag: #AASTHIXTALENT",
     "- Do NOT skip any important JD details",
