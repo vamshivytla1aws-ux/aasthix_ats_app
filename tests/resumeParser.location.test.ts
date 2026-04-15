@@ -28,4 +28,16 @@ describe("looksLikeCandidateLocation", () => {
     expect(findIndiaLocationFallback("Built dashboards from multiple data sources into Power BI")).toBe(null);
     expect(findIndiaLocationFallback("8 years of experience in Azure and SQL Server")).toBe(null);
   });
+
+  it("rejects data-source fragments and still finds Hyderabad in later text", () => {
+    expect(looksLikeCandidateLocation("Data Sources like Tabular Cube, Databases, and Excel files")).toBe(false);
+    expect(
+      findIndiaLocationFallback(
+        [
+          "Experienced in developing Power BI reports and dashboards from various Data Sources like Tabular Cube, Databases, and Excel files.",
+          "QlikView Developer | Eastern Software Systems, Hyderabad | Dec 21 – May 2022",
+        ].join("\n")
+      )
+    ).toBe("Hyderabad, India");
+  });
 });

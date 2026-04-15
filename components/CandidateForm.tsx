@@ -102,6 +102,15 @@ function sanitizeLocationForForm(value: string | null | undefined) {
   return "";
 }
 
+function normalizeResumeLink(url: string | null | undefined) {
+  if (!url) return null;
+  if (url.startsWith("/uploads/resumes/")) {
+    const rel = url.replace(/^\/uploads\/resumes\//, "");
+    return `/api/resume/${rel}`;
+  }
+  return url;
+}
+
 const sectionTitle = "text-xs font-bold uppercase tracking-wider text-slate-500";
 const sectionCard =
   "rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.02] sm:p-5";
@@ -613,8 +622,8 @@ export default function CandidateForm({
                       >
                         {parsing ? "Parsing..." : "Parse & fill"}
                       </button>
-                      {resumeUrl ? (
-                        <a className="text-xs font-semibold text-blue-700 hover:underline" href={resumeUrl} target="_blank" rel="noreferrer">
+                      {resumeUrl && normalizeResumeLink(resumeUrl) ? (
+                        <a className="text-xs font-semibold text-blue-700 hover:underline" href={normalizeResumeLink(resumeUrl) || undefined} target="_blank" rel="noreferrer">
                           View resume
                         </a>
                       ) : null}

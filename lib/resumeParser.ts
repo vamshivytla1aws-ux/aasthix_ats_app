@@ -340,7 +340,11 @@ export function looksLikeCandidateLocation(s: string | null | undefined): boolea
   if (parts.length >= 2) {
     const last = parts[parts.length - 1];
     if (/^[A-Z]{2}$/.test(last)) return true;
-    if (parts.every((p) => /^[A-Za-z][A-Za-z .'-]{1,40}$/.test(p))) return true;
+    const hasCanonicalIndiaPart = parts.some((p) => Boolean(canonicalizeIndiaLocation(p)));
+    const hasExplicitGeoHint = parts.some((p) => containsGeoHint(p));
+    if (parts.every((p) => /^[A-Za-z][A-Za-z .'-]{1,40}$/.test(p)) && (hasCanonicalIndiaPart || hasExplicitGeoHint)) {
+      return true;
+    }
   }
 
   return false;
@@ -365,11 +369,15 @@ function extractLocationFromHeaderLines(lines: string[]): string | null {
       if (looksLikeCandidateLocation(v)) return v;
     }
 
-    const segments = splitHeaderSegments(normalizedLine);
-    for (const seg of segments) {
-      if (extractEmail(seg) || extractPhone(seg) || extractLinkedIn(seg)) continue;
-      if (looksLikeCandidateLocation(seg)) return seg;
-    }
+      const segments = splitHeaderSegments(normalizedLine);
+      for (const seg of segments) {
+        if (extractEmail(seg) || extractPhone(seg) || extractLinkedIn(seg)) continue;
+        const directIndia = canonicalizeIndiaLocation(seg);
+        if (directIndia) return directIndia;
+        if ((containsGeoHint(seg) || /^(remote|hybrid|onsite)$/i.test(seg)) && looksLikeCandidateLocation(seg)) {
+          return seg;
+        }
+      }
 
     const inlineMatches = normalizedLine.match(/[A-Za-z][A-Za-z .'-]{1,40},\s*(?:[A-Z]{2}|[A-Za-z][A-Za-z .'-]{1,40})/g) ?? [];
     for (const match of inlineMatches) {
