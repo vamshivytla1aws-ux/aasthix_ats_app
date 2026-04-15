@@ -30,6 +30,9 @@ type CandidateProfile = {
   current_interview_round_label: string | null;
   interview_round_total: number;
   interview_round_status: string | null;
+  interview_substatus: string | null;
+  interview_completed_at: string | null;
+  interview_status_note: string | null;
   /** Latest application by updated_at — compare with pipeline row for same candidate */
   latest_application_id: number | null;
 };
@@ -175,7 +178,10 @@ export async function GET(
         latest.current_interview_round_order,
         jir.round_label AS current_interview_round_label,
         COALESCE(jrc.round_count, 0) AS interview_round_total,
-        latest.interview_round_status
+        latest.interview_round_status,
+        latest.interview_substatus,
+        latest.interview_completed_at,
+        latest.interview_status_note
       FROM candidates c
       LEFT JOIN LATERAL (
         SELECT
@@ -185,7 +191,10 @@ export async function GET(
           a.id,
           a.current_interview_round_id,
           a.current_interview_round_order,
-          a.interview_round_status
+          a.interview_round_status,
+          a.interview_substatus,
+          a.interview_completed_at,
+          a.interview_status_note
         ${lateralFromWhere}
       ) latest ON true
       LEFT JOIN jobs j ON j.id = latest.job_id
@@ -218,6 +227,9 @@ export async function GET(
       candidate.current_interview_round_label = null;
       candidate.interview_round_total = 0;
       candidate.interview_round_status = null;
+      candidate.interview_substatus = null;
+      candidate.interview_completed_at = null;
+      candidate.interview_status_note = null;
     }
 
     const timelineRes = await query(

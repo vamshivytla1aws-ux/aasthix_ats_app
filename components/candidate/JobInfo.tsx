@@ -5,6 +5,7 @@ type CandidateJobInfo = {
   current_interview_round_label?: string | null;
   current_interview_round_order?: number | null;
   interview_round_total?: number | null;
+  interview_substatus?: "scheduled" | "completed_followup" | "no_show" | "cancelled" | null;
 };
 
 type Density = "comfortable" | "compact" | "ultra";
@@ -39,6 +40,18 @@ export default function JobInfo({
   const order = candidate.current_interview_round_order ?? 1;
   const completed =
     showInterviewRound && typeof total === "number" && total > 0 ? Math.max(0, order - 1) : null;
+  const interviewStatus =
+    candidate.stage === "Interview"
+      ? candidate.interview_substatus === "completed_followup"
+        ? "Interview completed — follow up pending"
+        : candidate.interview_substatus === "no_show"
+          ? "No show"
+          : candidate.interview_substatus === "cancelled"
+            ? "Cancelled"
+            : candidate.interview_substatus === "scheduled"
+              ? "Scheduled"
+              : "Awaiting schedule / decision"
+      : "—";
 
   return (
     <section className="space-y-3">
@@ -62,6 +75,7 @@ export default function JobInfo({
               : roundPrimary
           }
         />
+        <InfoRow label="Interview status" value={interviewStatus} />
         <InfoRow label="Status" value={candidate.status} />
       </div>
     </section>

@@ -13,9 +13,15 @@ export const runtime = "nodejs";
 
 const STAGES = ["Applied", "Screening", "Screening Failed", "Interview", "Selected", "Rejected"] as const;
 type Stage = (typeof STAGES)[number];
+const INTERVIEW_SUBSTATUSES = ["scheduled", "completed_followup", "no_show", "cancelled"] as const;
+type InterviewSubstatus = (typeof INTERVIEW_SUBSTATUSES)[number];
 
 function isStage(value: unknown): value is Stage {
   return typeof value === "string" && (STAGES as readonly string[]).includes(value);
+}
+
+function isInterviewSubstatus(value: unknown): value is InterviewSubstatus {
+  return typeof value === "string" && (INTERVIEW_SUBSTATUSES as readonly string[]).includes(value);
 }
 
 function formatEmailDateTime(value: string | null | undefined) {
@@ -61,6 +67,9 @@ async function loadPreviousApplicationState(
         a.stage,
         a.interview_scheduled,
         a.interview_datetime,
+        a.interview_substatus AS prev_interview_substatus,
+        a.interview_completed_at AS prev_interview_completed_at,
+        a.interview_status_note AS prev_interview_status_note,
         a.job_id AS prev_job_id,
         a.current_interview_round_id AS prev_round_id,
         a.current_interview_round_order AS prev_round_order,
@@ -80,6 +89,9 @@ async function loadPreviousApplicationState(
         COALESCE(a.stage, a.status, 'Applied') AS stage,
         COALESCE(a.interview_scheduled, FALSE) AS interview_scheduled,
         a.interview_datetime,
+        NULL::text AS prev_interview_substatus,
+        NULL::timestamptz AS prev_interview_completed_at,
+        NULL::text AS prev_interview_status_note,
         a.job_id AS prev_job_id,
         NULL::bigint AS prev_round_id,
         NULL::int AS prev_round_order,
@@ -101,8 +113,12 @@ async function updateApplicationStageCore(input: {
   interview_cancel_reason: string | null | undefined;
   interview_no_show: boolean | undefined;
   reminder_sent: boolean | undefined;
+  interview_substatus: InterviewSubstatus | null | undefined;
+  interview_completed_at: string | null | undefined;
+  interview_status_note: string | null | undefined;
   userId: number;
-  accessWhere9: string;
+  accessWhere12: string;
+  accessWhere5: string;
 }) {
   const {
     id,
@@ -113,8 +129,12 @@ async function updateApplicationStageCore(input: {
     interview_cancel_reason,
     interview_no_show,
     reminder_sent,
+    interview_substatus,
+    interview_completed_at,
+    interview_status_note,
     userId,
-    accessWhere9,
+    accessWhere12,
+    accessWhere5,
   } = input;
 
   try {
@@ -129,6 +149,18 @@ async function updateApplicationStageCore(input: {
           interview_cancel_reason = CASE WHEN $6::text IS NULL THEN interview_cancel_reason ELSE $6::text END,
           interview_no_show = CASE WHEN $7::boolean IS NULL THEN interview_no_show ELSE $7::boolean END,
           reminder_sent = CASE WHEN $8::boolean IS NULL THEN reminder_sent ELSE $8::boolean END,
+          interview_substatus = CASE
+            WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN NULL
+            ELSE $9::text
+          END,
+          interview_completed_at = CASE
+            WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN NULL
+            ELSE $10::timestamptz
+          END,
+          interview_status_note = CASE
+            WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN NULL
+            ELSE $11::text
+          END,
           current_interview_round_id = CASE
             WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN NULL
             ELSE applications.current_interview_round_id
@@ -155,8 +187,8 @@ async function updateApplicationStageCore(input: {
             ELSE applications.final_outcome
           END,
           updated_at = NOW()
-      WHERE id = $1 AND (${accessWhere9})
-      RETURNING id, candidate_id, job_id, stage, updated_at, interview_scheduled, interview_datetime, interview_reschedule_reason, interview_cancel_reason, interview_no_show, reminder_sent, current_interview_round_id, current_interview_round_order, interview_round_status, rejected_in_round_order, selected_after_rounds, final_outcome
+      WHERE id = $1 AND (${accessWhere12})
+      RETURNING id, candidate_id, job_id, stage, updated_at, interview_scheduled, interview_datetime, interview_reschedule_reason, interview_cancel_reason, interview_no_show, reminder_sent, interview_substatus, interview_completed_at, interview_status_note, current_interview_round_id, current_interview_round_order, interview_round_status, rejected_in_round_order, selected_after_rounds, final_outcome
       `,
       [
         id,
@@ -167,6 +199,9 @@ async function updateApplicationStageCore(input: {
         typeof interview_cancel_reason === "string" ? interview_cancel_reason : null,
         typeof interview_no_show === "boolean" ? interview_no_show : null,
         typeof reminder_sent === "boolean" ? reminder_sent : null,
+        interview_substatus ?? null,
+        typeof interview_completed_at === "string" ? interview_completed_at : null,
+        typeof interview_status_note === "string" ? interview_status_note : null,
         userId,
       ]
     );
@@ -180,7 +215,7 @@ async function updateApplicationStageCore(input: {
           interview_scheduled = CASE WHEN $3::boolean IS NULL THEN COALESCE(interview_scheduled, FALSE) ELSE $3::boolean END,
           interview_datetime = CASE WHEN $4::timestamptz IS NULL THEN interview_datetime ELSE $4::timestamptz END,
           updated_at = NOW()
-      WHERE id = $1 AND (${accessWhere9})
+      WHERE id = $1 AND (${accessWhere5})
       RETURNING
         id,
         candidate_id,
@@ -193,6 +228,9 @@ async function updateApplicationStageCore(input: {
         NULL::text AS interview_cancel_reason,
         FALSE AS interview_no_show,
         FALSE AS reminder_sent,
+        NULL::text AS interview_substatus,
+        NULL::timestamptz AS interview_completed_at,
+        NULL::text AS interview_status_note,
         NULL::bigint AS current_interview_round_id,
         NULL::int AS current_interview_round_order,
         'not_started'::text AS interview_round_status,
@@ -222,6 +260,9 @@ export async function GET(request: Request) {
     const stageParam = (url?.searchParams.get("stage") ?? "").trim();
     const jobIdParam = (url?.searchParams.get("job_id") ?? "").trim();
     const assignedToParam = (url?.searchParams.get("assigned_to") ?? "").trim();
+    const interviewOverview = ["1", "true", "yes"].includes(
+      (url?.searchParams.get("interview_overview") ?? "").trim().toLowerCase()
+    );
 
     const where: string[] = [];
     const params: any[] = [];
@@ -242,6 +283,8 @@ export async function GET(request: Request) {
       }
       params.push(stageParam);
       where.push(`a.stage = $${params.length}`);
+    } else if (interviewOverview) {
+      where.push(`(a.stage = 'Interview' OR a.rejected_in_round_order IS NOT NULL OR a.selected_after_rounds IS NOT NULL)`);
     }
 
     if (jobIdParam.length > 0) {
@@ -399,6 +442,8 @@ export async function PATCH(request: Request) {
       interview_reschedule_reason,
       interview_cancel_reason,
       interview_no_show,
+      interview_substatus,
+      interview_status_note,
       reminder_sent,
       send_email,
       round_action,
@@ -414,6 +459,8 @@ export async function PATCH(request: Request) {
       interview_reschedule_reason?: string | null;
       interview_cancel_reason?: string | null;
       interview_no_show?: boolean;
+      interview_substatus?: InterviewSubstatus | null;
+      interview_status_note?: string | null;
       reminder_sent?: boolean;
       send_email?: boolean;
       round_action?: "next" | "previous";
@@ -427,11 +474,19 @@ export async function PATCH(request: Request) {
     const decisionAudience: "client" | "internal" =
       interview_decision_audience === "internal" ? "internal" : "client";
 
+    if (interview_substatus !== undefined && interview_substatus !== null && !isInterviewSubstatus(interview_substatus)) {
+      return NextResponse.json(
+        { error: `interview_substatus must be one of: ${INTERVIEW_SUBSTATUSES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
     const assigned_recruiter_user_id = (body as { assigned_recruiter_user_id?: number | null }).assigned_recruiter_user_id;
     const hasTeam = await hasJobTeamTable();
     const accessWhere2 = applicationAccessPredicate("applications", "$2", hasTeam);
     const accessWhere4 = applicationAccessPredicate("applications", "$4", hasTeam);
-    const accessWhere9 = applicationAccessPredicate("applications", "$9", hasTeam);
+    const accessWhere12 = applicationAccessPredicate("applications", "$12", hasTeam);
+    const accessWhere5 = applicationAccessPredicate("applications", "$5", hasTeam);
     const accessWhereA2 = applicationAccessPredicate("a", "$2", hasTeam);
 
     if (!id) {
@@ -453,6 +508,8 @@ export async function PATCH(request: Request) {
       interview_reschedule_reason === undefined &&
       interview_cancel_reason === undefined &&
       interview_no_show === undefined &&
+      interview_substatus === undefined &&
+      interview_status_note === undefined &&
       reminder_sent === undefined &&
       send_email === undefined &&
       round_action === undefined &&
@@ -501,6 +558,9 @@ export async function PATCH(request: Request) {
       stage: string;
       interview_scheduled: boolean;
       interview_datetime: string | null;
+      prev_interview_substatus: InterviewSubstatus | null;
+      prev_interview_completed_at: string | null;
+      prev_interview_status_note: string | null;
       prev_job_id: number;
       prev_round_id: number | null;
       prev_round_order: number | null;
@@ -509,6 +569,57 @@ export async function PATCH(request: Request) {
     const prevInterviewScheduled = Boolean(prevRow0.interview_scheduled);
     const prevInterviewDatetime = (prevRow0.interview_datetime ?? null) as string | null;
     const prevStage = (prevRow0.stage ?? null) as Stage | null;
+    const prevInterviewSubstatus = prevRow0.prev_interview_substatus ?? null;
+    const prevInterviewCompletedAt = prevRow0.prev_interview_completed_at ?? null;
+    const prevInterviewStatusNote = prevRow0.prev_interview_status_note ?? null;
+
+    let normalizedInterviewSubstatus: InterviewSubstatus | null =
+      interview_substatus === undefined ? prevInterviewSubstatus : interview_substatus;
+    let normalizedInterviewCompletedAt: string | null =
+      interview_substatus === undefined ? prevInterviewCompletedAt : null;
+    let normalizedInterviewStatusNote: string | null =
+      interview_status_note === undefined ? prevInterviewStatusNote : typeof interview_status_note === "string"
+        ? interview_status_note.trim().slice(0, 2000)
+        : null;
+
+    if (stage !== undefined && stage !== "Interview") {
+      normalizedInterviewSubstatus = null;
+      normalizedInterviewCompletedAt = null;
+      normalizedInterviewStatusNote = null;
+    }
+    if (interview_cancel_reason !== undefined) {
+      normalizedInterviewSubstatus = interview_cancel_reason ? "cancelled" : normalizedInterviewSubstatus;
+      normalizedInterviewCompletedAt = null;
+    }
+    if (typeof interview_no_show === "boolean" && interview_no_show) {
+      normalizedInterviewSubstatus = "no_show";
+      normalizedInterviewCompletedAt = null;
+      normalizedInterviewStatusNote = normalizedInterviewStatusNote || "Marked as no-show";
+    }
+    if (normalizedInterviewSubstatus === "completed_followup") {
+      normalizedInterviewCompletedAt = new Date().toISOString();
+      normalizedInterviewStatusNote =
+        normalizedInterviewStatusNote || "Interview completed — follow up for next round";
+    }
+    if (
+      interview_substatus === undefined &&
+      typeof interview_scheduled === "boolean" &&
+      interview_scheduled === true &&
+      typeof interview_datetime === "string"
+    ) {
+      normalizedInterviewSubstatus = "scheduled";
+      normalizedInterviewCompletedAt = null;
+      normalizedInterviewStatusNote = null;
+    }
+    if (
+      interview_decision === "next_round" ||
+      interview_decision === "final_selected" ||
+      interview_decision === "rejected"
+    ) {
+      normalizedInterviewSubstatus = null;
+      normalizedInterviewCompletedAt = null;
+      normalizedInterviewStatusNote = null;
+    }
 
     const willReject = stage === "Rejected" || interview_decision === "rejected";
     let validatedRejectionReasonId: number | null = null;
@@ -536,8 +647,12 @@ export async function PATCH(request: Request) {
       interview_cancel_reason,
       interview_no_show,
       reminder_sent,
+      interview_substatus: normalizedInterviewSubstatus,
+      interview_completed_at: normalizedInterviewCompletedAt,
+      interview_status_note: normalizedInterviewStatusNote,
       userId: user.user_id,
-      accessWhere9,
+      accessWhere12,
+      accessWhere5,
     });
 
     if (result.rowCount === 0) {
@@ -556,6 +671,9 @@ export async function PATCH(request: Request) {
       interview_cancel_reason: string | null;
       interview_no_show: boolean;
       reminder_sent: boolean;
+      interview_substatus: InterviewSubstatus | null;
+      interview_completed_at: string | null;
+      interview_status_note: string | null;
       current_interview_round_id: number | null;
       current_interview_round_order: number | null;
       interview_round_status: string;
@@ -783,6 +901,9 @@ export async function PATCH(request: Request) {
               selected_after_rounds = COALESCE(current_interview_round_order, selected_after_rounds),
               final_outcome = 'selected',
               interview_round_status = 'completed',
+              interview_substatus = NULL,
+              interview_completed_at = NULL,
+              interview_status_note = NULL,
               updated_at = NOW()
           WHERE id = $1 AND (${accessWhere2})
           RETURNING *
@@ -817,6 +938,9 @@ export async function PATCH(request: Request) {
               rejected_in_round_order = COALESCE(current_interview_round_order, rejected_in_round_order),
               final_outcome = 'rejected',
               interview_round_status = 'rejected',
+              interview_substatus = NULL,
+              interview_completed_at = NULL,
+              interview_status_note = NULL,
               updated_at = NOW()
           WHERE id = $1 AND (${accessWhere2})
           RETURNING *
@@ -852,6 +976,9 @@ export async function PATCH(request: Request) {
     const shouldSendScheduledEmail =
       updated.stage === "Interview" &&
       updated.interview_scheduled === true &&
+      updated.interview_substatus !== "completed_followup" &&
+      updated.interview_substatus !== "no_show" &&
+      updated.interview_substatus !== "cancelled" &&
       !!updated.interview_datetime &&
       send_email === true &&
       ((isSchedule === true) || (isReschedule === true && interviewDatetimeChanged === true));
@@ -889,7 +1016,13 @@ export async function PATCH(request: Request) {
     }
 
     // Expire interview alerts when interview is no longer active/scheduled.
-    if (updated.stage !== "Interview" || updated.interview_scheduled !== true) {
+    if (
+      updated.stage !== "Interview" ||
+      updated.interview_scheduled !== true ||
+      updated.interview_substatus === "completed_followup" ||
+      updated.interview_substatus === "no_show" ||
+      updated.interview_substatus === "cancelled"
+    ) {
       try {
         await query(
           `
@@ -905,6 +1038,88 @@ export async function PATCH(request: Request) {
         if (e?.code !== "42P01" && e?.code !== "42703") {
           console.error("Failed to expire interview alerts", e);
         }
+      }
+    }
+
+    const becameInterviewCompleted =
+      updated.stage === "Interview" &&
+      updated.interview_substatus === "completed_followup" &&
+      prevInterviewSubstatus !== "completed_followup";
+
+    if (becameInterviewCompleted) {
+      try {
+        const recipientIds = Array.from(
+          new Set(
+            [user.user_id, (body as { assigned_recruiter_user_id?: number | null }).assigned_recruiter_user_id]
+              .filter((value) => Number.isFinite(Number(value)) && Number(value) > 0)
+              .map((value) => Number(value))
+          )
+        );
+
+        const candidateInfo = await query(
+          `
+          SELECT c.full_name AS candidate_full_name
+          FROM candidates c
+          WHERE c.id = $1
+          LIMIT 1
+          `,
+          [updated.candidate_id]
+        );
+        const candidateName = String(candidateInfo.rows?.[0]?.candidate_full_name || "Candidate");
+
+        for (const recipientId of recipientIds) {
+          await query(
+            `
+            INSERT INTO alerts (user_id, application_id, type, message, status, created_at, expires_at, read_at)
+            VALUES ($1, $2, 'interview_complete', $3, 'unread', NOW(), NOW() + INTERVAL '30 days', NULL)
+            ON CONFLICT (user_id, application_id, type)
+            DO UPDATE SET
+              message = EXCLUDED.message,
+              status = 'unread',
+              created_at = NOW(),
+              expires_at = EXCLUDED.expires_at,
+              read_at = NULL
+            `,
+            [recipientId, updated.id, `Interview complete for ${candidateName}`]
+          );
+        }
+      } catch (e: any) {
+        if (e?.code !== "42P01" && e?.code !== "42703") {
+          console.error("Failed to create interview completion alert", e);
+        }
+      }
+    }
+
+    const becameNoShow =
+      updated.stage === "Interview" &&
+      updated.interview_substatus === "no_show" &&
+      prevInterviewSubstatus !== "no_show";
+
+    if (becameInterviewCompleted || becameNoShow) {
+      const message = becameInterviewCompleted
+        ? "Interview completed — follow up for next round"
+        : "Interview marked no-show";
+      try {
+        await query(
+          `
+          INSERT INTO candidate_activity (candidate_id, type, description, created_at)
+          VALUES ($1, 'Interview', $2, NOW())
+          `,
+          [updated.candidate_id, message]
+        );
+      } catch {
+        // optional legacy table
+      }
+      try {
+        await query(
+          `
+          INSERT INTO activity_timeline (user_id, candidate_id, application_id, event_type, message, metadata)
+          VALUES ($1, $2, $3, 'Interview', $4, '{}'::jsonb)
+          `,
+          [user.user_id, updated.candidate_id, updated.id, message]
+        );
+      } catch (e) {
+        if (!isSchemaCompatibilityError(e)) throw e;
       }
     }
 

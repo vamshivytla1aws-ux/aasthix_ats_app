@@ -36,6 +36,9 @@ type Candidate = {
   current_interview_round_label?: string | null;
   interview_round_total?: number | null;
   interview_round_status?: string | null;
+  interview_substatus?: "scheduled" | "completed_followup" | "no_show" | "cancelled" | null;
+  interview_completed_at?: string | null;
+  interview_status_note?: string | null;
   latest_application_id?: number | null;
 };
 

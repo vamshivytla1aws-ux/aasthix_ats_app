@@ -21,14 +21,14 @@ import FilterDrawer from "@/components/enterprise/FilterDrawer";
 import Toast from "@/components/Toast";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 
-const INTERVIEWS_LIST_KEY = "/api/applications?stage=Interview";
+const INTERVIEWS_LIST_KEY = "/api/applications?interview_overview=1";
 const INTERVIEW_ALERTS_KEY = "/api/interviews/alerts";
 
 type JobOption = { id: number; title: string; company?: string | null };
 
 type ApplicationRow = {
   id: number;
-  stage: "Interview";
+  stage: "Interview" | "Selected" | "Rejected";
   candidate_id?: number;
   job_id?: number;
   candidate_full_name: string;
@@ -39,6 +39,11 @@ type ApplicationRow = {
   interview_reschedule_reason?: string | null;
   interview_cancel_reason?: string | null;
   interview_no_show?: boolean | null;
+  interview_substatus?: "scheduled" | "completed_followup" | "no_show" | "cancelled" | null;
+  interview_completed_at?: string | null;
+  interview_status_note?: string | null;
+  rejected_in_round_order?: number | null;
+  selected_after_rounds?: number | null;
   reminder_sent?: boolean | null;
 };
 
@@ -129,6 +134,28 @@ function getSlaBadge(value: string | null | undefined) {
   return { label: "On track", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" };
 }
 
+function getInterviewOutcome(row: ApplicationRow) {
+  if (row.stage === "Rejected") {
+    return { label: "Rejected", className: "bg-rose-50 text-rose-700 ring-rose-200" };
+  }
+  if (row.stage === "Selected") {
+    return { label: "Selected", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" };
+  }
+  if (row.interview_substatus === "completed_followup") {
+    return { label: "Completed · follow-up", className: "bg-violet-50 text-violet-700 ring-violet-200" };
+  }
+  if (row.interview_substatus === "no_show" || row.interview_no_show) {
+    return { label: "No show", className: "bg-amber-50 text-amber-700 ring-amber-200" };
+  }
+  if (row.interview_substatus === "cancelled") {
+    return { label: "Cancelled", className: "bg-slate-100 text-slate-700 ring-slate-200" };
+  }
+  if (row.interview_scheduled && row.interview_datetime) {
+    return { label: "Scheduled", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" };
+  }
+  return { label: "Follow-up pending", className: "bg-blue-50 text-blue-700 ring-blue-200" };
+}
+
 export default function InterviewsPage() {
   const { density, setDensity } = useDensity("ats:interviews-density", "compact");
   const {
@@ -170,7 +197,7 @@ export default function InterviewsPage() {
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [debouncedSearchQ, setDebouncedSearchQ] = useState("");
-  const [tableViewPreset, setTableViewPreset] = useState<"all" | "scheduled" | "upcoming" | "today" | "this_week" | "overdue">("all");
+  const [tableViewPreset, setTableViewPreset] = useState<"all" | "scheduled" | "upcoming" | "today" | "this_week" | "overdue" | "completed" | "followup" | "no_show" | "rejected">("all");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [bulkReason, setBulkReason] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -251,7 +278,16 @@ export default function InterviewsPage() {
   const tableRows = useMemo(() => {
     if (tableViewPreset === "all") return sorted;
     if (tableViewPreset === "scheduled") {
-      return sorted.filter((r) => Boolean(r.interview_scheduled && r.interview_datetime));
+      return sorted.filter((r) => r.stage === "Interview" && Boolean(r.interview_scheduled && r.interview_datetime));
+    }
+    if (tableViewPreset === "completed" || tableViewPreset === "followup") {
+      return sorted.filter((r) => r.interview_substatus === "completed_followup");
+    }
+    if (tableViewPreset === "no_show") {
+      return sorted.filter((r) => r.interview_substatus === "no_show" || r.interview_no_show);
+    }
+    if (tableViewPreset === "rejected") {
+      return sorted.filter((r) => r.stage === "Rejected");
     }
     const now = new Date();
     const nowMs = now.getTime();
@@ -260,28 +296,28 @@ export default function InterviewsPage() {
     const weekEnd = dayStart + 7 * 24 * 60 * 60 * 1000;
     if (tableViewPreset === "today") {
       return sorted.filter((r) => {
-        if (!r.interview_datetime || !r.interview_scheduled) return false;
+        if (r.stage !== "Interview" || !r.interview_datetime || !r.interview_scheduled) return false;
         const t = new Date(r.interview_datetime).getTime();
         return Number.isFinite(t) && t >= dayStart && t < dayEnd;
       });
     }
     if (tableViewPreset === "this_week") {
       return sorted.filter((r) => {
-        if (!r.interview_datetime || !r.interview_scheduled) return false;
+        if (r.stage !== "Interview" || !r.interview_datetime || !r.interview_scheduled) return false;
         const t = new Date(r.interview_datetime).getTime();
         return Number.isFinite(t) && t >= dayStart && t < weekEnd;
       });
     }
     if (tableViewPreset === "overdue") {
       return sorted.filter((r) => {
-        if (!r.interview_datetime || !r.interview_scheduled) return false;
+        if (r.stage !== "Interview" || !r.interview_datetime || !r.interview_scheduled) return false;
         const t = new Date(r.interview_datetime).getTime();
         return Number.isFinite(t) && t < nowMs;
       });
     }
     const oneHour = nowMs + 60 * 60 * 1000;
     return sorted.filter((r) => {
-      if (!r.interview_datetime || !r.interview_scheduled) return false;
+      if (r.stage !== "Interview" || !r.interview_datetime || !r.interview_scheduled) return false;
       const t = new Date(r.interview_datetime).getTime();
       return Number.isFinite(t) && t >= nowMs && t <= oneHour;
     });
@@ -340,11 +376,14 @@ export default function InterviewsPage() {
     density === "comfortable" ? "px-4 py-4" : density === "compact" ? "px-4 py-3.5" : "px-4 py-2.5";
   const kpis = useMemo(() => {
     const total = rows.length;
-    const scheduled = rows.filter((r) => Boolean(r.interview_scheduled)).length;
+    const scheduled = rows.filter((r) => r.stage === "Interview" && Boolean(r.interview_scheduled)).length;
+    const completed = rows.filter((r) => r.interview_substatus === "completed_followup").length;
+    const noShow = rows.filter((r) => r.interview_substatus === "no_show" || r.interview_no_show).length;
+    const rejected = rows.filter((r) => r.stage === "Rejected").length;
     const now = Date.now();
     const oneHour = now + 60 * 60 * 1000;
     const upcoming = rows.filter((r) => {
-      if (!r.interview_datetime || !r.interview_scheduled) return false;
+      if (r.stage !== "Interview" || !r.interview_datetime || !r.interview_scheduled) return false;
       const t = new Date(r.interview_datetime).getTime();
       return Number.isFinite(t) && t >= now && t <= oneHour;
     }).length;
@@ -353,16 +392,16 @@ export default function InterviewsPage() {
     const endToday = startToday.getTime() + 24 * 60 * 60 * 1000;
     const endWeek = startToday.getTime() + 7 * 24 * 60 * 60 * 1000;
     const todayScheduled = rows.filter((r) => {
-      if (!r.interview_datetime || !r.interview_scheduled) return false;
+      if (r.stage !== "Interview" || !r.interview_datetime || !r.interview_scheduled) return false;
       const t = new Date(r.interview_datetime).getTime();
       return Number.isFinite(t) && t >= startToday.getTime() && t < endToday;
     }).length;
     const weekScheduled = rows.filter((r) => {
-      if (!r.interview_datetime || !r.interview_scheduled) return false;
+      if (r.stage !== "Interview" || !r.interview_datetime || !r.interview_scheduled) return false;
       const t = new Date(r.interview_datetime).getTime();
       return Number.isFinite(t) && t >= startToday.getTime() && t < endWeek;
     }).length;
-    return { total, scheduled, upcoming, todayScheduled, weekScheduled };
+    return { total, scheduled, upcoming, todayScheduled, weekScheduled, completed, noShow, rejected };
   }, [rows]);
 
   function exportCsv() {
@@ -370,7 +409,7 @@ export default function InterviewsPage() {
     if (columns.candidate) headers.push("Candidate");
     if (columns.jobTitle) headers.push("Job Title");
     if (columns.company) headers.push("Company");
-    if (columns.scheduled) headers.push("Interview Scheduled");
+    if (columns.scheduled) headers.push("Interview Status");
     if (columns.dateTime) headers.push("Interview DateTime");
     const lines = [headers.join(",")];
     for (const r of filteredTableRows) {
@@ -378,7 +417,7 @@ export default function InterviewsPage() {
       if (columns.candidate) row.push(r.candidate_full_name || "");
       if (columns.jobTitle) row.push(r.job_title || "");
       if (columns.company) row.push(r.job_company || "");
-      if (columns.scheduled) row.push(r.interview_scheduled ? "Scheduled" : "Not scheduled");
+      if (columns.scheduled) row.push(getInterviewOutcome(r).label);
       if (columns.dateTime) row.push(formatDateTime(r.interview_datetime));
       lines.push(row.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(","));
     }
@@ -394,7 +433,7 @@ export default function InterviewsPage() {
 
   const events = useMemo(() => {
     return rows
-      .filter((r) => r.interview_datetime && r.interview_scheduled)
+      .filter((r) => r.stage === "Interview" && r.interview_datetime && r.interview_scheduled)
       .map((r) => {
         const start = new Date(r.interview_datetime as string);
         const end = new Date(start.getTime() + 60 * 60 * 1000);
@@ -590,7 +629,10 @@ export default function InterviewsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: app.id,
+          stage: "Interview",
+          interview_scheduled: false,
           interview_no_show: true,
+          interview_substatus: "no_show",
           reminder_sent: false,
         }),
       });
@@ -606,21 +648,64 @@ export default function InterviewsPage() {
     }
   }
 
-  async function runBulkAction(kind: "cancel" | "no_show" | "reset_reminder") {
+  async function markCompleted(app: ApplicationRow) {
+    setError(null);
+    setActionBusyId(app.id);
+    try {
+      const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: app.id,
+          stage: "Interview",
+          interview_scheduled: false,
+          interview_no_show: false,
+          interview_substatus: "completed_followup",
+          reminder_sent: false,
+        }),
+      });
+      await updateInterviewInState(updated);
+      setDetailsOpen(false);
+      showSuccessToast("Interview marked completed. Follow-up is pending.");
+      void mutateAlerts();
+    } catch (err: any) {
+      showPermissionToast(err);
+      setError(err.message || "Failed to mark interview completed");
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  async function runBulkAction(kind: "cancel" | "no_show" | "complete" | "reset_reminder") {
     if (selectedIds.length === 0 || bulkBusy) return;
     setBulkBusy(true);
     setError(null);
-    const bulkCount = selectedIds.length;
+    let bulkCount = 0;
     try {
       for (const id of selectedIds) {
+        const row = rows.find((item) => item.id === id);
+        if (!row || row.stage !== "Interview") {
+          continue;
+        }
+        bulkCount += 1;
         const payload: Record<string, unknown> = { id };
         if (kind === "cancel") {
           payload.interview_scheduled = false;
           payload.interview_cancel_reason = bulkReason.trim() || "Bulk cancel by recruiter";
           payload.interview_no_show = false;
+          payload.interview_substatus = "cancelled";
           payload.reminder_sent = false;
         } else if (kind === "no_show") {
+          payload.stage = "Interview";
+          payload.interview_scheduled = false;
           payload.interview_no_show = true;
+          payload.interview_substatus = "no_show";
+        } else if (kind === "complete") {
+          payload.stage = "Interview";
+          payload.interview_scheduled = false;
+          payload.interview_no_show = false;
+          payload.interview_substatus = "completed_followup";
+          payload.reminder_sent = false;
         } else {
           payload.reminder_sent = false;
         }
@@ -638,6 +723,8 @@ export default function InterviewsPage() {
           ? `Bulk cancel applied to ${bulkCount} row(s).`
           : kind === "no_show"
             ? `Marked ${bulkCount} row(s) as no-show.`
+            : kind === "complete"
+              ? `Marked ${bulkCount} row(s) completed for follow-up.`
             : `Reset reminder on ${bulkCount} row(s).`;
       showSuccessToast(msg);
       void mutateAlerts();
@@ -735,7 +822,7 @@ export default function InterviewsPage() {
             <span className="text-slate-500 dark:text-slate-400">Loading interview queue…</span>
           ) : (
             <span>
-              <span className="font-semibold text-slate-800 dark:text-slate-200">{rows.length}</span> in Interview stage
+              <span className="font-semibold text-slate-800 dark:text-slate-200">{rows.length}</span> interview overview rows
               {drawerFilteredRows.length !== tableRows.length ? (
                 <span className="text-slate-500 dark:text-slate-400">
                   {" "}
@@ -817,7 +904,7 @@ export default function InterviewsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Interviews</div>
           <div className="mt-1 text-2xl font-bold text-slate-900">{kpis.total}</div>
@@ -837,6 +924,18 @@ export default function InterviewsPage() {
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">This Week</div>
           <div className="mt-1 text-2xl font-bold text-slate-900">{kpis.weekScheduled}</div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Completed</div>
+          <div className="mt-1 text-2xl font-bold text-slate-900">{kpis.completed}</div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">No Show</div>
+          <div className="mt-1 text-2xl font-bold text-slate-900">{kpis.noShow}</div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rejected</div>
+          <div className="mt-1 text-2xl font-bold text-slate-900">{kpis.rejected}</div>
         </div>
       </div>
 
@@ -968,6 +1067,46 @@ export default function InterviewsPage() {
             >
               Overdue
             </button>
+            <button
+              type="button"
+              onClick={() => setTableViewPreset("completed")}
+              className={[
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                tableViewPreset === "completed" ? "bg-violet-50 text-violet-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+              ].join(" ")}
+            >
+              Completed
+            </button>
+            <button
+              type="button"
+              onClick={() => setTableViewPreset("followup")}
+              className={[
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                tableViewPreset === "followup" ? "bg-violet-50 text-violet-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+              ].join(" ")}
+            >
+              Follow-up
+            </button>
+            <button
+              type="button"
+              onClick={() => setTableViewPreset("no_show")}
+              className={[
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                tableViewPreset === "no_show" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+              ].join(" ")}
+            >
+              No show
+            </button>
+            <button
+              type="button"
+              onClick={() => setTableViewPreset("rejected")}
+              className={[
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                tableViewPreset === "rejected" ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+              ].join(" ")}
+            >
+              Rejected
+            </button>
             <div className="relative">
               <div className="flex items-center gap-2">
                 <button
@@ -994,7 +1133,7 @@ export default function InterviewsPage() {
                       ["candidate", "Candidate"],
                       ["jobTitle", "Job Title"],
                       ["company", "Company"],
-                      ["scheduled", "Scheduled"],
+                      ["scheduled", "Interview status"],
                       ["dateTime", "Date Time"],
                       ["actions", "Actions"],
                     ] as const
@@ -1041,6 +1180,14 @@ export default function InterviewsPage() {
             className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 disabled:opacity-50"
           >
             Mark No-show
+          </button>
+          <button
+            type="button"
+            onClick={() => runBulkAction("complete")}
+            disabled={selectedIds.length === 0 || bulkBusy}
+            className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 disabled:opacity-50"
+          >
+            Mark Completed
           </button>
           <button
             type="button"
@@ -1107,7 +1254,7 @@ export default function InterviewsPage() {
                   Company
                 </th> : null}
                 {columns.scheduled ? <th className="sticky top-0 z-20 bg-slate-50 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226_232_240)] dark:bg-slate-900 dark:text-slate-400 dark:shadow-[0_1px_0_0_rgb(51_65_85)]">
-                  Interview Scheduled
+                  Interview Status
                 </th> : null}
                 {columns.dateTime ? <th className="sticky top-0 z-20 bg-slate-50 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226_232_240)] dark:bg-slate-900 dark:text-slate-400 dark:shadow-[0_1px_0_0_rgb(51_65_85)]">
                   Interview DateTime
@@ -1151,7 +1298,14 @@ export default function InterviewsPage() {
                   {columns.jobTitle ? <td className={[rowPadClass, "text-slate-700"].join(" ")}>{r.job_title}</td> : null}
                   {columns.company ? <td className={[rowPadClass, "text-slate-700"].join(" ")}>{r.job_company ?? "—"}</td> : null}
                   {columns.scheduled ? <td className={[rowPadClass, "whitespace-nowrap"].join(" ")}>
-                    <StatusBadge status={r.interview_scheduled ? "Scheduled" : "Not scheduled"} />
+                    {(() => {
+                      const outcome = getInterviewOutcome(r);
+                      return (
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${outcome.className}`}>
+                          {outcome.label}
+                        </span>
+                      );
+                    })()}
                   </td> : null}
                   {columns.dateTime ? <td className={[rowPadClass, "whitespace-nowrap text-slate-700"].join(" ")}>
                     {formatDateTime(r.interview_datetime)}
@@ -1171,13 +1325,36 @@ export default function InterviewsPage() {
                       <RowActionsMenu
                         ariaLabel={`Actions for ${r.candidate_full_name}`}
                         items={[
-                          {
-                            type: "button",
-                            label: "Reschedule",
-                            icon: <CalendarIcon className="h-3.5 w-3.5" />,
-                            onClick: () => openRescheduleFor(r),
-                          },
-                          ...(r.interview_scheduled
+                          ...(r.stage === "Interview"
+                            ? [
+                                {
+                                  type: "button" as const,
+                                  label: "Reschedule",
+                                  icon: <CalendarIcon className="h-3.5 w-3.5" />,
+                                  onClick: () => openRescheduleFor(r),
+                                },
+                              ]
+                            : []),
+                          ...(r.stage === "Interview" && r.interview_substatus !== "completed_followup"
+                            ? [
+                                {
+                                  type: "button" as const,
+                                  label: "Mark completed",
+                                  onClick: () => markCompleted(r),
+                                },
+                              ]
+                            : []),
+                          ...(r.stage === "Interview" && r.interview_substatus !== "no_show"
+                            ? [
+                                {
+                                  type: "button" as const,
+                                  label: "Mark no-show",
+                                  icon: <UserX className="h-3.5 w-3.5" />,
+                                  onClick: () => markNoShow(r),
+                                },
+                              ]
+                            : []),
+                          ...(r.stage === "Interview" && r.interview_scheduled
                             ? [
                                 {
                                   type: "button" as const,
@@ -1188,12 +1365,6 @@ export default function InterviewsPage() {
                                 },
                               ]
                             : []),
-                          {
-                            type: "button",
-                            label: "Mark no-show",
-                            icon: <UserX className="h-3.5 w-3.5" />,
-                            onClick: () => markNoShow(r),
-                          },
                         ]}
                       />
                     </div>
@@ -1273,19 +1444,14 @@ export default function InterviewsPage() {
                 <div className="rounded-xl bg-slate-50 p-4">
                   <div className="text-sm font-semibold text-slate-900">Status</div>
                   <div className="mt-1">
-                    {selectedInterview.interview_no_show ? (
-                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
-                        No-show
-                      </span>
-                    ) : selectedInterview.interview_scheduled ? (
-                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                        Scheduled
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
-                        Not scheduled
-                      </span>
-                    )}
+                    {(() => {
+                      const outcome = getInterviewOutcome(selectedInterview);
+                      return (
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${outcome.className}`}>
+                          {outcome.label}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="rounded-xl bg-slate-50 p-4">
@@ -1372,6 +1538,14 @@ export default function InterviewsPage() {
                   className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-all duration-200 disabled:opacity-50"
                 >
                   Mark No-show
+                </button>
+                <button
+                  type="button"
+                  onClick={() => markCompleted(selectedInterview)}
+                  disabled={actionBusyId === selectedInterview.id}
+                  className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50 transition-all duration-200 disabled:opacity-50"
+                >
+                  Mark Completed
                 </button>
               </div>
             </div>

@@ -7,7 +7,7 @@ import { applicationAccessPredicate, hasJobTeamTable } from "@/lib/applicationVi
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type AlertType = "ongoing" | "upcoming";
+type AlertType = "ongoing" | "upcoming" | "interview_complete";
 
 type AlertRow = {
   id: number;
@@ -89,6 +89,7 @@ export async function GET(request: Request) {
         AND a.stage = 'Interview'
         AND a.interview_scheduled = true
         AND a.interview_datetime IS NOT NULL
+        AND COALESCE(a.interview_substatus, 'scheduled') = 'scheduled'
         AND (
           a.interview_datetime BETWEEN (NOW() - INTERVAL '1 hour') AND NOW()
           OR a.interview_datetime BETWEEN NOW() AND (NOW() + INTERVAL '1 hour')
@@ -165,7 +166,7 @@ export async function GET(request: Request) {
       params.push("unread");
       where.push(`al.status = $${params.length}`);
     }
-    if (typeParam === "ongoing" || typeParam === "upcoming" || typeParam === "careers_apply") {
+    if (typeParam === "ongoing" || typeParam === "upcoming" || typeParam === "careers_apply" || typeParam === "interview_complete") {
       params.push(typeParam);
       where.push(`al.type = $${params.length}`);
     }

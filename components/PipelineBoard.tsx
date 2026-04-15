@@ -24,6 +24,9 @@ type ApplicationRow = {
   updated_at: string;
   interview_scheduled?: boolean | null;
   interview_datetime?: string | null;
+  interview_substatus?: "scheduled" | "completed_followup" | "no_show" | "cancelled" | null;
+  interview_completed_at?: string | null;
+  interview_status_note?: string | null;
   candidate_full_name: string;
   job_title: string;
   reminder_sent?: boolean | null;
@@ -138,7 +141,35 @@ function interviewWorkflow(a: ApplicationRow): InterviewFlow {
   return t > Date.now() ? "upcoming" : "awaiting";
 }
 
-function InterviewSubstateBadge({ flow }: { flow: InterviewFlow }) {
+function InterviewSubstateBadge({
+  flow,
+  substatus,
+}: {
+  flow: InterviewFlow;
+  substatus?: ApplicationRow["interview_substatus"];
+}) {
+  const substatusMap: Record<NonNullable<ApplicationRow["interview_substatus"]>, { label: string; className: string }> = {
+    scheduled: {
+      label: "Scheduled",
+      className:
+        "border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-100",
+    },
+    completed_followup: {
+      label: "Completed · follow-up",
+      className:
+        "border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-800 dark:bg-violet-950/60 dark:text-violet-100",
+    },
+    no_show: {
+      label: "No show",
+      className:
+        "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-100",
+    },
+    cancelled: {
+      label: "Cancelled",
+      className:
+        "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-200",
+    },
+  };
   const map: Record<InterviewFlow, { label: string; className: string }> = {
     no_slot: {
       label: "No slot",
@@ -156,7 +187,7 @@ function InterviewSubstateBadge({ flow }: { flow: InterviewFlow }) {
         "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-100",
     },
   };
-  const x = map[flow];
+  const x = substatus ? substatusMap[substatus] : map[flow];
   return (
     <span
       className={[
@@ -847,6 +878,42 @@ export default function PipelineBoard({
     }
   }
 
+  async function updateInterviewSubstatus(
+    app: ApplicationRow,
+    substatus: NonNullable<ApplicationRow["interview_substatus"]>
+  ) {
+    setBusyId(app.id);
+    setError(null);
+    try {
+      const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: app.id,
+          stage: "Interview",
+          interview_scheduled: false,
+          reminder_sent: false,
+          interview_no_show: substatus === "no_show",
+          interview_substatus: substatus,
+        }),
+      });
+      reconcileLocalApplication(updated);
+      onStageUpdated(updated);
+      setSuccess(
+        substatus === "completed_followup"
+          ? "Interview marked completed. Follow-up for next round is pending."
+          : "Candidate marked as no-show."
+      );
+      setDecisionOpen(false);
+      setDecisionApp(null);
+      setDrawerApp(null);
+    } catch (err: any) {
+      if (!notifyForbidden(err)) setError(err.message || "Failed to update interview status");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function takeInterviewDecision(
     app: ApplicationRow,
     decision: "next_round" | "final_selected" | "rejected",
@@ -1054,6 +1121,20 @@ export default function PipelineBoard({
           setDecisionOpen(true);
         },
       });
+      if (a.interview_substatus !== "completed_followup") {
+        items.push({
+          type: "button",
+          label: "Mark completed",
+          onClick: () => void updateInterviewSubstatus(a, "completed_followup"),
+        });
+      }
+      if (a.interview_substatus !== "no_show") {
+        items.push({
+          type: "button",
+          label: "Mark no show",
+          onClick: () => void updateInterviewSubstatus(a, "no_show"),
+        });
+      }
     } else {
       for (const s of nextStages(stage)) {
         items.push({
@@ -1116,6 +1197,12 @@ export default function PipelineBoard({
             setDecisionSendEmail(false);
             setDecisionOpen(true);
           }
+        }}
+        onMarkCompleted={() => {
+          if (drawerApp) void updateInterviewSubstatus(drawerApp, "completed_followup");
+        }}
+        onMarkNoShow={() => {
+          if (drawerApp) void updateInterviewSubstatus(drawerApp, "no_show");
         }}
         onEmail={() => {
           if (drawerApp) setEmailModalApp(drawerApp);
@@ -1689,7 +1776,10 @@ export default function PipelineBoard({
 
                                   {a.stage === "Interview" ? (
                                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                      <InterviewSubstateBadge flow={interviewWorkflow(a)} />
+                                      <InterviewSubstateBadge
+                                        flow={interviewWorkflow(a)}
+                                        substatus={a.interview_substatus ?? undefined}
+                                      />
                                       {typeof a.interview_round_total === "number" && a.interview_round_total > 0 ? (
                                         <RoundIndexStepper
                                           currentOrder={a.current_interview_round_order ?? 1}

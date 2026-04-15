@@ -26,6 +26,7 @@ export type DrawerApplication = {
   current_interview_round_order?: number | null;
   current_interview_round_label?: string | null;
   interview_round_total?: number | null;
+  interview_substatus?: "scheduled" | "completed_followup" | "no_show" | "cancelled" | null;
 };
 
 function formatWhen(iso?: string | null) {
@@ -51,6 +52,8 @@ export default function PipelineApplicationDrawer({
   onSchedule,
   onReschedule,
   onDecision,
+  onMarkCompleted,
+  onMarkNoShow,
   onEmail,
 }: {
   app: DrawerApplication | null;
@@ -59,6 +62,8 @@ export default function PipelineApplicationDrawer({
   onSchedule: () => void;
   onReschedule: () => void;
   onDecision: () => void;
+  onMarkCompleted: () => void;
+  onMarkNoShow: () => void;
   onEmail: () => void;
 }) {
   if (!app) return null;
@@ -128,6 +133,18 @@ export default function PipelineApplicationDrawer({
                 <div className="mt-2 text-xs text-slate-600 dark:text-slate-400">
                   Slot: {formatWhen(app.interview_datetime)}
                 </div>
+                <div className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                  Status:{" "}
+                  {app.interview_substatus === "completed_followup"
+                    ? "Interview completed — follow up pending"
+                    : app.interview_substatus === "no_show"
+                      ? "No show"
+                      : app.interview_substatus === "cancelled"
+                        ? "Cancelled"
+                        : app.interview_substatus === "scheduled"
+                          ? "Scheduled"
+                          : "Awaiting schedule / decision"}
+                </div>
               </div>
             </div>
           ) : null}
@@ -190,6 +207,32 @@ export default function PipelineApplicationDrawer({
                   <ClipboardList className="h-4 w-4 shrink-0" />
                   Interview decision…
                 </button>
+                {app.interview_substatus !== "completed_followup" ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-semibold text-violet-800 hover:bg-violet-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-violet-800/60 dark:bg-violet-950/50 dark:text-violet-200"
+                    onClick={() => {
+                      onMarkCompleted();
+                      onClose();
+                    }}
+                  >
+                    <ClipboardList className="h-4 w-4 shrink-0" />
+                    Mark completed
+                  </button>
+                ) : null}
+                {app.interview_substatus !== "no_show" ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-amber-800/60 dark:bg-amber-950/50 dark:text-amber-200"
+                    onClick={() => {
+                      onMarkNoShow();
+                      onClose();
+                    }}
+                  >
+                    <ClipboardList className="h-4 w-4 shrink-0" />
+                    Mark no show
+                  </button>
+                ) : null}
               </>
             ) : null}
           </div>

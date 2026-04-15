@@ -52,6 +52,7 @@ export async function GET() {
         AND a.stage = 'Interview'
         AND a.interview_scheduled = true
         AND a.interview_datetime IS NOT NULL
+        AND COALESCE(a.interview_substatus, 'scheduled') = 'scheduled'
         AND (
           a.interview_datetime BETWEEN (NOW() - INTERVAL '1 hour') AND NOW()
           OR a.interview_datetime BETWEEN NOW() AND (NOW() + INTERVAL '1 hour')
