@@ -15,6 +15,7 @@ import AlertBell from "@/components/AlertBell";
 import ChatBadge from "@/components/ChatBadge";
 import DashboardThemeToggle from "@/components/DashboardThemeToggle";
 import GlobalHeaderSearch from "@/components/GlobalHeaderSearch";
+import AIUsageQuickPanel from "@/components/usage/AIUsageQuickPanel";
 import {
   DASHBOARD_MORE_NAV,
   DASHBOARD_PRIMARY_NAV,
@@ -34,6 +35,7 @@ export default function MegaMenuNavbar() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -63,7 +65,10 @@ export default function MegaMenuNavbar() {
   useEffect(() => {
     if (!moreOpen && !profileOpen && !quickOpen) return;
     function onDoc(e: MouseEvent) {
-      if (moreOpen && moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+      if (moreOpen && moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
+        setUsageOpen(false);
+      }
       if (quickOpen && quickRef.current && !quickRef.current.contains(e.target as Node)) setQuickOpen(false);
       if (profileOpen && profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false);
     }
@@ -361,25 +366,57 @@ export default function MegaMenuNavbar() {
               <ChevronDown className={`h-3.5 w-3.5 transition ${moreOpen ? "rotate-180" : ""}`} />
             </button>
             {moreOpen ? (
-              <div className="absolute left-0 top-full z-50 mt-1 min-w-[200px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-900">
+              <div className="absolute left-0 top-full z-50 mt-1 min-w-[280px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-900">
+                {role === "admin" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setUsageOpen((value) => !value)}
+                      className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-semibold text-slate-800 transition hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <BarChart3 className="h-3.5 w-3.5" />
+                        AI Usage
+                      </span>
+                      <ChevronDown className={`h-3.5 w-3.5 transition ${usageOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {usageOpen ? <AIUsageQuickPanel /> : null}
+                  </>
+                ) : null}
                 {moreVisible.map((item) => (
                   <Link
                     key={item.id}
                     href={item.href}
                     className="block px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                    onClick={() => setMoreOpen(false)}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setUsageOpen(false);
+                    }}
                   >
                     {item.label}
                   </Link>
                 ))}
                 {role === "admin" ? (
                   <>
+                    <Link
+                      href="/usage"
+                      className="block border-t border-slate-100 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setUsageOpen(false);
+                      }}
+                    >
+                      AI Usage dashboard
+                    </Link>
                     {ADMIN_LINKS.map((al) => (
                       <Link
                         key={al.href}
                         href={al.href}
                         className="block border-t border-slate-100 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                        onClick={() => setMoreOpen(false)}
+                        onClick={() => {
+                          setMoreOpen(false);
+                          setUsageOpen(false);
+                        }}
                       >
                         {al.label}
                       </Link>
@@ -442,6 +479,15 @@ export default function MegaMenuNavbar() {
                     {item.label}
                   </Link>
                 ))}
+                {role === "admin" ? (
+                  <Link
+                    href="/usage"
+                    className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    AI Usage
+                  </Link>
+                ) : null}
                 {role === "admin"
                   ? ADMIN_LINKS.map((al) => (
                       <Link

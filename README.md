@@ -56,3 +56,45 @@ Notes:
 - the public careers portal needs `CAREERS_PUBLISHER_USER_ID` set on the server to show jobs in `/careers`
 - recommended public ATS domain: `https://app.aasthix.com`
 - keep the marketing site on `https://www.aasthix.com` and point `app.aasthix.com` to Railway with a `CNAME`
+
+## AI Usage Dashboard
+
+The header `More` menu includes an `AI Usage` entry for admins. It opens a quick summary panel and a full usage dashboard at `/usage`.
+
+Required server-side variables:
+
+- `OPENAI_API_KEY`
+- `OPENAI_MONTHLY_BUDGET`
+- `OPENAI_MONTHLY_TOKEN_LIMIT` (optional)
+- `RAILWAY_API_TOKEN`
+- `RAILWAY_PROJECT_ID`
+- `RAILWAY_SERVICE_ID` (optional)
+- `RAILWAY_ENVIRONMENT_ID` (optional)
+- `RAILWAY_PLAN_NAME` (optional manual label)
+- `RAILWAY_USAGE_LIMIT` (optional manual quota / budget cap)
+
+Direct from provider:
+
+- OpenAI organization usage buckets
+- OpenAI organization costs when the configured key has admin access
+- Railway GraphQL project / service usage, metrics, and available estimated usage fields
+
+Calculated estimate:
+
+- OpenAI per-model row cost allocation when only daily total cost is returned
+- OpenAI cost estimates when the provider does not return direct cost data for the selected range
+- Railway projected usage for the billing cycle when only current usage is available
+- Railway billing period dates when provider billing-cycle fields are unavailable
+
+Configured manually:
+
+- `OPENAI_MONTHLY_BUDGET`
+- `OPENAI_MONTHLY_TOKEN_LIMIT`
+- `RAILWAY_PLAN_NAME`
+- `RAILWAY_USAGE_LIMIT`
+
+Known limitations:
+
+- OpenAI usage / costs endpoints may require organization-level admin access on the configured key. When that access is missing, the UI shows `Unavailable from provider`.
+- Railway plan and quota details are not always returned directly by the provider. Those values can be supplied with `RAILWAY_PLAN_NAME` and `RAILWAY_USAGE_LIMIT`.
+- Some Railway usage metrics are returned as raw infrastructure measurements rather than invoice-ready dollar totals, so derived values are labeled `Calculated estimate`.
