@@ -25,17 +25,57 @@ function clean(value: unknown) {
   return String(value || "").trim();
 }
 
-function ensureMandatoryFooter(text: string, shareUrl: string) {
+function toHashtag(value: string) {
+  const words = clean(value)
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 4);
+  if (words.length === 0) return null;
+  return `#${words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join("")}`;
+}
+
+function inferHashtags(job: JobRow) {
+  const tags = new Set<string>(["#AASTHIXTALENT", "#Hiring"]);
+
+  const titleTag = toHashtag(job.title);
+  if (titleTag) tags.add(titleTag);
+
+  const locationTag = clean(job.location)
+    .split(/[\/,]/)
+    .map((part) => toHashtag(part))
+    .find(Boolean);
+  if (locationTag) tags.add(locationTag);
+
+  const employmentTag = toHashtag(clean(job.employment_type).replace(/\s+/g, " "));
+  if (employmentTag) tags.add(employmentTag);
+
+  const description = clean(job.description).toLowerCase();
+  const keywordMap: Array<[string, string]> = [
+    ["power bi", "#PowerBI"],
+    ["azure", "#Azure"],
+    ["sql", "#SQL"],
+    ["data", "#DataAnalytics"],
+    ["analytics", "#Analytics"],
+    ["developer", "#TechJobs"],
+  ];
+  for (const [needle, tag] of keywordMap) {
+    if (description.includes(needle) || clean(job.title).toLowerCase().includes(needle)) {
+      tags.add(tag);
+    }
+  }
+
+  return Array.from(tags).slice(0, 6);
+}
+
+function ensureMandatoryFooter(text: string, shareUrl: string, hashtags: string[]) {
   const withoutFooter = text
     .replace(/apply here:\s*https?:\/\/\S+/gi, "")
     .replace(/https?:\/\/\S+/gi, "")
+    .replace(/#[A-Za-z0-9_]+/g, "")
     .trim();
-
-  const withHashtag = /#AASTHIXTALENT/i.test(withoutFooter)
-    ? withoutFooter
-    : `${withoutFooter}\n\n#AASTHIXTALENT`;
-
-  return `${withHashtag.trim()}\n\nApply here:\n${shareUrl}`.trim();
+  const hashtagLine = hashtags.join(" ");
+  return `${withoutFooter.trim()}\n\n${hashtagLine}\n\nApply here:\n${shareUrl}`.trim();
 }
 
 async function generateLinkedInDraft(job: JobRow, shareUrl: string) {
@@ -48,12 +88,13 @@ async function generateLinkedInDraft(job: JobRow, shareUrl: string) {
   const location = clean(job.location);
   const employmentType = clean(job.employment_type);
   const experience = clean(job.experience_requirement);
+  const hashtags = inferHashtags(job);
 
   const prompt = [
     "Create a LinkedIn post for the following job description.",
     "Do not mention the company name.",
     "Keep it concise, recruiter-friendly, and suitable for a professional LinkedIn audience.",
-    "Include the mandatory hashtag #AASTHIXTALENT.",
+    `Include these hashtags naturally at the end: ${hashtags.join(" ")}`,
     'End with exactly:\nApply here:\n' + shareUrl,
     "",
     "Job details:",
@@ -97,7 +138,7 @@ async function generateLinkedInDraft(job: JobRow, shareUrl: string) {
       return { error: "AI returned an empty draft." } as const;
     }
 
-    return { postText: ensureMandatoryFooter(content, shareUrl) } as const;
+    return { postText: ensureMandatoryFooter(content, shareUrl, hashtags) } as const;
   } catch (error) {
     console.error("social-draft openai", error);
     return {

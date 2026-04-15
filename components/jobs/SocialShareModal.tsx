@@ -122,7 +122,7 @@ export default function SocialShareModal({
     return () => {
       cancelled = true;
     };
-  }, [job.id, open]);
+  }, [job.id, open, track]);
 
   const shareUrl = payload?.public_url || "";
   const longCaption = useMemo(() => buildCaption(job, shareUrl), [job, shareUrl]);
@@ -173,7 +173,7 @@ export default function SocialShareModal({
     return () => {
       cancelled = true;
     };
-  }, [job.id, open, shareUrl]);
+  }, [job.id, open, shareUrl, track]);
 
   async function copyText(text: string, successMessage: string, eventType: string) {
     try {
@@ -187,15 +187,12 @@ export default function SocialShareModal({
 
   async function handleLinkedInShare() {
     if (!shareUrl || loading) return;
-
-    if (!linkedinDraft && linkedinDraftLoading) {
-      return;
-    }
+    if (!linkedinDraft && linkedinDraftLoading) return;
 
     if (linkedinDraft.trim()) {
       try {
         await navigator.clipboard.writeText(linkedinDraft.trim());
-        onToast("LinkedIn post copied. Paste it into LinkedIn after the share page opens.", "success");
+        onToast("LinkedIn draft copied. Paste it into LinkedIn after the share page opens.", "success");
         void track("linkedin_ai_copy_and_share");
       } catch {
         onToast("LinkedIn page will open, but clipboard copy failed.", "error");
@@ -211,10 +208,10 @@ export default function SocialShareModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center">
       <button type="button" className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} aria-label="Close" />
-      <div className="relative z-10 w-full max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+      <div className="relative z-10 my-4 max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-6 py-5 dark:border-slate-800 dark:bg-slate-950">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
               <Share2 className="h-3.5 w-3.5" />
@@ -229,6 +226,7 @@ export default function SocialShareModal({
             type="button"
             onClick={onClose}
             className="rounded-xl border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-900"
+            aria-label="Close social sharing"
           >
             <CloseIcon className="h-5 w-5" />
           </button>
@@ -250,7 +248,7 @@ export default function SocialShareModal({
             <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">LinkedIn preview</div>
               <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                We’ll generate a LinkedIn-ready draft with the mandatory hashtag <span className="font-semibold text-slate-700 dark:text-slate-200">#AASTHIXTALENT</span> and the careers link footer. You can edit it before sharing.
+                We&apos;ll generate a LinkedIn-ready draft with the mandatory hashtag <span className="font-semibold text-slate-700 dark:text-slate-200">#AASTHIXTALENT</span>, JD-based hashtags, and the careers link footer. You can edit it before sharing.
               </p>
               <textarea
                 value={linkedinDraft}
@@ -271,7 +269,7 @@ export default function SocialShareModal({
                 </div>
               ) : null}
               <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
-                LinkedIn will open with the careers link as before. We’ll copy the reviewed post text so you can paste it into the LinkedIn composer and click Post there.
+                LinkedIn will open with the careers link card as before. LinkedIn does not auto-fill website-shared post text, so we&apos;ll copy the reviewed text for you to paste into the LinkedIn composer before clicking Post.
               </div>
               <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
                 Manual fallback text:
@@ -301,7 +299,9 @@ export default function SocialShareModal({
               href={shareUrl || "#"}
               target="_blank"
               rel="noreferrer"
-              onClick={() => { if (shareUrl) void track("open_public_page"); }}
+              onClick={() => {
+                if (shareUrl) void track("open_public_page");
+              }}
               className={`flex w-full items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium transition dark:border-slate-800 ${
                 shareUrl ? "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-900" : "pointer-events-none opacity-60"
               }`}
@@ -312,11 +312,21 @@ export default function SocialShareModal({
 
             <button
               type="button"
+              disabled={!linkedinDraft.trim() || linkedinDraftLoading}
+              onClick={() => void copyText(linkedinDraft.trim(), "LinkedIn preview copied.", "linkedin_ai_copy_and_share")}
+              className="flex w-full items-center justify-between rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left text-sm font-medium text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-200 dark:hover:bg-indigo-950/50"
+            >
+              <span>Copy LinkedIn preview</span>
+              <Copy className="h-4 w-4" />
+            </button>
+
+            <button
+              type="button"
               disabled={!shareUrl || loading || linkedinDraftLoading}
               onClick={() => void handleLinkedInShare()}
               className="flex w-full items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
             >
-              <span>Share to LinkedIn</span>
+              <span>Copy + open LinkedIn</span>
               <Linkedin className="h-4 w-4" />
             </button>
 
@@ -324,7 +334,9 @@ export default function SocialShareModal({
               href={shareUrl ? xUrl : "#"}
               target="_blank"
               rel="noreferrer"
-              onClick={() => { if (shareUrl) void track("share_x_click"); }}
+              onClick={() => {
+                if (shareUrl) void track("share_x_click");
+              }}
               className={`flex w-full items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium transition dark:border-slate-800 ${
                 shareUrl ? "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-900" : "pointer-events-none opacity-60"
               }`}
