@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Copy, ExternalLink, Instagram, Linkedin, Share2, X as CloseIcon } from "lucide-react";
 
@@ -19,6 +19,19 @@ type ShareResponse = {
   public_path: string;
   public_url: string;
   job: JobForShare;
+};
+
+type LinkedInDraftResponse = {
+  platform: "linkedin";
+  share_url: string;
+  post_text: string;
+  job_summary?: {
+    title?: string | null;
+    location?: string | null;
+    employment_type?: string | null;
+    experience_requirement?: string | null;
+  };
+  error?: string;
 };
 
 function clean(value: string | null | undefined) {
@@ -53,6 +66,27 @@ export default function SocialShareModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<ShareResponse | null>(null);
+  const [linkedinDraft, setLinkedinDraft] = useState("");
+  const [linkedinDraftLoading, setLinkedinDraftLoading] = useState(false);
+  const [linkedinDraftError, setLinkedinDraftError] = useState<string | null>(null);
+  const [trackedDraftEdit, setTrackedDraftEdit] = useState(false);
+
+  const track = useCallback(async (eventType: string) => {
+    try {
+      await fetch("/api/careers/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: eventType,
+          job_id: job.id,
+          session_id: `ats-share-${job.id}`,
+          meta: { source: "ats_job_detail" },
+        }),
+      });
+    } catch {
+      // ignore
+    }
+  }, [job.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -60,23 +94,9 @@ export default function SocialShareModal({
     setLoading(true);
     setError(null);
     setPayload(null);
-
-    const track = async (eventType: string) => {
-      try {
-        await fetch("/api/careers/track", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event_type: eventType,
-            job_id: job.id,
-            session_id: `ats-share-${job.id}`,
-            meta: { source: "ats_job_detail" },
-          }),
-        });
-      } catch {
-        // ignore tracking failures
-      }
-    };
+    setLinkedinDraft("");
+    setLinkedinDraftError(null);
+    setTrackedDraftEdit(false);
 
     void track("share_modal_open");
     void (async () => {
@@ -116,22 +136,44 @@ export default function SocialShareModal({
     [shareUrl, shortCaption]
   );
 
-  async function track(eventType: string) {
-    try {
-      await fetch("/api/careers/track", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event_type: eventType,
-          job_id: job.id,
-          session_id: `ats-share-${job.id}`,
-          meta: { source: "ats_job_detail" },
-        }),
-      });
-    } catch {
-      // ignore
-    }
-  }
+  useEffect(() => {
+    if (!open || !shareUrl) return;
+    let cancelled = false;
+    setLinkedinDraftLoading(true);
+    setLinkedinDraftError(null);
+    void track("linkedin_ai_draft_requested");
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/jobs/${job.id}/social-draft`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ platform: "linkedin" }),
+        });
+        const data = (await res.json().catch(() => ({}))) as Partial<LinkedInDraftResponse> & { error?: string };
+        if (cancelled) return;
+        if (!res.ok || typeof data.post_text !== "string" || !data.post_text.trim()) {
+          setLinkedinDraftError(typeof data.error === "string" ? data.error : "We couldn't generate the LinkedIn draft.");
+          setLinkedinDraftLoading(false);
+          void track("linkedin_ai_draft_failed");
+          return;
+        }
+        setLinkedinDraft(data.post_text.trim());
+        setLinkedinDraftLoading(false);
+        void track("linkedin_ai_draft_generated");
+      } catch {
+        if (!cancelled) {
+          setLinkedinDraftError("We couldn't generate the LinkedIn draft.");
+          setLinkedinDraftLoading(false);
+          void track("linkedin_ai_draft_failed");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [job.id, open, shareUrl]);
 
   async function copyText(text: string, successMessage: string, eventType: string) {
     try {
@@ -141,6 +183,29 @@ export default function SocialShareModal({
     } catch {
       onToast("Clipboard copy failed. Please copy it manually.", "error");
     }
+  }
+
+  async function handleLinkedInShare() {
+    if (!shareUrl || loading) return;
+
+    if (!linkedinDraft && linkedinDraftLoading) {
+      return;
+    }
+
+    if (linkedinDraft.trim()) {
+      try {
+        await navigator.clipboard.writeText(linkedinDraft.trim());
+        onToast("LinkedIn post copied. Paste it into LinkedIn after the share page opens.", "success");
+        void track("linkedin_ai_copy_and_share");
+      } catch {
+        onToast("LinkedIn page will open, but clipboard copy failed.", "error");
+      }
+    } else {
+      onToast("Opening LinkedIn share page. Copy the preview text manually if needed.", "success");
+      void track("share_linkedin_click");
+    }
+
+    window.open(linkedinUrl, "_blank", "noopener,noreferrer");
   }
 
   if (!open) return null;
@@ -183,8 +248,35 @@ export default function SocialShareModal({
             </div>
 
             <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Suggested post</div>
-              <pre className="mt-3 whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm text-slate-700 dark:bg-slate-900/70 dark:text-slate-200">{longCaption}</pre>
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">LinkedIn preview</div>
+              <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                We’ll generate a LinkedIn-ready draft with the mandatory hashtag <span className="font-semibold text-slate-700 dark:text-slate-200">#AASTHIXTALENT</span> and the careers link footer. You can edit it before sharing.
+              </p>
+              <textarea
+                value={linkedinDraft}
+                onChange={(event) => {
+                  setLinkedinDraft(event.target.value);
+                  if (!trackedDraftEdit) {
+                    setTrackedDraftEdit(true);
+                    void track("linkedin_ai_preview_edited");
+                  }
+                }}
+                placeholder={linkedinDraftLoading ? "Generating LinkedIn preview..." : "LinkedIn preview will appear here."}
+                disabled={linkedinDraftLoading}
+                className="mt-3 min-h-[220px] w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 disabled:cursor-wait disabled:opacity-80 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/40"
+              />
+              {linkedinDraftError ? (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                  {linkedinDraftError}
+                </div>
+              ) : null}
+              <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
+                LinkedIn will open with the careers link as before. We’ll copy the reviewed post text so you can paste it into the LinkedIn composer and click Post there.
+              </div>
+              <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+                Manual fallback text:
+                <pre className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{longCaption}</pre>
+              </div>
             </div>
           </div>
 
@@ -218,18 +310,15 @@ export default function SocialShareModal({
               <ExternalLink className="h-4 w-4" />
             </Link>
 
-            <Link
-              href={shareUrl ? linkedinUrl : "#"}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => { if (shareUrl) void track("share_linkedin_click"); }}
-              className={`flex w-full items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium transition dark:border-slate-800 ${
-                shareUrl ? "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-900" : "pointer-events-none opacity-60"
-              }`}
+            <button
+              type="button"
+              disabled={!shareUrl || loading || linkedinDraftLoading}
+              onClick={() => void handleLinkedInShare()}
+              className="flex w-full items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
             >
               <span>Share to LinkedIn</span>
               <Linkedin className="h-4 w-4" />
-            </Link>
+            </button>
 
             <Link
               href={shareUrl ? xUrl : "#"}
