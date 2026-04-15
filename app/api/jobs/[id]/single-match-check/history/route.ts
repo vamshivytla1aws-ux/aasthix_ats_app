@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { listSingleMatchHistoryForJob } from "@/lib/singleMatch/singleMatchHistoryDb";
 import type { SingleMatchHistoryApiResponse } from "@/lib/singleMatch/types";
+import { visibleJobIds } from "@/lib/jobTeam";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,11 +19,8 @@ export async function GET(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
     }
 
-    const jobOk = await query(
-      `SELECT id FROM jobs WHERE id = $1 AND created_by_user_id = $2 LIMIT 1`,
-      [jobId, user.user_id]
-    );
-    if (jobOk.rowCount === 0) {
+    const jobIds = await visibleJobIds(user.user_id);
+    if (!jobIds.includes(jobId)) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 

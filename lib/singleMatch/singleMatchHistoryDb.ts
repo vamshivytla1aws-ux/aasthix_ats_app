@@ -1,15 +1,90 @@
 import { query } from "@/lib/db";
-import type { SingleMatchCheckResultPayload } from "@/lib/singleMatch/types";
-import type { SingleMatchHistoryRun } from "@/lib/singleMatch/types";
+import type { SingleMatchCheckResultPayload, SingleMatchHistoryRun } from "@/lib/singleMatch/types";
 
-function isUndefinedTable(e: unknown): boolean {
-  return Boolean(e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "42P01");
+function isUndefinedTable(error: unknown): boolean {
+  return Boolean(
+    error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "42P01"
+  );
 }
 
-function clampScore(n: number | null | undefined): number | null {
-  if (n == null || !Number.isFinite(n)) return null;
-  return Math.max(0, Math.min(100, Math.round(n)));
+function clampScore(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
+
+function parseStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item)).filter(Boolean);
+}
+
+function toIsoTimestamp(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "string") return value;
+  return String(value ?? "");
+}
+
+type DbRow = {
+  id: string | number;
+  job_id: string | number;
+  candidate_id: string | number;
+  candidate_full_name: string;
+  use_ai: boolean;
+  match_score: number;
+  match_score_no_ai: number | null;
+  ai_match_score: number | null;
+  decision: string | null;
+  decision_no_ai: string | null;
+  ai_decision: string | null;
+  matched_skills_json: unknown;
+  missing_required_skills_json: unknown;
+  reasoning: string | null;
+  summary: string | null;
+  created_at: string;
+};
+
+function mapHistoryRuns(rows: DbRow[]): SingleMatchHistoryRun[] {
+  return rows.map((row) => ({
+    id: Number(row.id),
+    job_id: Number(row.job_id),
+    candidate_id: Number(row.candidate_id),
+    candidate_full_name: row.candidate_full_name || "—",
+    use_ai: Boolean(row.use_ai),
+    match_score: Number(row.match_score) || 0,
+    match_score_no_ai: row.match_score_no_ai != null ? Number(row.match_score_no_ai) : null,
+    ai_match_score: row.ai_match_score != null ? Number(row.ai_match_score) : null,
+    decision: row.decision,
+    decision_no_ai: row.decision_no_ai,
+    ai_decision: row.ai_decision,
+    matched_skills: parseStringArray(row.matched_skills_json),
+    missing_required_skills: parseStringArray(row.missing_required_skills_json),
+    reasoning: row.reasoning,
+    summary: row.summary,
+    created_at: toIsoTimestamp(row.created_at),
+  }));
+}
+
+const SELECT_HISTORY_COLUMNS = `
+  SELECT
+    h.id,
+    h.job_id,
+    h.candidate_id,
+    c.full_name AS candidate_full_name,
+    h.use_ai,
+    h.match_score,
+    h.match_score_no_ai,
+    h.ai_match_score,
+    h.decision,
+    h.decision_no_ai,
+    h.ai_decision,
+    h.matched_skills_json,
+    h.missing_required_skills_json,
+    h.reasoning,
+    h.summary,
+    h.created_at
+  FROM single_candidate_match_checks h
+  JOIN candidates c ON c.id = h.candidate_id
+  JOIN jobs j ON j.id = h.job_id
+`;
 
 export async function insertSingleMatchHistory(opts: {
   jobId: number;
@@ -19,6 +94,7 @@ export async function insertSingleMatchHistory(opts: {
   result: SingleMatchCheckResultPayload;
 }): Promise<{ id: number } | null> {
   const { jobId, candidateId, createdByUserId, useAi, result } = opts;
+
   try {
     const res = await query(
       `
@@ -58,45 +134,16 @@ export async function insertSingleMatchHistory(opts: {
         result.summary,
       ]
     );
+
     const id = Number((res.rows[0] as { id: string | number }).id);
     return Number.isFinite(id) ? { id } : null;
-  } catch (e: unknown) {
-    if (isUndefinedTable(e)) {
-      console.warn("[singleMatchHistory] Table single_candidate_match_checks missing — run migration 0054");
+  } catch (error: unknown) {
+    if (isUndefinedTable(error)) {
+      console.warn("[singleMatchHistory] Table single_candidate_match_checks missing - run migration 0054");
       return null;
     }
-    throw e;
+    throw error;
   }
-}
-
-type DbRow = {
-  id: string | number;
-  job_id: string | number;
-  candidate_id: string | number;
-  candidate_full_name: string;
-  use_ai: boolean;
-  match_score: number;
-  match_score_no_ai: number | null;
-  ai_match_score: number | null;
-  decision: string | null;
-  decision_no_ai: string | null;
-  ai_decision: string | null;
-  matched_skills_json: unknown;
-  missing_required_skills_json: unknown;
-  reasoning: string | null;
-  summary: string | null;
-  created_at: string;
-};
-
-function parseStringArray(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.map((x) => String(x)).filter(Boolean);
-}
-
-function toIsoTimestamp(v: unknown): string {
-  if (v != null && typeof v === "object" && v instanceof Date) return v.toISOString();
-  if (typeof v === "string") return v;
-  return String(v ?? "");
 }
 
 export async function listSingleMatchHistoryForJob(opts: {
@@ -105,58 +152,49 @@ export async function listSingleMatchHistoryForJob(opts: {
   limit?: number;
 }): Promise<{ runs: SingleMatchHistoryRun[]; migrationRequired: boolean }> {
   const limit = Math.min(100, Math.max(1, opts.limit ?? 50));
+
   try {
-    const res = await query(
-      `
-      SELECT
-        h.id,
-        h.job_id,
-        h.candidate_id,
-        c.full_name AS candidate_full_name,
-        h.use_ai,
-        h.match_score,
-        h.match_score_no_ai,
-        h.ai_match_score,
-        h.decision,
-        h.decision_no_ai,
-        h.ai_decision,
-        h.matched_skills_json,
-        h.missing_required_skills_json,
-        h.reasoning,
-        h.summary,
-        h.created_at
-      FROM single_candidate_match_checks h
-      JOIN candidates c ON c.id = h.candidate_id
-      JOIN jobs j ON j.id = h.job_id
-      WHERE h.job_id = $1 AND j.created_by_user_id = $2
-      ORDER BY h.created_at DESC
-      LIMIT $3
-      `,
-      [opts.jobId, opts.ownerUserId, limit]
-    );
-    const runs: SingleMatchHistoryRun[] = (res.rows as DbRow[]).map((r) => ({
-      id: Number(r.id),
-      job_id: Number(r.job_id),
-      candidate_id: Number(r.candidate_id),
-      candidate_full_name: r.candidate_full_name || "—",
-      use_ai: Boolean(r.use_ai),
-      match_score: Number(r.match_score) || 0,
-      match_score_no_ai: r.match_score_no_ai != null ? Number(r.match_score_no_ai) : null,
-      ai_match_score: r.ai_match_score != null ? Number(r.ai_match_score) : null,
-      decision: r.decision,
-      decision_no_ai: r.decision_no_ai,
-      ai_decision: r.ai_decision,
-      matched_skills: parseStringArray(r.matched_skills_json),
-      missing_required_skills: parseStringArray(r.missing_required_skills_json),
-      reasoning: r.reasoning,
-      summary: r.summary,
-      created_at: toIsoTimestamp(r.created_at),
-    }));
-    return { runs, migrationRequired: false };
-  } catch (e: unknown) {
-    if (isUndefinedTable(e)) {
+    try {
+      const res = await query(
+        `
+        ${SELECT_HISTORY_COLUMNS}
+        WHERE h.job_id = $1
+          AND (
+            j.created_by_user_id = $2
+            OR EXISTS (
+              SELECT 1
+              FROM job_team jt
+              WHERE jt.job_id = h.job_id
+                AND jt.user_id = $2
+            )
+          )
+        ORDER BY h.created_at DESC
+        LIMIT $3
+        `,
+        [opts.jobId, opts.ownerUserId, limit]
+      );
+
+      return { runs: mapHistoryRuns(res.rows as DbRow[]), migrationRequired: false };
+    } catch (error: unknown) {
+      if (!isUndefinedTable(error)) throw error;
+
+      const res = await query(
+        `
+        ${SELECT_HISTORY_COLUMNS}
+        WHERE h.job_id = $1
+          AND j.created_by_user_id = $2
+        ORDER BY h.created_at DESC
+        LIMIT $3
+        `,
+        [opts.jobId, opts.ownerUserId, limit]
+      );
+
+      return { runs: mapHistoryRuns(res.rows as DbRow[]), migrationRequired: false };
+    }
+  } catch (error: unknown) {
+    if (isUndefinedTable(error)) {
       return { runs: [], migrationRequired: true };
     }
-    throw e;
+    throw error;
   }
 }
