@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { parseResumeBuffer } from "@/lib/resumeParser";
+import { parseResumeBuffer, sanitizeParsedLocation } from "@/lib/resumeParser";
 
 export const runtime = "nodejs";
 
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
           full_name: parsed.full_name,
           email: parsed.email,
           phone: parsed.phone,
-          location: parsed.location,
+          location: sanitizeParsedLocation(parsed.location),
           linkedin_url: parsed.linkedin_url,
           skills: parsed.skills,
           resume_url: parsed.resume_url,

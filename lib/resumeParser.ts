@@ -653,6 +653,10 @@ function canonicalizeParsedLocation(value: string | null | undefined) {
   return trimmed;
 }
 
+export function sanitizeParsedLocation(value: string | null | undefined) {
+  return canonicalizeParsedLocation(value);
+}
+
 /**
  * Filename prefix (e.g. "Hari Mohan_Sr AI_...pdf") is often the most reliable signal when PDF text order is wrong.
  * Order: file hint > AI > rule (each must pass looksLikePersonName).

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuthUser } from "@/lib/authServer";
-import { parseResumeBuffer } from "@/lib/resumeParser";
+import { parseResumeBuffer, sanitizeParsedLocation } from "@/lib/resumeParser";
 
 export const runtime = "nodejs";
 
@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     const filename = file.name || "resume";
     const bytes = Buffer.from(await file.arrayBuffer());
     const parsed = await parseResumeBuffer(filename, bytes);
+    parsed.location = sanitizeParsedLocation(parsed.location);
     return NextResponse.json(parsed);
   } catch (error: any) {
     console.error("Error parsing resume", error);
