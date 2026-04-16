@@ -95,6 +95,38 @@ function ensureMandatoryFooter(text: string, shareUrl: string, hashtags: string[
   return `${withoutFooter.trim()}\n\n${hashtagLine}\n\nApply here:\n${shareUrl}`.trim();
 }
 
+/** Map OpenAI HTTP errors to recruiter-visible hints (no secrets). */
+function openAiFailureHint(status: number, detail: string): string {
+  let code: string | undefined;
+  let msg = "";
+  try {
+    const j = JSON.parse(detail) as { error?: { code?: string; message?: string } };
+    code = j?.error?.code;
+    msg = String(j?.error?.message || "").toLowerCase();
+  } catch {
+    msg = detail.toLowerCase();
+  }
+  if (status === 401 || code === "invalid_api_key") {
+    return "OpenAI rejected the API key (invalid or expired). Update OPENAI_API_KEY in Railway.";
+  }
+  if (
+    status === 402 ||
+    code === "insufficient_quota" ||
+    msg.includes("billing") ||
+    msg.includes("quota") ||
+    msg.includes("payment")
+  ) {
+    return "OpenAI billing or quota issue. Add credits or check usage limits in OpenAI.";
+  }
+  if (status === 429 || code === "rate_limit_exceeded") {
+    return "OpenAI rate limit hit. Wait a few minutes and try again.";
+  }
+  if ((status === 400 || status === 404) && (msg.includes("model") || code === "model_not_found")) {
+    return `AI model not available. Check SOCIAL_SHARE_MODEL (current: ${process.env.SOCIAL_SHARE_MODEL?.trim() || "gpt-4o-mini"}).`;
+  }
+  return "AI drafting is unavailable right now.";
+}
+
 async function generateLinkedInDraft(job: JobRow, shareUrl: string) {
   if (!process.env.OPENAI_API_KEY) {
     return { error: "OPENAI_API_KEY is not configured." } as const;
@@ -165,8 +197,9 @@ async function generateLinkedInDraft(job: JobRow, shareUrl: string) {
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
-      console.error("social-draft openai", response.status, detail);
-      return { error: "AI drafting is unavailable right now." } as const;
+      const hint = openAiFailureHint(response.status, detail);
+      console.error("social-draft openai", response.status, hint, detail.slice(0, 500));
+      return { error: hint } as const;
     }
 
     const json = await response.json();
