@@ -70,6 +70,7 @@ export async function POST(request: Request) {
   const fullName = String(form.get("full_name") || "").trim();
   const email = normalizeEmail(String(form.get("email") || ""));
   const phoneRaw = String(form.get("phone") || "").trim();
+  /** Form field `experience` → DB `candidates.experience_summary` (recruiter-visible profile summary). */
   const experienceSummary = String(form.get("experience") || "").trim();
   const noticePeriod = String(form.get("notice_period") || "").trim();
   const location = String(form.get("location") || "").trim();
@@ -79,6 +80,23 @@ export async function POST(request: Request) {
 
   if (!fullName || !email || !phoneRaw || !experienceSummary || !noticePeriod || !location) {
     return NextResponse.json({ error: "Please fill all required fields" }, { status: 400 });
+  }
+
+  if (experienceSummary.length < 20) {
+    return NextResponse.json(
+      { error: "Please provide a fuller experience summary (at least a few sentences)." },
+      { status: 400 }
+    );
+  }
+
+  if (currentSalary === null || expectedSalary === null) {
+    return NextResponse.json(
+      {
+        error:
+          "Current salary and expected salary are required. Enter numbers only (e.g. 1200000), no currency symbols.",
+      },
+      { status: 400 }
+    );
   }
 
   if (!isValidEmail(email)) {

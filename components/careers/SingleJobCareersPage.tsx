@@ -47,6 +47,17 @@ function heroDescription(job: PublicCareersJob) {
     : "Explore the role details below and apply directly in a few minutes.";
 }
 
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-slate-300">
+      {children}
+      <span className="text-rose-400" aria-hidden>
+        *
+      </span>
+    </span>
+  );
+}
+
 export default function SingleJobCareersPage({ job }: { job: PublicCareersJob }) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -180,25 +191,19 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
 
         <aside className="lg:sticky lg:top-6 lg:self-start">
           <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-6 shadow-xl backdrop-blur-sm">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-semibold text-white">Apply for this role</h2>
-                <p className="mt-1 text-sm text-slate-400">Your application goes directly to our recruiting team.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void track("start_apply", { page: "single_job_share", cta: "top" })}
-                className="rounded-xl bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition hover:bg-indigo-400"
-              >
-                Start
-              </button>
+            <div>
+              <h2 className="text-xl font-semibold text-white">Apply for this role</h2>
+              <p className="mt-1 text-sm text-slate-400">Your application goes directly to our recruiting team.</p>
+              <p className="mt-2 text-xs text-slate-500">
+                All fields are required<span className="text-rose-400"> *</span>
+              </p>
             </div>
 
             <form className="mt-6 space-y-4" onSubmit={onApplySubmit}>
               <input type="hidden" name="company_site" tabIndex={-1} autoComplete="off" className="hidden" />
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-1.5 text-sm">
-                  <span className="text-slate-300">Full name</span>
+                  <FieldLabel>Full name</FieldLabel>
                   <input
                     required
                     name="full_name"
@@ -208,7 +213,7 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
                   />
                 </label>
                 <label className="space-y-1.5 text-sm">
-                  <span className="text-slate-300">Email</span>
+                  <FieldLabel>Email</FieldLabel>
                   <input
                     required
                     type="email"
@@ -222,7 +227,7 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-1.5 text-sm">
-                  <span className="text-slate-300">Phone</span>
+                  <FieldLabel>Phone</FieldLabel>
                   <input
                     required
                     name="phone"
@@ -232,7 +237,7 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
                   />
                 </label>
                 <label className="space-y-1.5 text-sm">
-                  <span className="text-slate-300">Current location</span>
+                  <FieldLabel>Current location</FieldLabel>
                   <input
                     required
                     name="location"
@@ -244,20 +249,27 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
               </div>
 
               <label className="space-y-1.5 text-sm">
-                <span className="text-slate-300">Experience summary</span>
+                <FieldLabel>Professional summary</FieldLabel>
+                <p id="careers-experience-hint" className="text-xs text-slate-500">
+                  This text is stored as the <span className="font-medium text-slate-400">experience summary</span> on your
+                  candidate profile and shown to recruiters across applications.
+                </p>
                 <textarea
                   required
+                  minLength={20}
                   name="experience"
                   rows={4}
                   value={form.experience}
                   onChange={(e) => setForm((s) => ({ ...s, experience: e.target.value }))}
+                  aria-describedby="careers-experience-hint"
+                  placeholder="Brief overview of your roles, skills, and impact (updates your profile summary)…"
                   className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-white outline-none ring-0 placeholder:text-slate-500 focus:border-indigo-400"
                 />
               </label>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-1.5 text-sm">
-                  <span className="text-slate-300">Notice period</span>
+                  <FieldLabel>Notice period</FieldLabel>
                   <input
                     required
                     name="notice_period"
@@ -267,13 +279,13 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
                   />
                 </label>
                 <label className="space-y-1.5 text-sm">
-                  <span className="text-slate-300">Resume</span>
+                  <FieldLabel>Resume</FieldLabel>
                   <input
                     required
                     type="file"
                     name="resume"
                     accept=".pdf,.doc,.docx"
-                    onClick={() => void track("start_apply", { page: "single_job_share", cta: "resume_upload" })}
+                    onChange={() => void track("resume_file_selected", { page: "single_job_share" })}
                     className="block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-indigo-400"
                   />
                 </label>
@@ -281,18 +293,24 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-1.5 text-sm">
-                  <span className="text-slate-300">Current salary</span>
+                  <FieldLabel>Current salary</FieldLabel>
                   <input
+                    required
                     name="current_salary"
+                    inputMode="decimal"
+                    placeholder="Annual amount, numbers only (e.g. 1200000)"
                     value={form.current_salary}
                     onChange={(e) => setForm((s) => ({ ...s, current_salary: e.target.value }))}
                     className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-white outline-none ring-0 placeholder:text-slate-500 focus:border-indigo-400"
                   />
                 </label>
                 <label className="space-y-1.5 text-sm">
-                  <span className="text-slate-300">Expected salary</span>
+                  <FieldLabel>Expected salary</FieldLabel>
                   <input
+                    required
                     name="expected_salary"
+                    inputMode="decimal"
+                    placeholder="Annual amount, numbers only (e.g. 1500000)"
                     value={form.expected_salary}
                     onChange={(e) => setForm((s) => ({ ...s, expected_salary: e.target.value }))}
                     className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-white outline-none ring-0 placeholder:text-slate-500 focus:border-indigo-400"
@@ -309,7 +327,12 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
                   onChange={(e) => setForm((s) => ({ ...s, consent: e.target.checked }))}
                   className="mt-1 h-4 w-4 rounded border-white/20 bg-slate-950/60 text-indigo-500"
                 />
-                <span>I agree to the secure processing of my application data for this hiring process.</span>
+                <span>
+                  <span className="text-rose-400" aria-hidden>
+                    *{" "}
+                  </span>
+                  I agree to the secure processing of my application data for this hiring process.
+                </span>
               </label>
 
               {formError ? (
@@ -321,7 +344,7 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
               <button
                 type="submit"
                 disabled={submitting}
-                onClick={() => void track("start_apply", { page: "single_job_share", cta: "submit_button" })}
+                onClick={() => void track("apply_submit_click", { page: "single_job_share" })}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <Send className="h-4 w-4" />
