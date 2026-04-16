@@ -38,6 +38,9 @@ type OpenAiPrice = {
   outputPer1M: number;
 };
 
+/** OpenAI org usage/costs API: for bucket_width=1d, limit must be ≤ 31 (see API invalid_request_error). */
+const OPENAI_USAGE_DAILY_BUCKET_LIMIT = "31";
+
 const PRICE_BOOK: Record<string, OpenAiPrice> = {
   "gpt-4o": { inputPer1M: 5, outputPer1M: 15 },
   "gpt-4o-mini": { inputPer1M: 0.15, outputPer1M: 0.6 },
@@ -182,26 +185,26 @@ export async function getOpenAiUsage(range: { start: string; end: string }, opts
         end_time: String(Math.floor(new Date(range.end).getTime() / 1000)),
         bucket_width: "1d",
         "group_by[]": "model",
-        limit: "31",
+        limit: OPENAI_USAGE_DAILY_BUCKET_LIMIT,
       }),
       getAllBuckets<Bucket>("/organization/usage/completions", {
         start_time: String(Math.floor(new Date(monthRange.start).getTime() / 1000)),
         end_time: String(Math.floor(new Date(monthRange.end).getTime() / 1000)),
         bucket_width: "1d",
         "group_by[]": "model",
-        limit: "31",
+        limit: OPENAI_USAGE_DAILY_BUCKET_LIMIT,
       }),
       getAllBuckets<CostBucket>("/organization/costs", {
         start_time: String(Math.floor(new Date(range.start).getTime() / 1000)),
         end_time: String(Math.floor(new Date(range.end).getTime() / 1000)),
         bucket_width: "1d",
-        limit: "31",
+        limit: OPENAI_USAGE_DAILY_BUCKET_LIMIT,
       }).catch(() => []),
       getAllBuckets<CostBucket>("/organization/costs", {
         start_time: String(Math.floor(new Date(monthRange.start).getTime() / 1000)),
         end_time: String(Math.floor(new Date(monthRange.end).getTime() / 1000)),
         bucket_width: "1d",
-        limit: "31",
+        limit: OPENAI_USAGE_DAILY_BUCKET_LIMIT,
       }).catch(() => []),
     ]);
 

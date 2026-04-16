@@ -60,6 +60,34 @@ type MetricsResponse = {
 const RAILWAY_GRAPHQL_ENDPOINT = "https://backboard.railway.app/graphql/v2";
 const METRICS = ["CPU_USAGE", "MEMORY_USAGE_GB", "NETWORK_TX_GB", "DISK_USAGE_GB"] as const;
 
+function normalizeRailwayApiToken(raw: string | undefined): string | null {
+  if (raw == null || typeof raw !== "string") return null;
+  let t = raw.trim();
+  if (!t) return null;
+  if (/^bearer\s+/i.test(t)) t = t.replace(/^bearer\s+/i, "").trim();
+  return t || null;
+}
+
+/** Turn Railway GraphQL/HTTP failures into actionable messages for the usage dashboard. */
+function explainRailwayFailure(message: string): string {
+  if (message.startsWith("Railway rejected the request (not authorized).")) return message;
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("not authorized") ||
+    lower.includes("unauthorized") ||
+    lower.includes("forbidden") ||
+    lower.includes("permission denied")
+  ) {
+    return [
+      "Railway rejected the request (not authorized).",
+      "Fix: In Railway → Account Settings → Tokens, create an account API token with access to this project (workspace-only tokens often cannot read usage GraphQL).",
+      "Set RAILWAY_API_TOKEN in your server env (no extra \"Bearer \" prefix). Confirm RAILWAY_PROJECT_ID is the project UUID from Project Settings.",
+      `Provider: ${message}`,
+    ].join(" ");
+  }
+  return message;
+}
+
 function metricUnit(metric: string) {
   switch (metric) {
     case "CPU_USAGE":
@@ -76,8 +104,12 @@ function metricUnit(metric: string) {
 }
 
 async function railwayGraphql<T>(query: string, variables: Record<string, unknown>) {
-  const token = process.env.RAILWAY_API_TOKEN;
-  if (!token) throw new Error("RAILWAY_API_TOKEN is not configured.");
+  const token = normalizeRailwayApiToken(process.env.RAILWAY_API_TOKEN);
+  if (!token) {
+    throw new Error(
+      "RAILWAY_API_TOKEN is not configured. Add an account API token from Railway → Account Settings → Tokens."
+    );
+  }
   const res = await fetch(RAILWAY_GRAPHQL_ENDPOINT, {
     method: "POST",
     headers: {
@@ -441,7 +473,8 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
     setCached(cacheKey, response);
     return response;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to fetch Railway usage.";
+    const raw = error instanceof Error ? error.message : "Failed to fetch Railway usage.";
+    const message = explainRailwayFailure(raw);
     const unavailable: RailwayUsageResponse = {
       provider: "railway",
       available: false,

@@ -464,13 +464,63 @@ function extractSkillsRuleBased(text: string) {
     const re = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i");
     if (re.test(section)) found.add(keyword);
   }
-  return Array.from(found).sort((a, b) => a.localeCompare(b));
+   return Array.from(found).sort((a, b) => a.localeCompare(b));
+}
+
+/** Share of alphabetic characters — detects pdf-parse junk or encoding garbage. */
+function lettersRatio(s: string): number {
+  if (!s.length) return 0;
+  const letters = (s.match(/[a-zA-Z]/g) || []).length;
+  return letters / s.length;
+}
+
+/**
+ * Secondary extractor using Mozilla pdf.js (via pdf.js-extract). Many resumes that pdf-parse
+ * mishandles (certain encodings, font mappings, BI exports) extract correctly here.
+ */
+async function extractPdfTextWithPdfJs(buffer: Buffer): Promise<string> {
+  try {
+    const mod: any = await import("pdf.js-extract");
+    const PDFExtract = mod.PDFExtract ?? mod.default?.PDFExtract;
+    if (!PDFExtract) return "";
+    const inst = new PDFExtract();
+    const data = await inst.extractBuffer(buffer, {});
+    const parts: string[] = [];
+    for (const page of data.pages || []) {
+      const items = (page as { content?: Array<{ str: string }> }).content || [];
+      const line = items
+        .map((i) => i.str)
+        .filter((s) => typeof s === "string" && s.trim().length > 0)
+        .join(" ");
+      if (line) parts.push(line);
+    }
+    return parts.join("\n");
+  } catch {
+    return "";
+  }
+}
+
+function shouldTryPdfJsFallback(primaryText: string): boolean {
+  const t = primaryText.trim();
+  if (t.length < 100) return true;
+  if (lettersRatio(t) < 0.18 && t.length < 800) return true;
+  if (t.length > 0 && lettersRatio(t) < 0.12 && t.length < 4000) return true;
+  // Opens fine in Acrobat but pdf-parse drops the text layer: common to get body text with no @.
+  if (t.length >= 40 && t.length <= 8000 && !/@\S+\.\S+/.test(t)) return true;
+  return false;
+}
+
+function needsVisionPdfFallback(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 30) return true;
+  if (t.length < 500 && lettersRatio(t) < 0.1) return true;
+  return false;
 }
 
 async function extractTextFromFile(filename: string, buffer: Buffer) {
   const lower = filename.toLowerCase();
   if (lower.endsWith(".pdf")) {
-    // Primary parser
+    // Primary: pdf-parse (fast, works for many linearized PDFs).
     let text = "";
     try {
       const mod: any = await import("pdf-parse");
@@ -478,12 +528,23 @@ async function extractTextFromFile(filename: string, buffer: Buffer) {
       const result = await pdfParse(buffer);
       text = String(result?.text || "");
     } catch {
-      // fallback below
+      // fall through to pdf.js and/or vision
     }
 
-    // OCR fallback for scanned/image PDFs using OpenAI document understanding.
-    // Only attempted when we still have very little extractable text.
-    if (text.trim().length < 30) {
+    // Secondary: pdf.js-extract — better for some resume PDFs (e.g. certain India BI / Word exports).
+    if (shouldTryPdfJsFallback(text)) {
+      const pdfJsText = await extractPdfTextWithPdfJs(buffer);
+      const p = text.trim();
+      const j = pdfJsText.trim();
+      const pdfJsHasEmail = /@\S+\.\S+/.test(j);
+      const primaryHasEmail = /@\S+\.\S+/.test(p);
+      if (j.length > p.length || (!p && j) || (pdfJsHasEmail && !primaryHasEmail)) {
+        text = pdfJsText;
+      }
+    }
+
+    // Vision / document OCR for scanned PDFs when text layers are still too thin.
+    if (needsVisionPdfFallback(text)) {
       try {
         const key = process.env.OPENAI_API_KEY;
         // Avoid huge payloads in OCR fallback request.
@@ -537,6 +598,7 @@ async function extractTextFromFile(filename: string, buffer: Buffer) {
         // keep best-effort text when OCR fallback fails
       }
     }
+
     return text;
   }
   if (lower.endsWith(".docx")) {
