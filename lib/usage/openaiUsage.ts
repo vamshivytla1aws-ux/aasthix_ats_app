@@ -182,26 +182,26 @@ export async function getOpenAiUsage(range: { start: string; end: string }, opts
         end_time: String(Math.floor(new Date(range.end).getTime() / 1000)),
         bucket_width: "1d",
         "group_by[]": "model",
-        limit: "90",
+        limit: "31",
       }),
       getAllBuckets<Bucket>("/organization/usage/completions", {
         start_time: String(Math.floor(new Date(monthRange.start).getTime() / 1000)),
         end_time: String(Math.floor(new Date(monthRange.end).getTime() / 1000)),
         bucket_width: "1d",
         "group_by[]": "model",
-        limit: "90",
+        limit: "31",
       }),
       getAllBuckets<CostBucket>("/organization/costs", {
         start_time: String(Math.floor(new Date(range.start).getTime() / 1000)),
         end_time: String(Math.floor(new Date(range.end).getTime() / 1000)),
         bucket_width: "1d",
-        limit: "90",
+        limit: "31",
       }).catch(() => []),
       getAllBuckets<CostBucket>("/organization/costs", {
         start_time: String(Math.floor(new Date(monthRange.start).getTime() / 1000)),
         end_time: String(Math.floor(new Date(monthRange.end).getTime() / 1000)),
         bucket_width: "1d",
-        limit: "90",
+        limit: "31",
       }).catch(() => []),
     ]);
 
