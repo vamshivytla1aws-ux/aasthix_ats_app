@@ -33,7 +33,8 @@ Add these variables to the web service:
 - `CRON_SECRET`
 - `MATCHER_PYTHON_URL`
 - `CAREERS_PUBLISHER_USER_ID` if you want `/careers` and the jobs preview portal to publish jobs
-- `OPENAI_API_KEY` if AI features should work
+- `OPENAI_API_KEY` if AI features should work (matching, embeddings, drafts, etc.)
+- `OPEN_ADMIN_AI_KEY` (optional) org **Admin** API key used **only** by the Usage dashboard OpenAI tab. Set it **in addition to** `OPENAI_API_KEY`. If you replace or remove `OPENAI_API_KEY`, features like 1:1 match will stop working. The app also checks `OPENAI_ADMIN_API_KEY`, `Open_admin_AI_Key`, and `OPEN_AI_ADMIN_KEY` if the primary name is missing (Railway names are case-sensitive). Do not paste a leading `Bearer ` in the value. For multi-org accounts, add `OPEN_ADMIN_USAGE_ORG` or `OPENAI_ORGANIZATION_ID` with your `org-…` id if usage calls fail or return the wrong org.
 - SMTP vars if email features should work
 
 Use `.env.railway.example` as the template.

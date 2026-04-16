@@ -65,20 +65,69 @@ function findPrice(model: string) {
   return partial?.[1] || null;
 }
 
-async function openAiAdminFetch(path: string, params: Record<string, string>) {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) {
-    throw new Error("OPENAI_API_KEY is not configured.");
+/** Strip accidental `Bearer ` prefix and whitespace (common when pasting from docs). */
+function normalizeOpenAiSecret(raw: string | undefined): string | undefined {
+  const t = raw?.trim();
+  if (!t) return undefined;
+  return t.replace(/^Bearer\s+/i, "").trim() || undefined;
+}
+
+/**
+ * Admin / usage API credentials: try dedicated usage env names first, then OPENAI_API_KEY.
+ * Multiple names because Railway variable names are easy to mistype (case, underscores).
+ */
+const OPENAI_USAGE_ADMIN_ENV_CANDIDATES = [
+  "OPEN_ADMIN_AI_KEY",
+  "OPENAI_ADMIN_API_KEY",
+  "Open_admin_AI_Key",
+  "OPEN_AI_ADMIN_KEY",
+] as const;
+
+type OpenAiUsageKeySource = (typeof OPENAI_USAGE_ADMIN_ENV_CANDIDATES)[number] | "OPENAI_API_KEY";
+
+function resolveOpenAiUsageCredentials(): { apiKey: string; source: OpenAiUsageKeySource } | undefined {
+  for (const name of OPENAI_USAGE_ADMIN_ENV_CANDIDATES) {
+    const v = normalizeOpenAiSecret(process.env[name]);
+    if (v) return { apiKey: v, source: name };
   }
+  const fallback = normalizeOpenAiSecret(process.env.OPENAI_API_KEY);
+  if (fallback) return { apiKey: fallback, source: "OPENAI_API_KEY" };
+  return undefined;
+}
+
+/** Optional org id for /organization/* usage APIs when the key spans multiple orgs (header: OpenAI-Organization). */
+function openAiUsageOrgHeader(): string | undefined {
+  const org =
+    normalizeOpenAiSecret(process.env.OPEN_ADMIN_USAGE_ORG) ||
+    normalizeOpenAiSecret(process.env.OPENAI_ORGANIZATION_ID);
+  return org || undefined;
+}
+
+async function openAiAdminFetch(path: string, params: Record<string, string>) {
+  const resolved = resolveOpenAiUsageCredentials();
+  if (!resolved) {
+    throw new Error(
+      "No API key for Usage: set OPEN_ADMIN_AI_KEY (org admin) and/or OPENAI_API_KEY. Other app AI features still require OPENAI_API_KEY."
+    );
+  }
+  const { apiKey: key, source } = resolved;
   const url = new URL(`https://api.openai.com/v1${path}`);
   for (const [k, v] of Object.entries(params)) {
     if (v) url.searchParams.set(k, v);
   }
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+  };
+  const orgId = openAiUsageOrgHeader();
+  if (orgId) {
+    headers["OpenAI-Organization"] = orgId;
+  }
+  if (process.env.NODE_ENV === "production") {
+    console.info("[usage/openai] request with credential source:", source, orgId ? "+ OpenAI-Organization" : "");
+  }
   const res = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     cache: "no-store",
   });
   if (!res.ok) {
@@ -435,7 +484,7 @@ export async function getOpenAiUsage(range: { start: string; end: string }, opts
         notes: [
           "OpenAI usage and cost data are fetched server-side only.",
           message.includes("403") || message.includes("401")
-            ? "The configured OPENAI_API_KEY is missing organization admin access for usage/cost endpoints."
+            ? "The key used for Usage (OPEN_ADMIN_AI_KEY or OPENAI_API_KEY) needs organization admin access for usage/cost endpoints."
             : message,
         ],
       },
