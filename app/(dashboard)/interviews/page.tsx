@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { Calendar as CalendarIcon, Download, EyeOff, SlidersHorizontal, UserX, XCircle } from "lucide-react";
+import { Calendar as CalendarIcon, Download, EyeOff, SlidersHorizontal, Trash2, UserX, XCircle } from "lucide-react";
 import { Calendar, Views } from "react-big-calendar";
 import withDragAndDrop from "react-big-calendar/lib/addons/dragAndDrop";
 import { dateFnsLocalizer } from "react-big-calendar";
@@ -567,6 +567,35 @@ export default function InterviewsPage() {
     } catch (err: any) {
       showPermissionToast(err);
       setError(err.message || "Failed to reschedule interview");
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  /** Removes row from Interviews overview: moves application to Applied and clears all interview state. */
+  async function removeFromInterviewsBoardEntry(app: ApplicationRow) {
+    if (app.stage !== "Interview") return;
+    const ok = window.confirm(
+      "Remove this interview entry? The candidate will move back to Applied on the pipeline, and all interview scheduling and round progress for this application will be cleared. This cannot be undone from here."
+    );
+    if (!ok) return;
+    setError(null);
+    setActionBusyId(app.id);
+    try {
+      await apiFetchJson<ApplicationRow>("/api/applications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: app.id, remove_from_interviews_board: true }),
+      });
+      await mutateInterviews((prev) => (prev ?? []).filter((r) => r.id !== app.id), { revalidate: true });
+      setDetailsOpen(false);
+      setSelectedInterview(null);
+      setSelectedIds((prev) => prev.filter((x) => x !== app.id));
+      showSuccessToast("Interview entry removed. Candidate is back on Applied.");
+      void mutateAlerts();
+    } catch (err: any) {
+      showPermissionToast(err);
+      setError(err.message || "Failed to remove interview entry");
     } finally {
       setActionBusyId(null);
     }
@@ -1365,6 +1394,17 @@ export default function InterviewsPage() {
                                 },
                               ]
                             : []),
+                          ...(r.stage === "Interview"
+                            ? [
+                                {
+                                  type: "button" as const,
+                                  label: "Remove from board",
+                                  icon: <Trash2 className="h-3.5 w-3.5" />,
+                                  danger: true as const,
+                                  onClick: () => removeFromInterviewsBoardEntry(r),
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     </div>
@@ -1547,6 +1587,16 @@ export default function InterviewsPage() {
                 >
                   Mark Completed
                 </button>
+                {selectedInterview.stage === "Interview" ? (
+                  <button
+                    type="button"
+                    onClick={() => removeFromInterviewsBoardEntry(selectedInterview)}
+                    disabled={actionBusyId === selectedInterview.id}
+                    className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 transition-all duration-200 disabled:opacity-50"
+                  >
+                    Remove from board
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>

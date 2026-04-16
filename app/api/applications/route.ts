@@ -493,6 +493,68 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
+    const removeFromInterviewsBoard =
+      (body as { remove_from_interviews_board?: boolean }).remove_from_interviews_board === true;
+
+    if (removeFromInterviewsBoard) {
+      const upd = await query(
+        `
+        UPDATE applications
+        SET
+          stage = 'Applied',
+          status = 'Applied',
+          interview_scheduled = FALSE,
+          interview_datetime = NULL,
+          interview_reschedule_reason = NULL,
+          interview_cancel_reason = NULL,
+          interview_no_show = FALSE,
+          interview_substatus = NULL,
+          interview_completed_at = NULL,
+          interview_status_note = NULL,
+          reminder_sent = FALSE,
+          current_interview_round_id = NULL,
+          current_interview_round_order = NULL,
+          interview_round_status = 'not_started',
+          rejected_in_round_order = NULL,
+          selected_after_rounds = NULL,
+          updated_at = NOW()
+        WHERE id = $1
+          AND stage = 'Interview'
+          AND (${accessWhere2})
+        RETURNING id, candidate_id
+        `,
+        [id, user.user_id]
+      );
+      if (upd.rowCount === 0) {
+        return NextResponse.json(
+          { error: "Application not found, not in Interview stage, or you lack access." },
+          { status: 404 }
+        );
+      }
+      const row0 = upd.rows[0] as { id: number; candidate_id: number };
+      try {
+        await logScreeningAudit({
+          event_type: "stage_override",
+          application_id: row0.id,
+          test_id: null,
+          candidate_id: row0.candidate_id,
+          created_by_user_id: user.user_id,
+          metadata: {
+            from_stage: "Interview",
+            to_stage: "Applied",
+            reason: "remove_from_interviews_board",
+            interview_decision: null,
+            interview_decision_audience: "client",
+            explicit_stage_in_request: true,
+          },
+        });
+      } catch {
+        // non-fatal
+      }
+      const card = await safeFetchApplicationCardRow(row0.id, user.user_id);
+      return NextResponse.json(card ?? { id: row0.id });
+    }
+
     if (stage !== undefined && !isStage(stage)) {
       return NextResponse.json(
         { error: `stage must be one of: ${STAGES.join(", ")}` },
