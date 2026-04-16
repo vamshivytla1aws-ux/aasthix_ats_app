@@ -20,17 +20,23 @@ type ProjectBasics = {
   project?: {
     id: string;
     name: string;
-    workspace?: { id: string; name: string } | null;
+    workspace?: {
+      id: string;
+      name: string;
+      plan?: string | null;
+      customer?: {
+        currentUsage?: number | null;
+        creditBalance?: number | null;
+        billingPeriod?: { start: string; end: string } | null;
+        usageLimit?: {
+          softLimit: number;
+          hardLimit?: number | null;
+          isOverLimit?: boolean | null;
+        } | null;
+      } | null;
+    } | null;
     services?: {
       edges?: Array<{ node?: { id: string; name: string } | null }>;
-    } | null;
-  } | null;
-};
-
-type ProjectEstimatedUsage = {
-  project?: {
-    estimatedUsage?: {
-      edges?: Array<{ node?: { date: string; totalCost: number | null } | null }>;
     } | null;
   } | null;
 };
@@ -57,7 +63,7 @@ type MetricsResponse = {
   }> | null;
 };
 
-const RAILWAY_GRAPHQL_ENDPOINT = "https://backboard.railway.app/graphql/v2";
+const RAILWAY_GRAPHQL_ENDPOINT = "https://backboard.railway.com/graphql/v2";
 const METRICS = ["CPU_USAGE", "MEMORY_USAGE_GB", "NETWORK_TX_GB", "DISK_USAGE_GB"] as const;
 
 function normalizeRailwayApiToken(raw: string | undefined): string | null {
@@ -86,6 +92,34 @@ function explainRailwayFailure(message: string): string {
     ].join(" ");
   }
   return message;
+}
+
+/** Railway metric series sometimes returns Unix seconds; JS Date expects ms. */
+function normalizeRailwayMetricTs(ts: string | number | null | undefined): string | null {
+  if (ts == null) return null;
+  if (typeof ts === "number") {
+    const ms = ts > 0 && ts < 1e12 ? ts * 1000 : ts;
+    return new Date(ms).toISOString();
+  }
+  const s = String(ts).trim();
+  if (!s) return null;
+  if (/^\d+$/.test(s)) {
+    const n = Number(s);
+    const ms = n > 0 && n < 1e12 ? n * 1000 : n;
+    return new Date(ms).toISOString();
+  }
+  return s;
+}
+
+function railwayPlanLabel(plan: string | null | undefined): string | null {
+  if (!plan) return null;
+  const map: Record<string, string> = { FREE: "Free", HOBBY: "Hobby", PRO: "Pro" };
+  return map[plan] || plan;
+}
+
+/** Usage limits in GraphQL are stored in cents (see UsageLimit / billing types). */
+function usageLimitCentsToUsd(cents: number): number {
+  return cents / 100;
 }
 
 function metricUnit(metric: string) {
@@ -189,7 +223,7 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
   const notes: string[] = [];
 
   try {
-    const basicPromise = railwayGraphql<ProjectBasics>(
+    const basic = await railwayGraphql<ProjectBasics>(
       `
         query UsageProjectBasics($projectId: String!) {
           project(id: $projectId) {
@@ -198,6 +232,20 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
             workspace {
               id
               name
+              plan
+              customer {
+                currentUsage
+                creditBalance
+                billingPeriod {
+                  start
+                  end
+                }
+                usageLimit {
+                  softLimit
+                  hardLimit
+                  isOverLimit
+                }
+              }
             }
             services {
               edges {
@@ -212,52 +260,40 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
       `,
       { projectId }
     );
-
-    const projectEstimatedPromise = railwayGraphql<ProjectEstimatedUsage>(
-      `
-        query UsageProjectEstimated($projectId: String!) {
-          project(id: $projectId) {
-            estimatedUsage {
-              edges {
-                node {
-                  date
-                  totalCost
-                }
-              }
-            }
-          }
-        }
-      `,
-      { projectId }
-    ).catch((error) => {
-      notes.push(`Project estimated usage unavailable from provider: ${error instanceof Error ? error.message : String(error)}`);
-      return { project: null } satisfies ProjectEstimatedUsage;
-    });
-
-    const [basic, projectEstimated] = await Promise.all([basicPromise, projectEstimatedPromise]);
     const project = basic.project || null;
-    const workspaceId = project?.workspace?.id || null;
     const workspaceName = project?.workspace?.name || null;
+    const customer = project?.workspace?.customer || null;
+    const billingPeriodStart = customer?.billingPeriod?.start || monthRange.start;
+    const billingPeriodEnd = customer?.billingPeriod?.end || monthRange.end;
+    const providerLimitUsd = customer?.usageLimit != null ? usageLimitCentsToUsd(customer.usageLimit.softLimit) : null;
+    const effectiveUsageLimit = usageLimit ?? providerLimitUsd;
+    const currentUsageUsd = customer?.currentUsage != null ? Number(customer.currentUsage) : null;
+    const planFromApi = project?.workspace?.plan || null;
+    const currentPlanDisplay =
+      configuredPlan ?? (planFromApi ? `${railwayPlanLabel(planFromApi) ?? planFromApi} Plan` : null);
+    const currentPlanSource = configuredPlan
+      ? "Configured manually"
+      : planFromApi
+        ? "Provider direct"
+        : "Unavailable from provider";
     const services =
       project?.services?.edges?.map((edge) => edge.node).filter((node): node is { id: string; name: string } => Boolean(node?.id && node?.name)) || [];
 
-    const estimatedRoot = workspaceId
-      ? await railwayGraphql<RootEstimatedUsage>(
-          `
-            query EstimatedUsageForWorkspace($measurements: [MetricMeasurement!]!, $workspaceId: String!, $includeDeleted: Boolean) {
-              estimatedUsage(measurements: $measurements, workspaceId: $workspaceId, includeDeleted: $includeDeleted) {
-                measurement
-                estimatedValue
-                projectId
-              }
-            }
-          `,
-          { measurements: [...METRICS], workspaceId, includeDeleted: false }
-        ).catch((error) => {
-          notes.push(`Workspace estimated metric usage unavailable from provider: ${error instanceof Error ? error.message : String(error)}`);
-          return { estimatedUsage: [] } satisfies RootEstimatedUsage;
-        })
-      : ({ estimatedUsage: [] } satisfies RootEstimatedUsage);
+    const estimatedRoot = await railwayGraphql<RootEstimatedUsage>(
+      `
+        query EstimatedUsageForProject($measurements: [MetricMeasurement!]!, $projectId: String!, $includeDeleted: Boolean) {
+          estimatedUsage(measurements: $measurements, projectId: $projectId, includeDeleted: $includeDeleted) {
+            measurement
+            estimatedValue
+            projectId
+          }
+        }
+      `,
+      { measurements: [...METRICS], projectId, includeDeleted: false }
+    ).catch((error) => {
+      notes.push(`Project estimated metric usage unavailable from provider: ${error instanceof Error ? error.message : String(error)}`);
+      return { estimatedUsage: [] } satisfies RootEstimatedUsage;
+    });
 
     const aggregate = await railwayGraphql<UsageAggregate>(
       `
@@ -265,17 +301,13 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
           $projectId: String!,
           $measurements: [MetricMeasurement!]!,
           $startDate: DateTime!,
-          $endDate: DateTime!,
-          $serviceId: String,
-          $environmentId: String
+          $endDate: DateTime!
         ) {
           usage(
             projectId: $projectId
             measurements: $measurements
             startDate: $startDate
             endDate: $endDate
-            serviceId: $serviceId
-            environmentId: $environmentId
           ) {
             measurement
             value
@@ -287,8 +319,6 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
         measurements: [...METRICS],
         startDate: range.start,
         endDate: range.end,
-        serviceId,
-        environmentId,
       }
     ).catch((error) => {
       notes.push(`Aggregated Railway usage unavailable from provider: ${error instanceof Error ? error.message : String(error)}`);
@@ -368,7 +398,8 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
         const estimatedValue =
           estimatedRoot.estimatedUsage?.find((item) => item.projectId === projectId && item.measurement === metricType)?.estimatedValue ?? null;
         for (const point of metric.values || []) {
-          const date = point.ts ? fmtDateOnly(point.ts) : fmtDateOnly(range.start);
+          const tsIso = normalizeRailwayMetricTs(point.ts);
+          const date = tsIso ? fmtDateOnly(tsIso) : fmtDateOnly(range.start);
           metricRows.push({
             date,
             scope: `${workspaceName || "Workspace"} / ${project?.name || "Project"} / ${service.name}`,
@@ -376,34 +407,30 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
             usage_value: point.value != null ? Number(point.value) : null,
             estimated_usage_value: estimatedValue != null ? Number(estimatedValue) : null,
             usage_unit: metricUnit(metricType),
-            limit_value: usageLimit,
-            remaining_value: clampRemaining(usageLimit, null),
-            billing_period: `${fmtDateOnly(monthRange.start)} -> ${fmtDateOnly(monthRange.end)}`,
+            limit_value: effectiveUsageLimit,
+            remaining_value: clampRemaining(effectiveUsageLimit, currentUsageUsd),
+            billing_period: `${fmtDateOnly(billingPeriodStart)} -> ${fmtDateOnly(billingPeriodEnd)}`,
             source: "Provider direct",
-            status: usageStatus(usageLimit, null),
+            status: usageStatus(effectiveUsageLimit, currentUsageUsd),
           });
         }
       }
     }
 
-    const timeline = projectEstimated.project?.estimatedUsage?.edges
-      ?.map((edge) => edge.node)
-      .filter((node): node is { date: string; totalCost: number | null } => Boolean(node?.date))
-      .sort((a, b) => a.date.localeCompare(b.date)) || [];
-
-    const currentUsageUsd = timeline.length > 0 ? Number(timeline[timeline.length - 1].totalCost || 0) : null;
     const estimatedUsageUsd = (() => {
-      if (timeline.length === 0 || currentUsageUsd == null) return null;
-      const firstDate = new Date(monthRange.start);
-      const lastDate = new Date(monthRange.end);
-      const elapsedDays = Math.max(1, Math.ceil((lastDate.getTime() - firstDate.getTime()) / 86_400_000));
-      const totalDays = new Date(lastDate.getFullYear(), lastDate.getMonth() + 1, 0).getDate();
+      if (currentUsageUsd == null) return null;
+      const periodStart = new Date(billingPeriodStart);
+      const periodEnd = new Date(billingPeriodEnd);
+      const now = Date.now();
+      const endMs = Math.min(periodEnd.getTime(), now);
+      const elapsedDays = Math.max(1, Math.ceil((endMs - periodStart.getTime()) / 86_400_000));
+      const totalDays = Math.max(1, Math.ceil((periodEnd.getTime() - periodStart.getTime()) / 86_400_000));
       return (currentUsageUsd / elapsedDays) * totalDays;
     })();
 
-    const remainingQuota = clampRemaining(usageLimit, currentUsageUsd);
-    const percent = usagePercent(usageLimit, currentUsageUsd);
-    const status = usageStatus(usageLimit, currentUsageUsd);
+    const remainingQuota = clampRemaining(effectiveUsageLimit, currentUsageUsd);
+    const percent = usagePercent(effectiveUsageLimit, currentUsageUsd);
+    const status = usageStatus(effectiveUsageLimit, currentUsageUsd);
 
     const aggregateRows = (aggregate.usage || []).map((entry) => ({
       date: fmtDateOnly(range.end),
@@ -413,9 +440,9 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
       estimated_usage_value:
         estimatedRoot.estimatedUsage?.find((item) => item.projectId === projectId && item.measurement === entry.measurement)?.estimatedValue ?? null,
       usage_unit: metricUnit(String(entry.measurement || "Unknown")),
-      limit_value: usageLimit,
+      limit_value: effectiveUsageLimit,
       remaining_value: remainingQuota,
-      billing_period: `${fmtDateOnly(monthRange.start)} -> ${fmtDateOnly(monthRange.end)}`,
+      billing_period: `${fmtDateOnly(billingPeriodStart)} -> ${fmtDateOnly(billingPeriodEnd)}`,
       source: "Provider direct" as UsageValueSource,
       status,
     }));
@@ -425,19 +452,21 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
       available: true,
       error: null,
       date_range: { preset: "custom", start: range.start, end: range.end },
-      current_plan: configuredPlan,
-      current_plan_source: configuredPlan ? "Configured manually" : "Unavailable from provider",
-      billing_period_start: monthRange.start,
-      billing_period_end: monthRange.end,
-      billing_period_source: "Calculated estimate",
+      current_plan: currentPlanDisplay,
+      current_plan_source: currentPlanSource,
+      billing_period_start: billingPeriodStart,
+      billing_period_end: billingPeriodEnd,
+      billing_period_source: customer?.billingPeriod ? "Provider direct" : "Calculated estimate",
       current_usage_usd: currentUsageUsd,
       current_usage_source: currentUsageUsd != null ? "Provider direct" : "Unavailable from provider",
       estimated_usage_usd: estimatedUsageUsd,
       estimated_usage_source: estimatedUsageUsd != null ? "Calculated estimate" : "Unavailable from provider",
-      usage_limit_usd: usageLimit,
-      usage_limit_source: valueSourceFromLimit(usageLimit),
+      usage_limit_usd: effectiveUsageLimit,
+      usage_limit_source:
+        usageLimit != null ? "Configured manually" : providerLimitUsd != null ? "Provider direct" : "Unavailable from provider",
       remaining_quota_usd: remainingQuota,
-      remaining_quota_source: usageLimit != null && currentUsageUsd != null ? "Calculated estimate" : "Unavailable from provider",
+      remaining_quota_source:
+        effectiveUsageLimit != null && currentUsageUsd != null ? "Calculated estimate" : "Unavailable from provider",
       active_project: { id: project?.id || projectId, name: project?.name || null },
       active_service: serviceId
         ? {
@@ -456,11 +485,15 @@ export async function getRailwayUsage(range: { start: string; end: string }, opt
         notes: [
           "Project and service usage are fetched from Railway GraphQL on the backend.",
           configuredPlan
-            ? "Current plan is configured manually from RAILWAY_PLAN_NAME."
-            : "Current plan is unavailable from provider and can be set with RAILWAY_PLAN_NAME.",
+            ? "Current plan is configured manually from RAILWAY_PLAN_NAME (overrides workspace plan from the API)."
+            : planFromApi
+              ? "Current plan comes from the Railway workspace subscription (HOBBY / PRO / FREE)."
+              : "Current plan is unavailable from provider and can be set with RAILWAY_PLAN_NAME.",
           usageLimit != null
-            ? "Usage limit / quota is configured manually from RAILWAY_USAGE_LIMIT."
-            : "Usage limit / quota is unavailable until RAILWAY_USAGE_LIMIT is configured.",
+            ? "Usage limit / quota is configured manually from RAILWAY_USAGE_LIMIT (overrides the workspace usage limit from the API)."
+            : providerLimitUsd != null
+              ? "Usage limit / quota comes from the Railway workspace customer usage limit."
+              : "Usage limit / quota is unavailable until you set RAILWAY_USAGE_LIMIT or Railway returns a limit for this workspace.",
           estimatedUsageUsd != null
             ? "Estimated usage is a calculated projection using the current billing-period spend trend."
             : "Estimated usage is unavailable from provider and could not be projected.",
