@@ -19,6 +19,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
+import { normalizeResumeLink } from "@/lib/resumeLink";
 import { UI } from "@/lib/ui";
 import Toast from "@/components/Toast";
 
@@ -100,15 +101,6 @@ function sanitizeLocationForForm(value: string | null | undefined) {
     return raw;
   }
   return "";
-}
-
-function normalizeResumeLink(url: string | null | undefined) {
-  if (!url) return null;
-  if (url.startsWith("/uploads/resumes/")) {
-    const rel = url.replace(/^\/uploads\/resumes\//, "");
-    return `/api/resume/${rel}`;
-  }
-  return url;
 }
 
 const sectionTitle = "text-xs font-bold uppercase tracking-wider text-slate-500";
@@ -772,7 +764,12 @@ export default function CandidateForm({
                   {resumeUrl ? (
                     <div className="mt-3 flex items-center gap-2 text-sm">
                       <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden />
-                      <a className="font-medium text-blue-700 hover:underline" href={resumeUrl} target="_blank" rel="noreferrer">
+                      <a
+                        className="font-medium text-blue-700 hover:underline"
+                        href={normalizeResumeLink(resumeUrl) || resumeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         View stored resume
                       </a>
                     </div>

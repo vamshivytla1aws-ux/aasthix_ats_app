@@ -11,6 +11,7 @@ import { format, parse, startOfWeek, getDay } from "date-fns";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
+import { normalizeResumeLink } from "@/lib/resumeLink";
 import { useDensity } from "@/lib/useDensity";
 import DensityToggle from "@/components/ui/DensityToggle";
 import AccessGate from "@/components/AccessGate";
@@ -1512,7 +1513,7 @@ export default function InterviewsPage() {
                         Resume:{" "}
                         {packet?.candidate?.resume_url ? (
                           <a
-                            href={packet.candidate.resume_url}
+                            href={normalizeResumeLink(packet.candidate.resume_url) || packet.candidate.resume_url}
                             target="_blank"
                             rel="noreferrer"
                             className="font-semibold text-blue-700 hover:text-blue-800"

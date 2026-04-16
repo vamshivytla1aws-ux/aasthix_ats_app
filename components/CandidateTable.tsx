@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { normalizeResumeLink } from "@/lib/resumeLink";
 
 type Candidate = {
   id: number;
@@ -384,16 +385,17 @@ export default function CandidateTable({
               <td className="px-4 py-3.5 whitespace-nowrap">
                 {c.resume_url ? (
                   <a
-                    href={c.resume_url}
+                    href={normalizeResumeLink(c.resume_url) || c.resume_url}
                     target="_blank"
                     rel="noreferrer"
                     className="text-blue-700 underline hover:text-blue-800 transition-colors"
                     onClick={(e) => {
-                      const clean = c.resume_url!.split("?")[0].split("#")[0];
+                      const openUrl = normalizeResumeLink(c.resume_url) || c.resume_url || "";
+                      const clean = openUrl.split("?")[0].split("#")[0];
                       const pdf = clean.toLowerCase().endsWith(".pdf");
-                      if (pdf) {
+                      if (pdf && openUrl) {
                         e.preventDefault();
-                        setResumeModalUrl(c.resume_url!);
+                        setResumeModalUrl(openUrl);
                       }
                     }}
                   >

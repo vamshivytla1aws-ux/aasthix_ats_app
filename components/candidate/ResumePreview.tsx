@@ -2,20 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { useEffect } from "react";
+import { normalizeResumeLink } from "@/lib/resumeLink";
 
 export default function ResumePreview({ resumeUrl }: { resumeUrl: string | null }) {
   const [loading, setLoading] = useState(true);
   const [previewFailed, setPreviewFailed] = useState(false);
 
-  const previewUrl = useMemo(() => {
-    if (!resumeUrl) return null;
-    // For locally stored resumes, use API route that forces inline rendering headers.
-    if (resumeUrl.startsWith("/uploads/resumes/")) {
-      const rel = resumeUrl.replace(/^\/uploads\/resumes\//, "");
-      return `/api/resume/${rel}`;
-    }
-    return resumeUrl;
-  }, [resumeUrl]);
+  const previewUrl = useMemo(() => normalizeResumeLink(resumeUrl), [resumeUrl]);
+  const downloadHref = useMemo(() => normalizeResumeLink(resumeUrl) || resumeUrl || null, [resumeUrl]);
 
   useEffect(() => {
     // Reset state whenever resume changes.
@@ -61,7 +55,7 @@ export default function ResumePreview({ resumeUrl }: { resumeUrl: string | null 
             </div>
           )}
           <a
-            href={resumeUrl}
+            href={downloadHref || undefined}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-all duration-200"

@@ -9,6 +9,7 @@ import type { Density } from "@/lib/useDensity";
 import RowActionsMenu, { type RowActionItem } from "@/components/enterprise/RowActionsMenu";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import { UI } from "@/lib/ui";
+import { normalizeResumeLink } from "@/lib/resumeLink";
 
 type Candidate = {
   id: number;
@@ -690,7 +691,7 @@ export default function DataTable({
                     <td style={{ width: columnWidths.resume }} className={rowClass} onClick={(e) => e.stopPropagation()}>
                       {c.resume_url ? (
                         <a
-                          href={c.resume_url}
+                          href={normalizeResumeLink(c.resume_url) || c.resume_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"

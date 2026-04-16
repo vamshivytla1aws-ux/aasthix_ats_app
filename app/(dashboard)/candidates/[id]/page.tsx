@@ -12,6 +12,7 @@ import { apiFetchJson } from "@/lib/apiClient";
 import EnterpriseTabs from "@/components/enterprise/EnterpriseTabs";
 import ContextualCopilotPanel from "@/components/enterprise/ContextualCopilotPanel";
 import { UI } from "@/lib/ui";
+import { normalizeResumeLink } from "@/lib/resumeLink";
 import { useDensity } from "@/lib/useDensity";
 import DensityToggle from "@/components/ui/DensityToggle";
 
@@ -106,14 +107,6 @@ type CandidateProfileResponse = {
     match_source?: "table" | "embedding";
   }>;
 };
-
-function normalizeResumeLink(url: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith("/uploads/resumes/")) {
-    return `/api/resume/${url.replace(/^\/uploads\/resumes\//, "")}`;
-  }
-  return url;
-}
 
 const TABS = [
   { id: "details", label: "Details" },
