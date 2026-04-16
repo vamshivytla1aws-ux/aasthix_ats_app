@@ -89,7 +89,7 @@ const NAME_SECTION_RE =
 const NAME_ROLE_TOKEN = /\b(senior|junior|lead|principal|staff|engineer|engineering|developer|devops|architect|manager|consultant|analyst|intern|fresher|tester|qa|sdet|scientist|specialist|owner|director|designer|recruiter|administrator|marketing|sales|product|support)\b/i;
 
 const GEO_HINT_RE =
-  /\b(india|usa|us|united\s+states|uk|united\s+kingdom|canada|australia|singapore|uae|germany|france|ireland|netherlands|sweden|poland|spain|italy|japan|bengaluru|bangalore|hyderabad|chennai|pune|mumbai|delhi|new\s+delhi|noida|gurgaon|gurugram|kolkata|ahmedabad|kochi|trivandrum|thiruvananthapuram|jaipur|chandigarh|coimbatore|mysore|visakhapatnam|vizag|san\s+francisco|new\s+york|austin|seattle|london|toronto|dubai)\b/i;
+  /\b(india|indian|bharat|usa|us|united\s+states|uk|united\s+kingdom|canada|australia|singapore|uae|germany|france|ireland|netherlands|sweden|poland|spain|italy|japan|bengaluru|bangalore|hyderabad|chennai|pune|mumbai|delhi|new\s+delhi|noida|gurgaon|gurugram|kolkata|ahmedabad|kochi|trivandrum|thiruvananthapuram|jaipur|chandigarh|coimbatore|mysore|mysuru|visakhapatnam|vizag|goa|panaji|bhubaneswar|nagpur|vadodara|surat|lucknow|kanpur|patna|ranchi|guwahati|bhopal|indore|san\s+francisco|new\s+york|austin|seattle|london|toronto|dubai)\b/i;
 
 function containsGeoHint(s: string) {
   return GEO_HINT_RE.test(s);
@@ -281,8 +281,30 @@ const NOT_A_REGION_TOKEN = new Set(
     "scrum", "years", "year", "experience", "experiences", "requirements", "requirement", "proven",
     "skills", "skill", "technical", "technologies", "framework", "frameworks", "development", "developer",
     "engineer", "engineering", "based", "remote", "hybrid", "onsite", "full", "time", "part",
+    "ssrs", "ssis", "ssas", "tsql", "t-sql", "dax", "mdx", "etl", "elt", "olap", "dbt",
   ].map((s) => s.toLowerCase())
 );
+
+/**
+ * US state / DC abbreviations after a comma (e.g. "Portland, OR"). Kept for occasional US hiring;
+ * primary user base is India — see IN_STATE_ABBREV_SAFE first in validation order.
+ */
+const US_STATE_ABBREV = new Set([
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY",
+  "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND",
+  "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+]);
+
+/**
+ * Indian state/UT two-letter forms that do not match a US state abbreviation (common on resumes).
+ */
+const IN_STATE_ABBREV_SAFE = new Set([
+  "AP", "AS", "BR", "CG", "CH", "DL", "GJ", "HP", "HR", "JK", "JH", "KA", "KL", "LD", "MH", "ML", "MP",
+  "MZ", "NL", "OD", "PB", "PY", "RJ", "SK", "TG", "TS", "TR", "UK", "UP", "WB", "AN",
+]);
+
+/** Same code as a US state — need India context or US fallback (e.g. TN = Tamil Nadu vs Tennessee). */
+const IN_US_STATE_OVERLAP = new Set(["AR", "GA", "MN", "OR", "TN", "LA", "IN"]);
 
 const LOCATION_JUNK_PHRASE =
   /\b(years?\s+of|work\s+experience|job\s+description|requirements?|proven\s+|technical\s+skills?|retrieval|ranking|machine\s+learning|deep\s+learning|professional\s+summary|summary|objective)\b/i;
@@ -296,6 +318,33 @@ function splitHeaderSegments(line: string) {
     .split(/\s*[|•·]\s*|\s{2,}/)
     .map((x) => cleanHeaderToken(x))
     .filter(Boolean);
+}
+
+/** True when the string clearly refers to India (catalog city, geo hint, or explicit country). */
+function indiaLocationContext(s: string): boolean {
+  const raw = cleanHeaderToken(s);
+  if (!raw) return false;
+  if (/\b(india|indian|bharat)\b/i.test(raw)) return true;
+  if (containsGeoHint(raw)) return true;
+  for (const part of raw.split(",").map((x) => cleanHeaderToken(x)).filter(Boolean)) {
+    if (canonicalizeIndiaLocation(part)) return true;
+  }
+  return false;
+}
+
+/**
+ * Two-letter segment after comma: India-safe codes, then overlap disambiguation, then US-only codes.
+ * Rejects junk like "SS" (not a state in either country).
+ */
+function twoLetterRegionTailLooksValid(fullLocation: string, lastUpper: string): boolean {
+  if (!/^[A-Z]{2}$/.test(lastUpper)) return false;
+  if (IN_STATE_ABBREV_SAFE.has(lastUpper)) return true;
+  if (IN_US_STATE_OVERLAP.has(lastUpper)) {
+    if (indiaLocationContext(fullLocation)) return true;
+    if (US_STATE_ABBREV.has(lastUpper)) return true;
+    return false;
+  }
+  return US_STATE_ABBREV.has(lastUpper);
 }
 
 /**
@@ -338,8 +387,10 @@ export function looksLikeCandidateLocation(s: string | null | undefined): boolea
   }
 
   if (parts.length >= 2) {
-    const last = parts[parts.length - 1];
-    if (/^[A-Z]{2}$/.test(last)) return true;
+    const lastRaw = parts[parts.length - 1].trim();
+    const lastUpper =
+      lastRaw.length === 2 && /^[A-Za-z]{2}$/.test(lastRaw) ? lastRaw.toUpperCase() : "";
+    if (lastUpper && twoLetterRegionTailLooksValid(t, lastUpper)) return true;
     const hasCanonicalIndiaPart = parts.some((p) => Boolean(canonicalizeIndiaLocation(p)));
     const hasExplicitGeoHint = parts.some((p) => containsGeoHint(p));
     if (parts.every((p) => /^[A-Za-z][A-Za-z .'-]{1,40}$/.test(p)) && (hasCanonicalIndiaPart || hasExplicitGeoHint)) {

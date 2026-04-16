@@ -11,6 +11,26 @@ describe("looksLikeCandidateLocation", () => {
   it("rejects tech skill pairs misread as locations", () => {
     expect(looksLikeCandidateLocation("EF Core, Node")).toBe(false);
     expect(looksLikeCandidateLocation("retrieval, ranking")).toBe(false);
+    expect(looksLikeCandidateLocation("SSRS, SS")).toBe(false);
+    expect(looksLikeCandidateLocation("SQL Server, BI")).toBe(false);
+  });
+
+  it("still accepts city + real US state abbrev", () => {
+    expect(looksLikeCandidateLocation("Portland, OR")).toBe(true);
+    expect(looksLikeCandidateLocation("Nashville, TN")).toBe(true);
+  });
+
+  it("accepts Indian city + state code (India-first)", () => {
+    expect(looksLikeCandidateLocation("Mumbai, MH")).toBe(true);
+    expect(looksLikeCandidateLocation("Mumbai, mh")).toBe(true);
+    expect(looksLikeCandidateLocation("Bengaluru, KA")).toBe(true);
+    expect(looksLikeCandidateLocation("Hyderabad, TG")).toBe(true);
+    expect(looksLikeCandidateLocation("Hyderabad, TS")).toBe(true);
+    expect(looksLikeCandidateLocation("Bhubaneswar, OD")).toBe(true);
+  });
+
+  it("accepts Tamil Nadu style when India context exists (TN overlaps US)", () => {
+    expect(looksLikeCandidateLocation("Coimbatore, TN")).toBe(true);
   });
 
   it("rejects JD / experience fragments", () => {
