@@ -249,11 +249,7 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
               </div>
 
               <label className="space-y-1.5 text-sm">
-                <FieldLabel>Professional summary</FieldLabel>
-                <p id="careers-experience-hint" className="text-xs text-slate-500">
-                  This text is stored as the <span className="font-medium text-slate-400">experience summary</span> on your
-                  candidate profile and shown to recruiters across applications.
-                </p>
+                <FieldLabel>Professional experience</FieldLabel>
                 <textarea
                   required
                   minLength={20}
@@ -261,8 +257,7 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
                   rows={4}
                   value={form.experience}
                   onChange={(e) => setForm((s) => ({ ...s, experience: e.target.value }))}
-                  aria-describedby="careers-experience-hint"
-                  placeholder="Brief overview of your roles, skills, and impact (updates your profile summary)…"
+                  placeholder="Brief overview of your roles, skills, and impact…"
                   className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-white outline-none ring-0 placeholder:text-slate-500 focus:border-indigo-400"
                 />
               </label>

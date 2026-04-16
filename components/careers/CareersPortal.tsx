@@ -483,11 +483,7 @@ export default function CareersPortal() {
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-400">Professional summary *</label>
-                    <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
-                      Saved as your candidate profile <span className="font-medium text-slate-400">experience summary</span> for
-                      recruiters.
-                    </p>
+                    <label className="text-xs font-medium text-slate-400">Professional experience *</label>
                     <textarea
                       required
                       minLength={20}
@@ -495,7 +491,7 @@ export default function CareersPortal() {
                       rows={3}
                       value={form.experience}
                       onChange={(e) => setForm((f) => ({ ...f, experience: e.target.value }))}
-                      placeholder="Roles, skills, impact — updates your profile summary…"
+                      placeholder="Roles, skills, key achievements…"
                       className="mt-1 w-full resize-y rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-indigo-500/60"
                     />
                   </div>
