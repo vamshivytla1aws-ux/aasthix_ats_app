@@ -8,12 +8,14 @@ export type SendEmailResult =
 
 export async function sendEmailMessage(opts: {
   to: string[];
+  cc?: string[];
   subject: string;
   text?: string;
   html?: string;
   replyTo?: string | string[];
 }): Promise<SendEmailResult> {
   const recipients = opts.to.map((x) => String(x || "").trim()).filter(Boolean);
+  const ccRecipients = (opts.cc ?? []).map((x) => String(x || "").trim()).filter(Boolean);
   if (recipients.length === 0) {
     return { sent: false, reason: "send_failed", detail: "No recipients provided." };
   }
@@ -37,6 +39,7 @@ export async function sendEmailMessage(opts: {
         to: recipients,
         subject: opts.subject.slice(0, 998),
       };
+      if (ccRecipients.length > 0) payload.cc = ccRecipients;
       if (opts.text) payload.text = opts.text;
       if (opts.html) payload.html = opts.html;
       if (opts.replyTo) payload.replyTo = opts.replyTo;
@@ -63,6 +66,7 @@ export async function sendEmailMessage(opts: {
     await transporter.sendMail({
       from: smtpConfig.from,
       to: recipients.join(", "),
+      cc: ccRecipients.length > 0 ? ccRecipients.join(", ") : undefined,
       subject: opts.subject.slice(0, 998),
       text: opts.text,
       html: opts.html,

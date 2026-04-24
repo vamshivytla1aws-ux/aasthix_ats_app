@@ -5,6 +5,7 @@ export type SendEmailResult = { sent: true } | { sent: false; reason: "smtp_not_
 /** Shared SMTP transport for transactional mail (careers, screening, pipeline email). */
 export async function sendTransactionalEmail(opts: {
   to: string[];
+  cc?: string[];
   subject: string;
   text: string;
   html?: string;

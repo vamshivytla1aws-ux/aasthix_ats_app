@@ -136,6 +136,18 @@ function formatTime(value: string | null | undefined) {
   }
 }
 
+function appendMeetingDetailsToBody(body: string, opts: { meetLink?: string | null; meetingMode?: string; meetingLocation?: string }) {
+  let next = String(body || "").trim();
+  const details: string[] = [];
+  if (opts.meetLink && !next.includes(opts.meetLink)) {
+    details.push(`Join link: ${opts.meetLink}`);
+  } else if (!opts.meetLink && opts.meetingLocation?.trim()) {
+    details.push(`Location / access details: ${opts.meetingLocation.trim()}`);
+  }
+  if (details.length === 0) return next;
+  return `${next}\n\n${details.join("\n")}`.trim();
+}
+
 function getSlaBadge(value: string | null | undefined) {
   if (!value) {
     return { label: "No slot", className: "bg-slate-100 text-slate-600 ring-slate-200" };
@@ -216,6 +228,19 @@ export default function InterviewsPage() {
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
   const [rescheduleAttendees, setRescheduleAttendees] = useState("");
+  const [rescheduleTimezone, setRescheduleTimezone] = useState(
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata"
+  );
+  const [rescheduleMeetingMode, setRescheduleMeetingMode] = useState("Google Meet");
+  const [rescheduleMeetingLocation, setRescheduleMeetingLocation] = useState("");
+  const [rescheduleNotes, setRescheduleNotes] = useState("");
+  const [rescheduleDraftTo, setRescheduleDraftTo] = useState("");
+  const [rescheduleDraftCc, setRescheduleDraftCc] = useState("");
+  const [rescheduleDraftSubject, setRescheduleDraftSubject] = useState("");
+  const [rescheduleDraftBody, setRescheduleDraftBody] = useState("");
+  const [rescheduleDraftBusy, setRescheduleDraftBusy] = useState(false);
+  const [rescheduleDraftError, setRescheduleDraftError] = useState<string | null>(null);
+  const [rescheduleDraftSource, setRescheduleDraftSource] = useState<"ai" | "fallback" | null>(null);
   const [searchQ, setSearchQ] = useState("");
   const [debouncedSearchQ, setDebouncedSearchQ] = useState("");
   const [tableViewPreset, setTableViewPreset] = useState<"all" | "scheduled" | "upcoming" | "today" | "this_week" | "overdue" | "completed" | "followup" | "no_show" | "rejected">("all");
@@ -242,6 +267,24 @@ export default function InterviewsPage() {
     const t = window.setTimeout(() => setDebouncedSearchQ(searchQ.trim()), 280);
     return () => window.clearTimeout(t);
   }, [searchQ]);
+
+  useEffect(() => {
+    if (!rescheduleOpen || !selectedInterview || !rescheduleDate || !rescheduleTime) return;
+    const timer = window.setTimeout(() => {
+      void generateRescheduleInviteDraft();
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    rescheduleOpen,
+    selectedInterview,
+    rescheduleDate,
+    rescheduleTime,
+    rescheduleTimezone,
+    rescheduleMeetingMode,
+    rescheduleMeetingLocation,
+    rescheduleAttendees,
+    rescheduleNotes,
+  ]);
 
   useEffect(() => {
     let alive = true;
@@ -497,6 +540,44 @@ export default function InterviewsPage() {
     return { date, time };
   }
 
+  async function generateRescheduleInviteDraft() {
+    if (!selectedInterview || !rescheduleDate || !rescheduleTime) return;
+    setRescheduleDraftBusy(true);
+    setRescheduleDraftError(null);
+    try {
+      const iso = new Date(`${rescheduleDate}T${rescheduleTime}`).toISOString();
+      const data = await apiFetchJson<{
+        subject?: string;
+        body?: string;
+        defaultTo?: string;
+        defaultCc?: string[];
+        source?: "ai" | "fallback";
+      }>(`/api/applications/${selectedInterview.id}/draft-interview-invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          interviewDatetime: iso,
+          timezoneLabel: rescheduleTimezone,
+          meetingMode: rescheduleMeetingMode,
+          meetingLocation: rescheduleMeetingLocation,
+          panelEmails: rescheduleAttendees,
+          notes: rescheduleNotes,
+          meetLink: selectedInterview.meet_link || null,
+          isReschedule: true,
+        }),
+      });
+      if (typeof data.subject === "string") setRescheduleDraftSubject(data.subject);
+      if (typeof data.body === "string") setRescheduleDraftBody(data.body);
+      if (typeof data.defaultTo === "string") setRescheduleDraftTo(data.defaultTo);
+      if (Array.isArray(data.defaultCc)) setRescheduleDraftCc(data.defaultCc.join(", "));
+      setRescheduleDraftSource(data.source ?? null);
+    } catch (err: any) {
+      setRescheduleDraftError(err?.message || "Failed to generate interview invite draft.");
+    } finally {
+      setRescheduleDraftBusy(false);
+    }
+  }
+
   async function fetchPacketData(app: ApplicationRow) {
     if (!app.id) return;
     setPacketLoading(true);
@@ -568,10 +649,14 @@ export default function InterviewsPage() {
     setSelectedInterview((prev) => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
   }
 
-  async function submitReschedule() {
+  async function submitReschedule(sendInvite = false) {
     if (!selectedInterview) return;
     if (!rescheduleDate || !rescheduleTime) {
       setError("Please select date and time.");
+      return;
+    }
+    if (sendInvite && (!rescheduleDraftTo.trim() || !rescheduleDraftSubject.trim() || !rescheduleDraftBody.trim())) {
+      setError("Generate the interview invite draft before sending.");
       return;
     }
     setError(null);
@@ -590,23 +675,48 @@ export default function InterviewsPage() {
           interview_cancel_reason: "",
           interview_no_show: false,
           reminder_sent: false,
-          send_email: rescheduleSendEmail,
+          send_email: false,
           interview_attendee_emails: rescheduleAttendees,
+          interview_status_note: rescheduleNotes,
         }),
       });
+      if (sendInvite) {
+        await apiFetchJson(`/api/applications/${selectedInterview.id}/send-interview-invite`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: rescheduleDraftTo,
+            cc: rescheduleDraftCc,
+            subject: rescheduleDraftSubject,
+            body: appendMeetingDetailsToBody(rescheduleDraftBody, {
+              meetLink: updated.meet_link,
+              meetingMode: rescheduleMeetingMode,
+              meetingLocation: rescheduleMeetingLocation,
+            }),
+          }),
+        });
+      }
       await updateInterviewInState(updated);
       setRescheduleOpen(false);
       setDetailsOpen(false);
       setRescheduleReason("");
+      setRescheduleMeetingLocation("");
+      setRescheduleNotes("");
       setRescheduleAttendees("");
+      setRescheduleDraftTo("");
+      setRescheduleDraftCc("");
+      setRescheduleDraftSubject("");
+      setRescheduleDraftBody("");
       setRescheduleSendEmail(false);
       showSuccessToast(
-        updated.meet_link
-          ? "Interview rescheduled and Google Meet invite updated."
-          : updated.calendar_sync_status === "google_not_connected"
-            ? "Interview rescheduled. Google Calendar is not connected yet."
-            : rescheduleSendEmail
-              ? "Interview rescheduled and candidate email sent."
+        sendInvite
+          ? updated.meet_link
+            ? "Interview rescheduled, Google Meet updated, and invite email sent."
+            : "Interview rescheduled and invite email sent."
+          : updated.meet_link
+            ? "Interview rescheduled and Google Meet invite updated."
+            : updated.calendar_sync_status === "google_not_connected"
+              ? "Interview rescheduled. Google Calendar is not connected yet."
               : "Interview rescheduled."
       );
       void mutateAlerts();
@@ -691,6 +801,16 @@ export default function InterviewsPage() {
     setRescheduleTime(time);
     setRescheduleSendEmail(false);
     setRescheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
+    setRescheduleTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata");
+    setRescheduleMeetingMode(app.meet_link ? "Google Meet" : "Manual");
+    setRescheduleMeetingLocation("");
+    setRescheduleNotes(app.interview_status_note || "");
+    setRescheduleDraftTo("");
+    setRescheduleDraftCc(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
+    setRescheduleDraftSubject("");
+    setRescheduleDraftBody("");
+    setRescheduleDraftError(null);
+    setRescheduleDraftSource(null);
     setRescheduleReason(app.interview_reschedule_reason || "");
     setError(null);
     setRescheduleOpen(true);
@@ -1705,7 +1825,7 @@ export default function InterviewsPage() {
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/30" onClick={() => setRescheduleOpen(false)} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white shadow-md border border-slate-200 p-6">
+            <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white shadow-md border border-slate-200 p-6">
               <div className="flex items-start justify-between gap-6">
                 <div>
                   <div className="text-lg font-semibold">Reschedule Interview</div>
@@ -1745,6 +1865,33 @@ export default function InterviewsPage() {
                 </div>
               </div>
 
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Display timezone</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    value={rescheduleTimezone}
+                    onChange={(e) => setRescheduleTimezone(e.target.value)}
+                    disabled={actionBusyId === selectedInterview.id}
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Interview mode</label>
+                  <select
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    value={rescheduleMeetingMode}
+                    onChange={(e) => setRescheduleMeetingMode(e.target.value)}
+                    disabled={actionBusyId === selectedInterview.id}
+                  >
+                    <option value="Google Meet">Google Meet</option>
+                    <option value="Phone">Phone</option>
+                    <option value="On-site">On-site</option>
+                    <option value="Virtual">Virtual</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="mt-4">
                 <label className="mb-1 block text-sm text-gray-600">Reschedule reason</label>
                 <input
@@ -1773,24 +1920,116 @@ export default function InterviewsPage() {
                 </p>
               </div>
 
-              <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+              <div className="mt-4">
+                <label className="mb-1 block text-sm text-gray-600">Location / access details</label>
                 <input
-                  type="checkbox"
-                  checked={rescheduleSendEmail}
-                  onChange={(e) => setRescheduleSendEmail(e.target.checked)}
+                  type="text"
+                  className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  value={rescheduleMeetingLocation}
+                  onChange={(e) => setRescheduleMeetingLocation(e.target.value)}
                   disabled={actionBusyId === selectedInterview.id}
+                  placeholder="Office address, dial-in note, lobby instructions..."
                 />
-                {calendarStatus?.shared_google?.connected ? "Also send ATS email to candidate" : "Send email to candidate"}
-              </label>
+              </div>
 
-              <div className="mt-6">
+              <div className="mt-4">
+                <label className="mb-1 block text-sm text-gray-600">Recruiter notes</label>
+                <input
+                  type="text"
+                  className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  value={rescheduleNotes}
+                  onChange={(e) => setRescheduleNotes(e.target.value)}
+                  disabled={actionBusyId === selectedInterview.id}
+                  placeholder="Optional note for the invite"
+                />
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Interview invite email</div>
+                    <div className="text-xs text-slate-500">
+                      Auto-generated from the JD and updated schedule details. You can edit before sending.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void generateRescheduleInviteDraft()}
+                    disabled={rescheduleDraftBusy || actionBusyId === selectedInterview.id || !rescheduleDate || !rescheduleTime}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {rescheduleDraftBusy ? "Generating..." : "Regenerate draft"}
+                  </button>
+                </div>
+                {rescheduleDraftError ? (
+                  <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {rescheduleDraftError}
+                  </div>
+                ) : null}
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block mb-1 text-sm text-gray-600">To</label>
+                    <input
+                      type="text"
+                      className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={rescheduleDraftTo}
+                      onChange={(e) => setRescheduleDraftTo(e.target.value)}
+                      disabled={actionBusyId === selectedInterview.id}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1 text-sm text-gray-600">CC panel members</label>
+                    <input
+                      type="text"
+                      className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={rescheduleDraftCc}
+                      onChange={(e) => setRescheduleDraftCc(e.target.value)}
+                      disabled={actionBusyId === selectedInterview.id}
+                    />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block mb-1 text-sm text-gray-600">Subject</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={rescheduleDraftSubject}
+                    onChange={(e) => setRescheduleDraftSubject(e.target.value)}
+                    disabled={actionBusyId === selectedInterview.id}
+                  />
+                </div>
+                <div className="mt-3">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm text-gray-600">Body</label>
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      {rescheduleDraftSource === "ai" ? "Draft generated from JD" : rescheduleDraftSource === "fallback" ? "Fallback template used" : "Waiting for details"}
+                    </span>
+                  </div>
+                  <textarea
+                    className="min-h-[220px] w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={rescheduleDraftBody}
+                    onChange={(e) => setRescheduleDraftBody(e.target.value)}
+                    disabled={actionBusyId === selectedInterview.id}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex flex-wrap justify-end gap-2">
                 <button
                   type="button"
                   disabled={actionBusyId === selectedInterview.id}
-                  onClick={submitReschedule}
-                  className="w-full bg-blue-600 text-white rounded-xl px-4 py-2 hover:bg-blue-700 transition-all duration-200 disabled:opacity-50"
+                  onClick={() => void submitReschedule(false)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
-                  {actionBusyId === selectedInterview.id ? "Rescheduling..." : "Save Changes"}
+                  {actionBusyId === selectedInterview.id ? "Rescheduling..." : "Save schedule only"}
+                </button>
+                <button
+                  type="button"
+                  disabled={actionBusyId === selectedInterview.id || !rescheduleDraftTo.trim() || !rescheduleDraftSubject.trim() || !rescheduleDraftBody.trim()}
+                  onClick={() => void submitReschedule(true)}
+                  className="rounded-xl bg-blue-600 text-white px-4 py-2 text-sm font-semibold hover:bg-blue-700 transition-all duration-200 disabled:opacity-50"
+                >
+                  {actionBusyId === selectedInterview.id ? "Sending..." : "Save + send updated invite"}
                 </button>
               </div>
             </div>

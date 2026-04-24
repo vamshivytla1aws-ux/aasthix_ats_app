@@ -140,6 +140,29 @@ function formatCardDateTime(iso?: string | null) {
   }
 }
 
+function parseEmailListInput(raw: string) {
+  return Array.from(
+    new Set(
+      String(raw || "")
+        .split(/[,;\n]+/)
+        .map((part) => part.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function appendMeetingDetailsToBody(body: string, opts: { meetLink?: string | null; meetingMode?: string; meetingLocation?: string }) {
+  let next = String(body || "").trim();
+  const details: string[] = [];
+  if (opts.meetLink && !next.includes(opts.meetLink)) {
+    details.push(`Join link: ${opts.meetLink}`);
+  } else if (!opts.meetLink && opts.meetingLocation?.trim()) {
+    details.push(`Location / access details: ${opts.meetingLocation.trim()}`);
+  }
+  if (details.length === 0) return next;
+  return `${next}\n\n${details.join("\n")}`.trim();
+}
+
 type InterviewFlow = "no_slot" | "upcoming" | "awaiting";
 
 function interviewWorkflow(a: ApplicationRow): InterviewFlow {
@@ -332,6 +355,19 @@ export default function PipelineBoard({
   const [confirmScheduleIso, setConfirmScheduleIso] = useState<string>("");
   const [scheduleSendEmail, setScheduleSendEmail] = useState(false);
   const [scheduleAttendees, setScheduleAttendees] = useState("");
+  const [scheduleTimezone, setScheduleTimezone] = useState(
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata"
+  );
+  const [scheduleMeetingMode, setScheduleMeetingMode] = useState("Google Meet");
+  const [scheduleMeetingLocation, setScheduleMeetingLocation] = useState("");
+  const [scheduleNotes, setScheduleNotes] = useState("");
+  const [scheduleDraftTo, setScheduleDraftTo] = useState("");
+  const [scheduleDraftCc, setScheduleDraftCc] = useState("");
+  const [scheduleDraftSubject, setScheduleDraftSubject] = useState("");
+  const [scheduleDraftBody, setScheduleDraftBody] = useState("");
+  const [scheduleDraftBusy, setScheduleDraftBusy] = useState(false);
+  const [scheduleDraftError, setScheduleDraftError] = useState<string | null>(null);
+  const [scheduleDraftSource, setScheduleDraftSource] = useState<"ai" | "fallback" | null>(null);
 
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleApp, setRescheduleApp] = useState<ApplicationRow | null>(null);
@@ -339,6 +375,19 @@ export default function PipelineBoard({
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
   const [rescheduleAttendees, setRescheduleAttendees] = useState("");
+  const [rescheduleTimezone, setRescheduleTimezone] = useState(
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata"
+  );
+  const [rescheduleMeetingMode, setRescheduleMeetingMode] = useState("Google Meet");
+  const [rescheduleMeetingLocation, setRescheduleMeetingLocation] = useState("");
+  const [rescheduleNotes, setRescheduleNotes] = useState("");
+  const [rescheduleDraftTo, setRescheduleDraftTo] = useState("");
+  const [rescheduleDraftCc, setRescheduleDraftCc] = useState("");
+  const [rescheduleDraftSubject, setRescheduleDraftSubject] = useState("");
+  const [rescheduleDraftBody, setRescheduleDraftBody] = useState("");
+  const [rescheduleDraftBusy, setRescheduleDraftBusy] = useState(false);
+  const [rescheduleDraftError, setRescheduleDraftError] = useState<string | null>(null);
+  const [rescheduleDraftSource, setRescheduleDraftSource] = useState<"ai" | "fallback" | null>(null);
   const [calendarStatus, setCalendarStatus] = useState<{
     shared_google?: { connected: boolean; configured: boolean; account_email: string | null };
   } | null>(null);
@@ -493,6 +542,42 @@ export default function PipelineBoard({
   }, []);
 
   useEffect(() => {
+    if (!scheduleOpen || !scheduleApp || !scheduleDate || !scheduleTime) return;
+    const timer = window.setTimeout(() => {
+      void generateScheduleInviteDraft();
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    scheduleOpen,
+    scheduleApp,
+    scheduleDate,
+    scheduleTime,
+    scheduleTimezone,
+    scheduleMeetingMode,
+    scheduleMeetingLocation,
+    scheduleAttendees,
+    scheduleNotes,
+  ]);
+
+  useEffect(() => {
+    if (!rescheduleOpen || !rescheduleApp || !rescheduleDate || !rescheduleTime) return;
+    const timer = window.setTimeout(() => {
+      void generateRescheduleInviteDraft();
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    rescheduleOpen,
+    rescheduleApp,
+    rescheduleDate,
+    rescheduleTime,
+    rescheduleTimezone,
+    rescheduleMeetingMode,
+    rescheduleMeetingLocation,
+    rescheduleAttendees,
+    rescheduleNotes,
+  ]);
+
+  useEffect(() => {
     const target = localApplications.filter((x) => x.stage === "Screening" || x.stage === "Screening Failed");
     if (target.length === 0) {
       setScreeningByApplication({});
@@ -592,8 +677,56 @@ export default function PipelineBoard({
     setConfirmScheduleOpen(false);
     setScheduleSendEmail(false);
     setScheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
+    setScheduleTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata");
+    setScheduleMeetingMode(calendarStatus?.shared_google?.connected ? "Google Meet" : "Manual");
+    setScheduleMeetingLocation("");
+    setScheduleNotes("");
+    setScheduleDraftTo("");
+    setScheduleDraftCc(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
+    setScheduleDraftSubject("");
+    setScheduleDraftBody("");
+    setScheduleDraftError(null);
+    setScheduleDraftSource(null);
     setScheduleOpen(true);
     void loadChecklist(app.id);
+  }
+
+  async function generateScheduleInviteDraft() {
+    if (!scheduleApp || !scheduleDate || !scheduleTime) return;
+    setScheduleDraftBusy(true);
+    setScheduleDraftError(null);
+    try {
+      const iso = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
+      const data = await apiFetchJson<{
+        subject?: string;
+        body?: string;
+        defaultTo?: string;
+        defaultCc?: string[];
+        source?: "ai" | "fallback";
+      }>(`/api/applications/${scheduleApp.id}/draft-interview-invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          interviewDatetime: iso,
+          timezoneLabel: scheduleTimezone,
+          meetingMode: scheduleMeetingMode,
+          meetingLocation: scheduleMeetingLocation,
+          panelEmails: scheduleAttendees,
+          notes: scheduleNotes,
+          meetLink: scheduleApp.meet_link || null,
+          isReschedule: false,
+        }),
+      });
+      if (typeof data.subject === "string") setScheduleDraftSubject(data.subject);
+      if (typeof data.body === "string") setScheduleDraftBody(data.body);
+      if (typeof data.defaultTo === "string") setScheduleDraftTo(data.defaultTo);
+      if (Array.isArray(data.defaultCc)) setScheduleDraftCc(data.defaultCc.join(", "));
+      setScheduleDraftSource(data.source ?? null);
+    } catch (err: any) {
+      setScheduleDraftError(err?.message || "Failed to generate interview invite draft.");
+    } finally {
+      setScheduleDraftBusy(false);
+    }
   }
 
   async function loadChecklist(appId: number) {
@@ -785,21 +918,17 @@ export default function PipelineBoard({
     e.stopPropagation();
   }
 
-  async function submitInterviewSchedule() {
+  async function submitInterviewSchedule(sendInvite = false) {
     if (!scheduleApp) return;
     if (!scheduleDate || !scheduleTime) {
       setError("Please select interview date and time.");
       return;
     }
-    const iso = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
-    setSuccess(null);
-    setConfirmScheduleIso(iso);
-    setConfirmScheduleOpen(true);
-  }
-
-  async function confirmInterviewSchedule() {
-    if (!scheduleApp) return;
-    if (!confirmScheduleIso) return;
+    if (sendInvite && (!scheduleDraftTo.trim() || !scheduleDraftSubject.trim() || !scheduleDraftBody.trim())) {
+      setError("Generate the interview invite draft before sending.");
+      return;
+    }
+    const scheduleIso = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
 
     setBusyId(scheduleApp.id);
     setError(null);
@@ -809,50 +938,75 @@ export default function PipelineBoard({
       ...scheduleApp,
       stage: "Interview",
       interview_scheduled: true,
-      interview_datetime: confirmScheduleIso,
+      interview_datetime: scheduleIso,
       updated_at: new Date().toISOString(),
     };
     try {
       optimisticallyPatchApplication(scheduleApp.id, optimisticUpdated);
       onStageUpdated(optimisticUpdated);
-        const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
-          method: "PATCH",
+      const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: scheduleApp.id,
+          stage: "Interview",
+          interview_scheduled: true,
+          interview_datetime: scheduleIso,
+          interview_attendee_emails: scheduleAttendees,
+          interview_status_note: scheduleNotes,
+          send_email: false,
+        }),
+      });
+
+      if (sendInvite) {
+        await apiFetchJson(`/api/applications/${scheduleApp.id}/send-interview-invite`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            id: scheduleApp.id,
-            stage: "Interview",
-            interview_scheduled: true,
-            interview_datetime: confirmScheduleIso,
-            interview_attendee_emails: scheduleAttendees,
-            send_email: scheduleSendEmail,
+            to: scheduleDraftTo,
+            cc: scheduleDraftCc,
+            subject: scheduleDraftSubject,
+            body: appendMeetingDetailsToBody(scheduleDraftBody, {
+              meetLink: updated.meet_link,
+              meetingMode: scheduleMeetingMode,
+              meetingLocation: scheduleMeetingLocation,
+            }),
           }),
         });
+      }
 
       reconcileLocalApplication(updated);
       onStageUpdated(updated);
       await saveChecklist(scheduleApp.id);
-      setSuccess(scheduleSendEmail ? "Interview scheduled and candidate email sent." : "Interview scheduled.");
       setConfirmScheduleOpen(false);
-        setScheduleOpen(false);
-        setScheduleApp(null);
-        setScheduleDate("");
-        setScheduleTime("");
-        setConfirmScheduleIso("");
-        setScheduleSendEmail(false);
-        setScheduleAttendees("");
-        setSuccess(
-          updated.meet_link
+      setScheduleOpen(false);
+      setScheduleApp(null);
+      setScheduleDate("");
+      setScheduleTime("");
+      setConfirmScheduleIso("");
+      setScheduleSendEmail(false);
+      setScheduleAttendees("");
+      setScheduleMeetingLocation("");
+      setScheduleNotes("");
+      setScheduleDraftTo("");
+      setScheduleDraftCc("");
+      setScheduleDraftSubject("");
+      setScheduleDraftBody("");
+      setSuccess(
+        sendInvite
+          ? updated.meet_link
+            ? "Interview scheduled, Google Meet created, and invite email sent."
+            : "Interview scheduled and invite email sent."
+          : updated.meet_link
             ? "Interview scheduled and Google Meet invite created."
             : updated.calendar_sync_status === "google_not_connected"
               ? "Interview scheduled. Google Calendar is not connected yet."
-              : scheduleSendEmail
-                ? "Interview scheduled and candidate email sent."
-                : "Interview scheduled."
-        );
-      } catch (err: any) {
-        flushSync(() => setLocalApplications(previousApplications));
-        onStageUpdated(scheduleApp);
-        if (!notifyForbidden(err)) setError(err.message || "Something went wrong");
+              : "Interview scheduled."
+      );
+    } catch (err: any) {
+      flushSync(() => setLocalApplications(previousApplications));
+      onStageUpdated(scheduleApp);
+      if (!notifyForbidden(err)) setError(err.message || "Something went wrong");
     } finally {
       setBusyId(null);
     }
@@ -877,15 +1031,67 @@ export default function PipelineBoard({
     setRescheduleTime(time);
     setRescheduleSendEmail(false);
     setRescheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
+    setRescheduleTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata");
+    setRescheduleMeetingMode(app.meet_link ? "Google Meet" : "Manual");
+    setRescheduleMeetingLocation("");
+    setRescheduleNotes(app.interview_status_note || "");
+    setRescheduleDraftTo("");
+    setRescheduleDraftCc(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
+    setRescheduleDraftSubject("");
+    setRescheduleDraftBody("");
+    setRescheduleDraftError(null);
+    setRescheduleDraftSource(null);
     setRescheduleOpen(true);
     setError(null);
     void loadChecklist(app.id);
   }
 
-  async function submitInterviewReschedule() {
+  async function generateRescheduleInviteDraft() {
+    if (!rescheduleApp || !rescheduleDate || !rescheduleTime) return;
+    setRescheduleDraftBusy(true);
+    setRescheduleDraftError(null);
+    try {
+      const iso = new Date(`${rescheduleDate}T${rescheduleTime}`).toISOString();
+      const data = await apiFetchJson<{
+        subject?: string;
+        body?: string;
+        defaultTo?: string;
+        defaultCc?: string[];
+        source?: "ai" | "fallback";
+      }>(`/api/applications/${rescheduleApp.id}/draft-interview-invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          interviewDatetime: iso,
+          timezoneLabel: rescheduleTimezone,
+          meetingMode: rescheduleMeetingMode,
+          meetingLocation: rescheduleMeetingLocation,
+          panelEmails: rescheduleAttendees,
+          notes: rescheduleNotes,
+          meetLink: rescheduleApp.meet_link || null,
+          isReschedule: true,
+        }),
+      });
+      if (typeof data.subject === "string") setRescheduleDraftSubject(data.subject);
+      if (typeof data.body === "string") setRescheduleDraftBody(data.body);
+      if (typeof data.defaultTo === "string") setRescheduleDraftTo(data.defaultTo);
+      if (Array.isArray(data.defaultCc)) setRescheduleDraftCc(data.defaultCc.join(", "));
+      setRescheduleDraftSource(data.source ?? null);
+    } catch (err: any) {
+      setRescheduleDraftError(err?.message || "Failed to generate interview invite draft.");
+    } finally {
+      setRescheduleDraftBusy(false);
+    }
+  }
+
+  async function submitInterviewReschedule(sendInvite = false) {
     if (!rescheduleApp) return;
     if (!rescheduleDate || !rescheduleTime) {
       setError("Please select interview date and time.");
+      return;
+    }
+    if (sendInvite && (!rescheduleDraftTo.trim() || !rescheduleDraftSubject.trim() || !rescheduleDraftBody.trim())) {
+      setError("Generate the interview invite draft before sending.");
       return;
     }
 
@@ -893,37 +1099,63 @@ export default function PipelineBoard({
     setBusyId(rescheduleApp.id);
     setError(null);
     try {
-        const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
-          method: "PATCH",
+      const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: rescheduleApp.id,
+          interview_datetime: iso,
+          interview_attendee_emails: rescheduleAttendees,
+          interview_status_note: rescheduleNotes,
+          reminder_sent: false,
+          send_email: false,
+        }),
+      });
+
+      if (sendInvite) {
+        await apiFetchJson(`/api/applications/${rescheduleApp.id}/send-interview-invite`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            id: rescheduleApp.id,
-            interview_datetime: iso,
-            interview_attendee_emails: rescheduleAttendees,
-            reminder_sent: false,
-            send_email: rescheduleSendEmail,
+            to: rescheduleDraftTo,
+            cc: rescheduleDraftCc,
+            subject: rescheduleDraftSubject,
+            body: appendMeetingDetailsToBody(rescheduleDraftBody, {
+              meetLink: updated.meet_link,
+              meetingMode: rescheduleMeetingMode,
+              meetingLocation: rescheduleMeetingLocation,
+            }),
           }),
         });
+      }
 
       reconcileLocalApplication(updated);
       onStageUpdated(updated);
       await saveChecklist(rescheduleApp.id);
       setRescheduleOpen(false);
-        setRescheduleApp(null);
-        setRescheduleDate("");
-        setRescheduleTime("");
-        setRescheduleSendEmail(false);
-        setRescheduleAttendees("");
-        setSuccess(
-          updated.meet_link
+      setRescheduleApp(null);
+      setRescheduleDate("");
+      setRescheduleTime("");
+      setRescheduleSendEmail(false);
+      setRescheduleAttendees("");
+      setRescheduleMeetingLocation("");
+      setRescheduleNotes("");
+      setRescheduleDraftTo("");
+      setRescheduleDraftCc("");
+      setRescheduleDraftSubject("");
+      setRescheduleDraftBody("");
+      setSuccess(
+        sendInvite
+          ? updated.meet_link
+            ? "Interview rescheduled, Google Meet updated, and invite email sent."
+            : "Interview rescheduled and invite email sent."
+          : updated.meet_link
             ? "Interview rescheduled and Google Meet invite updated."
             : updated.calendar_sync_status === "google_not_connected"
               ? "Interview rescheduled. Google Calendar is not connected yet."
-              : rescheduleSendEmail
-                ? "Interview rescheduled and candidate email sent."
-                : "Interview rescheduled."
-        );
-      } catch (err: any) {
+              : "Interview rescheduled."
+      );
+    } catch (err: any) {
       if (!notifyForbidden(err)) setError(err.message || "Something went wrong");
     } finally {
       setBusyId(null);
@@ -1380,7 +1612,7 @@ export default function PipelineBoard({
         <div className="fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/30" onClick={() => setScheduleOpen(false)} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white shadow-md border border-slate-200 p-6">
+            <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white shadow-md border border-slate-200 p-6">
               <div className="flex items-start justify-between gap-6">
                 <div>
                   <div className="text-lg font-semibold">Schedule Interview</div>
@@ -1417,6 +1649,59 @@ export default function PipelineBoard({
                     value={scheduleTime}
                     onChange={(e) => setScheduleTime(e.target.value)}
                     disabled={busyId === scheduleApp.id}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Display timezone</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={scheduleTimezone}
+                    onChange={(e) => setScheduleTimezone(e.target.value)}
+                    disabled={busyId === scheduleApp.id}
+                    placeholder="Asia/Kolkata"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Interview mode</label>
+                  <select
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={scheduleMeetingMode}
+                    onChange={(e) => setScheduleMeetingMode(e.target.value)}
+                    disabled={busyId === scheduleApp.id}
+                  >
+                    <option value="Google Meet">Google Meet</option>
+                    <option value="Phone">Phone</option>
+                    <option value="On-site">On-site</option>
+                    <option value="Virtual">Virtual</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Location / access details</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={scheduleMeetingLocation}
+                    onChange={(e) => setScheduleMeetingLocation(e.target.value)}
+                    disabled={busyId === scheduleApp.id}
+                    placeholder="Office address, dial-in note, lobby instructions..."
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Recruiter notes</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={scheduleNotes}
+                    onChange={(e) => setScheduleNotes(e.target.value)}
+                    disabled={busyId === scheduleApp.id}
+                    placeholder="Optional note for the invite"
                   />
                 </div>
               </div>
@@ -1493,69 +1778,92 @@ export default function PipelineBoard({
                 </div>
               </div>
 
-              <div className="mt-6">
-                <button
-                  type="button"
-                  onClick={submitInterviewSchedule}
-                  disabled={busyId === scheduleApp.id || checklistSaving}
-                  className="w-full bg-blue-600 text-white rounded-xl px-4 py-2 hover:bg-blue-700 transition-all duration-200 disabled:opacity-50"
-                >
-                  {busyId === scheduleApp.id || checklistSaving ? "Scheduling..." : "Schedule & Move to Interview"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmScheduleOpen && scheduleApp && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setConfirmScheduleOpen(false)} />
-          <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white shadow-md border border-slate-200 p-6">
-              <div className="flex items-start justify-between gap-6">
-                <div>
-                  <div className="text-lg font-semibold">Confirm Interview Schedule</div>
-                  <div className="mt-2 text-sm text-slate-600">
-                    <div className="font-medium text-slate-900">{scheduleApp.candidate_full_name}</div>
-                    <div className="text-slate-700">{scheduleApp.job_title}</div>
+              <div className="mt-4 rounded-xl border border-slate-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Interview invite email</div>
+                    <div className="text-xs text-slate-500">
+                      Auto-generated from the JD and your calendar details. You can edit before sending.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void generateScheduleInviteDraft()}
+                    disabled={scheduleDraftBusy || busyId === scheduleApp.id || !scheduleDate || !scheduleTime}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {scheduleDraftBusy ? "Generating..." : "Regenerate draft"}
+                  </button>
+                </div>
+                {scheduleDraftError ? (
+                  <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {scheduleDraftError}
+                  </div>
+                ) : null}
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block mb-1 text-sm text-gray-600">To</label>
+                    <input
+                      type="text"
+                      className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={scheduleDraftTo}
+                      onChange={(e) => setScheduleDraftTo(e.target.value)}
+                      disabled={busyId === scheduleApp.id}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1 text-sm text-gray-600">CC panel members</label>
+                    <input
+                      type="text"
+                      className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={scheduleDraftCc}
+                      onChange={(e) => setScheduleDraftCc(e.target.value)}
+                      disabled={busyId === scheduleApp.id}
+                    />
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setConfirmScheduleOpen(false)}
-                  className="rounded-xl border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 transition-all duration-200"
-                  disabled={busyId === scheduleApp.id}
-                >
-                  Cancel
-                </button>
-              </div>
-
-              <div className="mt-4 rounded-xl bg-slate-50 p-4">
-                <div className="text-sm font-semibold text-slate-900">Interview Date & Time</div>
-                <div className="text-sm text-slate-700">
-                  {confirmScheduleIso ? new Date(confirmScheduleIso).toLocaleString() : "—"}
+                <div className="mt-3">
+                  <label className="block mb-1 text-sm text-gray-600">Subject</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={scheduleDraftSubject}
+                    onChange={(e) => setScheduleDraftSubject(e.target.value)}
+                    disabled={busyId === scheduleApp.id}
+                  />
+                </div>
+                <div className="mt-3">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm text-gray-600">Body</label>
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      {scheduleDraftSource === "ai" ? "Draft generated from JD" : scheduleDraftSource === "fallback" ? "Fallback template used" : "Waiting for details"}
+                    </span>
+                  </div>
+                  <textarea
+                    className="min-h-[220px] w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={scheduleDraftBody}
+                    onChange={(e) => setScheduleDraftBody(e.target.value)}
+                    disabled={busyId === scheduleApp.id}
+                  />
                 </div>
               </div>
 
-                <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={scheduleSendEmail}
-                  onChange={(e) => setScheduleSendEmail(e.target.checked)}
-                  disabled={busyId === scheduleApp.id}
-                />
-                {calendarStatus?.shared_google?.connected ? "Also send ATS email to candidate" : "Send email to candidate"}
-              </label>
-
-              <div className="mt-6">
+              <div className="mt-6 flex flex-wrap justify-end gap-2">
                 <button
                   type="button"
-                  onClick={confirmInterviewSchedule}
-                  disabled={busyId === scheduleApp.id}
-                  className="w-full bg-blue-600 text-white rounded-xl px-4 py-2 hover:bg-blue-700 transition-all duration-200 disabled:opacity-50"
+                  onClick={() => void submitInterviewSchedule(false)}
+                  disabled={busyId === scheduleApp.id || checklistSaving}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
-                  {busyId === scheduleApp.id ? "Scheduling..." : "Confirm"}
+                  {busyId === scheduleApp.id || checklistSaving ? "Scheduling..." : "Create schedule only"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitInterviewSchedule(true)}
+                  disabled={busyId === scheduleApp.id || checklistSaving || !scheduleDraftTo.trim() || !scheduleDraftSubject.trim() || !scheduleDraftBody.trim()}
+                  className="rounded-xl bg-blue-600 text-white px-4 py-2 text-sm font-semibold hover:bg-blue-700 transition-all duration-200 disabled:opacity-50"
+                >
+                  {busyId === scheduleApp.id || checklistSaving ? "Sending..." : "Create schedule + send invite"}
                 </button>
               </div>
             </div>
@@ -1567,7 +1875,7 @@ export default function PipelineBoard({
         <div className="fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/30" onClick={() => setRescheduleOpen(false)} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white shadow-md border border-slate-200 p-6">
+            <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white shadow-md border border-slate-200 p-6">
               <div className="flex items-start justify-between gap-6">
                 <div>
                   <div className="text-lg font-semibold">Reschedule Interview</div>
@@ -1608,6 +1916,34 @@ export default function PipelineBoard({
                 </div>
               </div>
 
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Display timezone</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={rescheduleTimezone}
+                    onChange={(e) => setRescheduleTimezone(e.target.value)}
+                    disabled={busyId === rescheduleApp.id}
+                    placeholder="Asia/Kolkata"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Interview mode</label>
+                  <select
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={rescheduleMeetingMode}
+                    onChange={(e) => setRescheduleMeetingMode(e.target.value)}
+                    disabled={busyId === rescheduleApp.id}
+                  >
+                    <option value="Google Meet">Google Meet</option>
+                    <option value="Phone">Phone</option>
+                    <option value="On-site">On-site</option>
+                    <option value="Virtual">Virtual</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="mt-4">
                 <label className="block mb-1 text-sm text-gray-600">Internal panel emails</label>
                 <textarea
@@ -1624,24 +1960,117 @@ export default function PipelineBoard({
                 </p>
               </div>
 
-              <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={rescheduleSendEmail}
-                  onChange={(e) => setRescheduleSendEmail(e.target.checked)}
-                  disabled={busyId === rescheduleApp.id}
-                />
-                {calendarStatus?.shared_google?.connected ? "Also send ATS email to candidate" : "Send updated schedule to candidate"}
-              </label>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Location / access details</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={rescheduleMeetingLocation}
+                    onChange={(e) => setRescheduleMeetingLocation(e.target.value)}
+                    disabled={busyId === rescheduleApp.id}
+                    placeholder="Office address, dial-in note, lobby instructions..."
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Recruiter notes</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={rescheduleNotes}
+                    onChange={(e) => setRescheduleNotes(e.target.value)}
+                    disabled={busyId === rescheduleApp.id}
+                    placeholder="Optional note for the invite"
+                  />
+                </div>
+              </div>
 
-              <div className="mt-6">
+              <div className="mt-4 rounded-xl border border-slate-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Interview invite email</div>
+                    <div className="text-xs text-slate-500">
+                      Auto-generated from the JD and the updated calendar details. You can edit before sending.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void generateRescheduleInviteDraft()}
+                    disabled={rescheduleDraftBusy || busyId === rescheduleApp.id || !rescheduleDate || !rescheduleTime}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {rescheduleDraftBusy ? "Generating..." : "Regenerate draft"}
+                  </button>
+                </div>
+                {rescheduleDraftError ? (
+                  <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {rescheduleDraftError}
+                  </div>
+                ) : null}
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block mb-1 text-sm text-gray-600">To</label>
+                    <input
+                      type="text"
+                      className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={rescheduleDraftTo}
+                      onChange={(e) => setRescheduleDraftTo(e.target.value)}
+                      disabled={busyId === rescheduleApp.id}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1 text-sm text-gray-600">CC panel members</label>
+                    <input
+                      type="text"
+                      className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={rescheduleDraftCc}
+                      onChange={(e) => setRescheduleDraftCc(e.target.value)}
+                      disabled={busyId === rescheduleApp.id}
+                    />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block mb-1 text-sm text-gray-600">Subject</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={rescheduleDraftSubject}
+                    onChange={(e) => setRescheduleDraftSubject(e.target.value)}
+                    disabled={busyId === rescheduleApp.id}
+                  />
+                </div>
+                <div className="mt-3">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm text-gray-600">Body</label>
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      {rescheduleDraftSource === "ai" ? "Draft generated from JD" : rescheduleDraftSource === "fallback" ? "Fallback template used" : "Waiting for details"}
+                    </span>
+                  </div>
+                  <textarea
+                    className="min-h-[220px] w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={rescheduleDraftBody}
+                    onChange={(e) => setRescheduleDraftBody(e.target.value)}
+                    disabled={busyId === rescheduleApp.id}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex flex-wrap justify-end gap-2">
                 <button
                   type="button"
-                  onClick={submitInterviewReschedule}
+                  onClick={() => void submitInterviewReschedule(false)}
                   disabled={busyId === rescheduleApp.id}
-                  className="w-full bg-blue-600 text-white rounded-xl px-4 py-2 hover:bg-blue-700 transition-all duration-200 disabled:opacity-50"
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
-                  {busyId === rescheduleApp.id ? "Rescheduling..." : "Reschedule"}
+                  {busyId === rescheduleApp.id ? "Rescheduling..." : "Save schedule only"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitInterviewReschedule(true)}
+                  disabled={busyId === rescheduleApp.id || !rescheduleDraftTo.trim() || !rescheduleDraftSubject.trim() || !rescheduleDraftBody.trim()}
+                  className="rounded-xl bg-blue-600 text-white px-4 py-2 text-sm font-semibold hover:bg-blue-700 transition-all duration-200 disabled:opacity-50"
+                >
+                  {busyId === rescheduleApp.id ? "Sending..." : "Save + send updated invite"}
                 </button>
               </div>
             </div>
