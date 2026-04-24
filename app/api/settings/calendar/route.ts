@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { getAuthAccess } from "@/lib/rbac";
+import { getSharedGoogleCalendarStatus } from "@/lib/services/googleCalendar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Calendar integration status (Google / Microsoft). OAuth wiring is environment-specific;
- * this endpoint exposes whether a row exists and sync intent — not full sync state.
+ * Calendar integration status. Google shared-account OAuth is supported for Meet scheduling;
+ * this endpoint exposes both legacy per-user rows and the shared Google connection state.
  */
 export async function GET() {
   try {
@@ -34,13 +35,19 @@ export async function GET() {
       connections = [];
     }
 
+    const sharedGoogle = await getSharedGoogleCalendarStatus();
+
     return NextResponse.json({
       google_configured: connections.some((c) => c.provider === "google" && c.sync_enabled),
       microsoft_configured: connections.some((c) => c.provider === "microsoft" && c.sync_enabled),
       connections,
+      shared_google: sharedGoogle,
+      provider_env_ready: {
+        google: sharedGoogle.configured,
+      },
       message:
         connections.length === 0
-          ? "No calendar accounts linked. Connect Google or Microsoft in a future release; store tokens securely server-side."
+          ? "No calendar accounts linked. Connect the shared Google account in Settings to create Google Meet invites from interview scheduling."
           : undefined,
     });
   } catch (e) {

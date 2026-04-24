@@ -7,7 +7,7 @@ import { useDashboardThemeOptional } from "@/components/DashboardThemeProvider";
 import type { DashboardThemeMode } from "@/lib/dashboardTheme";
 import {
   Settings, User, Bell, Palette, Monitor, Sun, Moon, LayoutGrid,
-  Shield, Save, CheckCircle2, Info, Clock, KeyRound,
+  Shield, Save, CheckCircle2, Info, Clock, KeyRound, Calendar,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -37,7 +37,7 @@ const DENSITY_STORAGE_KEY = "ats-settings-density";
 /* ------------------------------------------------------------------ */
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<"profile" | "appearance" | "notifications" | "session">("profile");
+  const [tab, setTab] = useState<"profile" | "appearance" | "notifications" | "calendar" | "session">("profile");
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -52,6 +52,9 @@ export default function SettingsPage() {
     { id: "profile" as const, label: "Profile", icon: <User className="h-4 w-4" /> },
     { id: "appearance" as const, label: "Appearance", icon: <Palette className="h-4 w-4" /> },
     { id: "notifications" as const, label: "Notifications", icon: <Bell className="h-4 w-4" /> },
+    ...(String(user?.role || "").toLowerCase() === "admin"
+      ? [{ id: "calendar" as const, label: "Calendar & Meet", icon: <Calendar className="h-4 w-4" /> }]
+      : []),
     { id: "session" as const, label: "Session & Security", icon: <KeyRound className="h-4 w-4" /> },
   ];
 
@@ -101,6 +104,7 @@ export default function SettingsPage() {
               {tab === "profile" && <ProfileSection user={user} />}
               {tab === "appearance" && <AppearanceSection />}
               {tab === "notifications" && <NotificationsSection />}
+              {tab === "calendar" && <CalendarMeetSection user={user} />}
               {tab === "session" && <SessionSection user={user} />}
             </>
           )}
@@ -365,6 +369,166 @@ function NotificationsSection() {
           </div>
         ))}
       </div>
+    </SettingsCard>
+  );
+}
+
+function CalendarMeetSection({ user }: { user: UserProfile | null }) {
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<{
+    provider_env_ready?: { google?: boolean };
+    shared_google?: {
+      connected: boolean;
+      configured: boolean;
+      account_email: string | null;
+      account_name: string | null;
+      calendar_id: string | null;
+      updated_at: string | null;
+      sync_error: string | null;
+    };
+  } | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiFetchJson<typeof status>("/api/settings/calendar");
+      setStatus(data);
+    } catch (err: any) {
+      setError(err?.message || "Failed to load Google Calendar status");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const state = url.searchParams.get("calendar");
+    if (!state) return;
+    const map: Record<string, string> = {
+      connected: "Shared Google Calendar connected.",
+      connect_failed: "Google Calendar connection failed.",
+      forbidden: "Only admins can connect the shared Google account.",
+      unauthorized: "Please sign in again to complete Google Calendar connection.",
+      invalid_auth_state: "Google OAuth state check failed. Please try again.",
+      missing_auth_state: "Google OAuth could not be completed. Please try again.",
+    };
+    setToast(map[state] || `Calendar status: ${state}`);
+    url.searchParams.delete("calendar");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
+  async function connectGoogle() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiFetchJson<{ authUrl: string }>("/api/settings/calendar/google/connect", {
+        method: "POST",
+      });
+      window.location.assign(res.authUrl);
+    } catch (err: any) {
+      setError(err?.message || "Failed to start Google Calendar connection");
+      setBusy(false);
+    }
+  }
+
+  async function disconnectGoogle() {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetchJson("/api/settings/calendar/google/disconnect", { method: "POST" });
+      setToast("Shared Google Calendar disconnected.");
+      await loadStatus();
+    } catch (err: any) {
+      setError(err?.message || "Failed to disconnect Google Calendar");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const shared = status?.shared_google;
+  const googleReady = Boolean(status?.provider_env_ready?.google);
+
+  return (
+    <SettingsCard
+      title="Calendar & Meet"
+      subtitle="Connect a shared company Google account to auto-create Meet invites for interviews."
+      icon={<Calendar className="h-5 w-5" />}
+    >
+      {toast && <Toast message={toast} />}
+      {error ? (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="text-sm text-slate-500">Loading calendar status…</div>
+      ) : (
+        <div className="space-y-5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Shared Google account</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  This account will own Google Meet links and send calendar invites to candidates and internal panel attendees.
+                </div>
+              </div>
+              <span
+                className={[
+                  "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
+                  shared?.connected
+                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
+                    : "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
+                ].join(" ")}
+              >
+                {shared?.connected ? "Connected" : "Not connected"}
+              </span>
+            </div>
+            <div className="mt-4 grid gap-2 text-xs text-slate-600 dark:text-slate-300 md:grid-cols-2">
+              <div>Environment ready: {googleReady ? "Yes" : "No"}</div>
+              <div>Account: {shared?.account_email || "—"}</div>
+              <div>Calendar: {shared?.calendar_id || "primary"}</div>
+              <div>Updated: {shared?.updated_at ? new Date(shared.updated_at).toLocaleString() : "—"}</div>
+            </div>
+            {shared?.sync_error ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Last sync issue: {shared.sync_error}
+              </div>
+            ) : null}
+          </div>
+
+          {!googleReady ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required on the server before Google Meet can be connected.
+            </div>
+          ) : null}
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-slate-500">
+              Signed in as {user?.full_name || "Admin"}.
+            </div>
+            <div className="flex gap-2">
+              {shared?.connected ? (
+                <button type="button" onClick={() => void disconnectGoogle()} disabled={busy} className={UI.secondaryButton + " text-xs py-2"}>
+                  {busy ? "Disconnecting…" : "Disconnect"}
+                </button>
+              ) : null}
+              <button type="button" onClick={() => void connectGoogle()} disabled={busy || !googleReady} className={UI.primaryButton + " text-xs py-2"}>
+                {busy ? "Opening Google…" : shared?.connected ? "Reconnect Google" : "Connect Google"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SettingsCard>
   );
 }

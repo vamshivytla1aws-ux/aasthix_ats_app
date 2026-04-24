@@ -57,6 +57,35 @@ Notes:
 - recommended public ATS domain: `https://app.aasthix.com`
 - keep the marketing site on `https://www.aasthix.com` and point `app.aasthix.com` to Railway with a `CNAME`
 
+## Google Meet Interview Scheduling
+
+Interview scheduling now supports a shared-company Google Calendar connection that creates real Google Meet links from the ATS.
+
+Required server-side variables:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `APP_PUBLIC_URL`
+
+Optional:
+
+- `GOOGLE_CALENDAR_ID` (defaults to `primary`)
+- `CALENDAR_TOKEN_SECRET` (recommended dedicated secret for stored OAuth tokens)
+
+How it works:
+
+- an admin connects the shared Google account from `Settings -> Calendar & Meet`
+- the ATS stores Google OAuth tokens server-side only
+- scheduling or rescheduling an interview creates or updates the Google Calendar event
+- candidate and internal panel attendees receive the Google invite
+- if Google is not connected, ATS scheduling still works and the UI shows `Google not connected`
+
+Known limitations:
+
+- the migration for calendar fields must be applied on Railway Postgres before live scheduling can store Meet metadata
+- the OAuth callback URL must match `APP_PUBLIC_URL/api/settings/calendar/google/callback`
+- Google API quota / permission issues are surfaced in the UI as calendar sync errors instead of silently pretending the Meet invite succeeded
+
 ## AI Usage Dashboard
 
 The header `More` menu includes an `AI Usage` entry for admins. It opens a quick summary panel and a full usage dashboard at `/usage`.

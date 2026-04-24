@@ -46,6 +46,14 @@ type ApplicationRow = {
   rejected_in_round_order?: number | null;
   selected_after_rounds?: number | null;
   reminder_sent?: boolean | null;
+  interview_attendee_emails?: string[] | null;
+  calendar_provider?: string | null;
+  external_calendar_event_id?: string | null;
+  meet_link?: string | null;
+  calendar_organizer_email?: string | null;
+  calendar_last_synced_at?: string | null;
+  calendar_sync_status?: "meet_created" | "invite_sent" | "calendar_sync_failed" | "google_not_connected" | "calendar_event_cancelled" | null;
+  calendar_sync_error?: string | null;
 };
 
 type InterviewAlert = {
@@ -70,6 +78,17 @@ type CandidatePacketResponse = {
 
 type ChecklistResponse = {
   checklist?: Array<{ question_id: number; question: string; asked: boolean; notes?: string | null }>;
+};
+
+type CalendarStatusResponse = {
+  shared_google?: {
+    connected: boolean;
+    configured: boolean;
+    account_email: string | null;
+    calendar_id: string | null;
+    updated_at?: string | null;
+    sync_error?: string | null;
+  };
 };
 
 const locales = {
@@ -196,6 +215,7 @@ export default function InterviewsPage() {
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
+  const [rescheduleAttendees, setRescheduleAttendees] = useState("");
   const [searchQ, setSearchQ] = useState("");
   const [debouncedSearchQ, setDebouncedSearchQ] = useState("");
   const [tableViewPreset, setTableViewPreset] = useState<"all" | "scheduled" | "upcoming" | "today" | "this_week" | "overdue" | "completed" | "followup" | "no_show" | "rejected">("all");
@@ -208,6 +228,7 @@ export default function InterviewsPage() {
   const [packet, setPacket] = useState<CandidatePacketResponse | null>(null);
   const [checklist, setChecklist] = useState<ChecklistResponse["checklist"]>([]);
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+  const [calendarStatus, setCalendarStatus] = useState<CalendarStatusResponse | null>(null);
   const [columns, setColumns] = useState({
     candidate: true,
     jobTitle: true,
@@ -221,6 +242,20 @@ export default function InterviewsPage() {
     const t = window.setTimeout(() => setDebouncedSearchQ(searchQ.trim()), 280);
     return () => window.clearTimeout(t);
   }, [searchQ]);
+
+  useEffect(() => {
+    let alive = true;
+    apiFetchJson<CalendarStatusResponse>("/api/settings/calendar")
+      .then((data) => {
+        if (alive) setCalendarStatus(data);
+      })
+      .catch(() => {
+        if (alive) setCalendarStatus(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   function showPermissionToast(err: unknown) {
     const status = err instanceof ApiError ? err.status : (err as { status?: number })?.status;
@@ -556,14 +591,24 @@ export default function InterviewsPage() {
           interview_no_show: false,
           reminder_sent: false,
           send_email: rescheduleSendEmail,
+          interview_attendee_emails: rescheduleAttendees,
         }),
       });
       await updateInterviewInState(updated);
       setRescheduleOpen(false);
       setDetailsOpen(false);
       setRescheduleReason("");
+      setRescheduleAttendees("");
       setRescheduleSendEmail(false);
-      showSuccessToast(rescheduleSendEmail ? "Interview rescheduled and candidate email sent." : "Interview rescheduled.");
+      showSuccessToast(
+        updated.meet_link
+          ? "Interview rescheduled and Google Meet invite updated."
+          : updated.calendar_sync_status === "google_not_connected"
+            ? "Interview rescheduled. Google Calendar is not connected yet."
+            : rescheduleSendEmail
+              ? "Interview rescheduled and candidate email sent."
+              : "Interview rescheduled."
+      );
       void mutateAlerts();
     } catch (err: any) {
       showPermissionToast(err);
@@ -645,6 +690,7 @@ export default function InterviewsPage() {
     setRescheduleDate(date);
     setRescheduleTime(time);
     setRescheduleSendEmail(false);
+    setRescheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
     setRescheduleReason(app.interview_reschedule_reason || "");
     setError(null);
     setRescheduleOpen(true);
@@ -1357,6 +1403,15 @@ export default function InterviewsPage() {
                         items={[
                           ...(r.stage === "Interview"
                             ? [
+                                ...(r.meet_link
+                                  ? [
+                                      {
+                                        type: "link" as const,
+                                        label: "Join Google Meet",
+                                        href: r.meet_link,
+                                      },
+                                    ]
+                                  : []),
                                 {
                                   type: "button" as const,
                                   label: "Reschedule",
@@ -1498,6 +1553,48 @@ export default function InterviewsPage() {
                 <div className="rounded-xl bg-slate-50 p-4">
                   <div className="text-sm font-semibold text-slate-900">Interview Date & Time</div>
                   <div className="mt-1 text-sm text-slate-700">{formatDateTime(selectedInterview.interview_datetime)}</div>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-4">
+                  <div className="text-sm font-semibold text-slate-900">Google Meet / Calendar</div>
+                  <div className="mt-2 space-y-2 text-sm text-slate-700">
+                    <div>
+                      Status:{" "}
+                      <span className="font-medium">
+                        {selectedInterview.calendar_sync_status === "meet_created" || selectedInterview.calendar_sync_status === "invite_sent"
+                          ? "Invite sent"
+                          : selectedInterview.calendar_sync_status === "calendar_sync_failed"
+                            ? "Sync failed"
+                            : selectedInterview.calendar_sync_status === "google_not_connected"
+                              ? "Google not connected"
+                              : selectedInterview.calendar_sync_status === "calendar_event_cancelled"
+                                ? "Event cancelled"
+                                : "Not synced yet"}
+                      </span>
+                    </div>
+                    <div>Organizer: {selectedInterview.calendar_organizer_email || "—"}</div>
+                    <div>Last sync: {formatDateTime(selectedInterview.calendar_last_synced_at)}</div>
+                    <div>
+                      Attendees:{" "}
+                      {selectedInterview.interview_attendee_emails?.length
+                        ? selectedInterview.interview_attendee_emails.join(", ")
+                        : "—"}
+                    </div>
+                    {selectedInterview.meet_link ? (
+                      <div>
+                        <a
+                          href={selectedInterview.meet_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-semibold text-blue-700 hover:text-blue-800"
+                        >
+                          Join Google Meet
+                        </a>
+                      </div>
+                    ) : null}
+                    {selectedInterview.calendar_sync_error ? (
+                      <div className="text-rose-600">Sync error: {selectedInterview.calendar_sync_error}</div>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="rounded-xl bg-slate-50 p-4">
                   <div className="text-sm font-semibold text-slate-900">Interview Packet</div>
@@ -1660,6 +1757,22 @@ export default function InterviewsPage() {
                 />
               </div>
 
+              <div className="mt-4">
+                <label className="mb-1 block text-sm text-gray-600">Internal panel emails</label>
+                <textarea
+                  className="min-h-[88px] w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  value={rescheduleAttendees}
+                  onChange={(e) => setRescheduleAttendees(e.target.value)}
+                  disabled={actionBusyId === selectedInterview.id}
+                  placeholder="panel1@aasthix.com, panel2@aasthix.com"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  {calendarStatus?.shared_google?.connected
+                    ? `Google Meet invite will be updated from ${calendarStatus.shared_google.account_email || "the shared calendar account"} for the candidate and these attendees.`
+                    : "Google Calendar is not connected yet. Rescheduling will stay inside the ATS only."}
+                </p>
+              </div>
+
               <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
                 <input
                   type="checkbox"
@@ -1667,7 +1780,7 @@ export default function InterviewsPage() {
                   onChange={(e) => setRescheduleSendEmail(e.target.checked)}
                   disabled={actionBusyId === selectedInterview.id}
                 />
-                Send email to candidate
+                {calendarStatus?.shared_google?.connected ? "Also send ATS email to candidate" : "Send email to candidate"}
               </label>
 
               <div className="mt-6">

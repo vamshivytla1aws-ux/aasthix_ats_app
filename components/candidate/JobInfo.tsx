@@ -6,6 +6,8 @@ type CandidateJobInfo = {
   current_interview_round_order?: number | null;
   interview_round_total?: number | null;
   interview_substatus?: "scheduled" | "completed_followup" | "no_show" | "cancelled" | null;
+  meet_link?: string | null;
+  calendar_sync_status?: string | null;
 };
 
 type Density = "comfortable" | "compact" | "ultra";
@@ -78,6 +80,36 @@ export default function JobInfo({
         <InfoRow label="Interview status" value={interviewStatus} />
         <InfoRow label="Status" value={candidate.status} />
       </div>
+      {candidate.stage === "Interview" ? (
+        <div className="rounded-xl border border-[var(--ats-border-subtle)] bg-[var(--ats-bg-panel)] px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">
+              Google Meet
+            </span>
+            <span className="text-xs text-[var(--ats-text-muted)]">
+              {candidate.calendar_sync_status === "meet_created" || candidate.calendar_sync_status === "invite_sent"
+                ? "Invite sent"
+                : candidate.calendar_sync_status === "calendar_sync_failed"
+                  ? "Sync failed"
+                  : candidate.calendar_sync_status === "google_not_connected"
+                    ? "Google not connected"
+                    : candidate.meet_link
+                      ? "Available"
+                      : "Not created"}
+            </span>
+          </div>
+          {candidate.meet_link ? (
+            <a
+              href={candidate.meet_link}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+            >
+              Join Google Meet
+            </a>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

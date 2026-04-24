@@ -8,6 +8,7 @@ import { logScreeningAudit } from "@/lib/screeningAudit";
 import { recordDispositionEvent, validateDispositionReason } from "@/lib/dispositionAudit";
 import { sendEmailMessage } from "@/lib/sendEmail";
 import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
+import { syncInterviewMeeting } from "@/lib/services/googleCalendar";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,37 @@ const STAGES = ["Applied", "Screening", "Screening Failed", "Interview", "Select
 type Stage = (typeof STAGES)[number];
 const INTERVIEW_SUBSTATUSES = ["scheduled", "completed_followup", "no_show", "cancelled"] as const;
 type InterviewSubstatus = (typeof INTERVIEW_SUBSTATUSES)[number];
+
+function normalizeInterviewAttendeeEmails(value: unknown) {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[\n,;]/g)
+      : [];
+  return Array.from(
+    new Set(
+      rawValues
+        .map((item) => String(item || "").trim().toLowerCase())
+        .filter(Boolean)
+        .filter((item) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item))
+    )
+  ).slice(0, 25);
+}
+
+function normalizeMeetingSyncStatus(status: string | null | undefined) {
+  const value = String(status || "").trim().toLowerCase();
+  if (!value) return null;
+  if (
+    value === "meet_created" ||
+    value === "invite_sent" ||
+    value === "calendar_sync_failed" ||
+    value === "google_not_connected" ||
+    value === "calendar_event_cancelled"
+  ) {
+    return value;
+  }
+  return null;
+}
 
 function isStage(value: unknown): value is Stage {
   return typeof value === "string" && (STAGES as readonly string[]).includes(value);
@@ -70,6 +102,12 @@ async function loadPreviousApplicationState(
         a.interview_substatus AS prev_interview_substatus,
         a.interview_completed_at AS prev_interview_completed_at,
         a.interview_status_note AS prev_interview_status_note,
+        a.interview_attendee_emails AS prev_interview_attendee_emails,
+        a.external_calendar_event_id AS prev_external_calendar_event_id,
+        a.meet_link AS prev_meet_link,
+        a.calendar_sync_status AS prev_calendar_sync_status,
+        a.calendar_sync_error AS prev_calendar_sync_error,
+        a.calendar_organizer_email AS prev_calendar_organizer_email,
         a.job_id AS prev_job_id,
         a.current_interview_round_id AS prev_round_id,
         a.current_interview_round_order AS prev_round_order,
@@ -92,6 +130,12 @@ async function loadPreviousApplicationState(
         NULL::text AS prev_interview_substatus,
         NULL::timestamptz AS prev_interview_completed_at,
         NULL::text AS prev_interview_status_note,
+        '[]'::jsonb AS prev_interview_attendee_emails,
+        NULL::text AS prev_external_calendar_event_id,
+        NULL::text AS prev_meet_link,
+        NULL::text AS prev_calendar_sync_status,
+        NULL::text AS prev_calendar_sync_error,
+        NULL::text AS prev_calendar_organizer_email,
         a.job_id AS prev_job_id,
         NULL::bigint AS prev_round_id,
         NULL::int AS prev_round_order,
@@ -116,8 +160,9 @@ async function updateApplicationStageCore(input: {
   interview_substatus: InterviewSubstatus | null | undefined;
   interview_completed_at: string | null | undefined;
   interview_status_note: string | null | undefined;
+  interview_attendee_emails: string[] | undefined;
   userId: number;
-  accessWhere12: string;
+  accessWhere13: string;
   accessWhere5: string;
 }) {
   const {
@@ -132,8 +177,9 @@ async function updateApplicationStageCore(input: {
     interview_substatus,
     interview_completed_at,
     interview_status_note,
+    interview_attendee_emails,
     userId,
-    accessWhere12,
+    accessWhere13,
     accessWhere5,
   } = input;
 
@@ -161,6 +207,11 @@ async function updateApplicationStageCore(input: {
             WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN NULL
             ELSE $11::text
           END,
+          interview_attendee_emails = CASE
+            WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN '[]'::jsonb
+            WHEN $12::jsonb IS NULL THEN applications.interview_attendee_emails
+            ELSE $12::jsonb
+          END,
           current_interview_round_id = CASE
             WHEN COALESCE($2::text, applications.stage) <> 'Interview' THEN NULL
             ELSE applications.current_interview_round_id
@@ -187,8 +238,8 @@ async function updateApplicationStageCore(input: {
             ELSE applications.final_outcome
           END,
           updated_at = NOW()
-      WHERE id = $1 AND (${accessWhere12})
-      RETURNING id, candidate_id, job_id, stage, updated_at, interview_scheduled, interview_datetime, interview_reschedule_reason, interview_cancel_reason, interview_no_show, reminder_sent, interview_substatus, interview_completed_at, interview_status_note, current_interview_round_id, current_interview_round_order, interview_round_status, rejected_in_round_order, selected_after_rounds, final_outcome
+      WHERE id = $1 AND (${accessWhere13})
+      RETURNING id, candidate_id, job_id, stage, updated_at, interview_scheduled, interview_datetime, interview_reschedule_reason, interview_cancel_reason, interview_no_show, reminder_sent, interview_substatus, interview_completed_at, interview_status_note, interview_attendee_emails, calendar_provider, external_calendar_event_id, meet_link, calendar_organizer_email, calendar_last_synced_at, calendar_sync_status, calendar_sync_error, current_interview_round_id, current_interview_round_order, interview_round_status, rejected_in_round_order, selected_after_rounds, final_outcome
       `,
       [
         id,
@@ -202,6 +253,7 @@ async function updateApplicationStageCore(input: {
         interview_substatus ?? null,
         typeof interview_completed_at === "string" ? interview_completed_at : null,
         typeof interview_status_note === "string" ? interview_status_note : null,
+        interview_attendee_emails === undefined ? null : JSON.stringify(interview_attendee_emails),
         userId,
       ]
     );
@@ -231,6 +283,14 @@ async function updateApplicationStageCore(input: {
         NULL::text AS interview_substatus,
         NULL::timestamptz AS interview_completed_at,
         NULL::text AS interview_status_note,
+        '[]'::jsonb AS interview_attendee_emails,
+        NULL::text AS calendar_provider,
+        NULL::text AS external_calendar_event_id,
+        NULL::text AS meet_link,
+        NULL::text AS calendar_organizer_email,
+        NULL::timestamptz AS calendar_last_synced_at,
+        NULL::text AS calendar_sync_status,
+        NULL::text AS calendar_sync_error,
         NULL::bigint AS current_interview_round_id,
         NULL::int AS current_interview_round_order,
         'not_started'::text AS interview_round_status,
@@ -247,6 +307,89 @@ async function updateApplicationStageCore(input: {
       ]
     );
   }
+}
+
+async function persistApplicationCalendarState(input: {
+  applicationId: number;
+  userId: number;
+  accessWhere2: string;
+  calendar_provider: string | null;
+  external_calendar_event_id: string | null;
+  meet_link: string | null;
+  calendar_organizer_email: string | null;
+  calendar_last_synced_at: string | null;
+  calendar_sync_status: string | null;
+  calendar_sync_error: string | null;
+  interview_attendee_emails: string[];
+}) {
+  const res = await query(
+    `
+    UPDATE applications
+    SET
+      calendar_provider = $3,
+      external_calendar_event_id = $4,
+      meet_link = $5,
+      calendar_organizer_email = $6,
+      calendar_last_synced_at = $7::timestamptz,
+      calendar_sync_status = $8,
+      calendar_sync_error = $9,
+      interview_attendee_emails = $10::jsonb,
+      updated_at = NOW()
+    WHERE id = $1 AND (${input.accessWhere2})
+    RETURNING *
+    `,
+    [
+      input.applicationId,
+      input.userId,
+      input.calendar_provider,
+      input.external_calendar_event_id,
+      input.meet_link,
+      input.calendar_organizer_email,
+      input.calendar_last_synced_at,
+      input.calendar_sync_status,
+      input.calendar_sync_error,
+      JSON.stringify(input.interview_attendee_emails),
+    ]
+  );
+  return res;
+}
+
+async function loadInterviewMeetingContext(applicationId: number, userId: number, accessWhere2: string) {
+  const res = await query(
+    `
+    SELECT
+      a.id,
+      a.job_id,
+      a.stage,
+      a.interview_datetime,
+      a.interview_attendee_emails,
+      a.external_calendar_event_id,
+      a.meet_link,
+      c.full_name AS candidate_full_name,
+      c.email AS candidate_email,
+      j.title AS job_title
+    FROM applications a
+    JOIN candidates c ON c.id = a.candidate_id
+    JOIN jobs j ON j.id = a.job_id
+    WHERE a.id = $1 AND (${accessWhere2})
+    LIMIT 1
+    `,
+    [applicationId, userId]
+  );
+  return (res.rows?.[0] as
+    | {
+        id: number;
+        job_id: number;
+        stage: string;
+        interview_datetime: string | null;
+        interview_attendee_emails: unknown;
+        external_calendar_event_id: string | null;
+        meet_link: string | null;
+        candidate_full_name: string | null;
+        candidate_email: string | null;
+        job_title: string | null;
+      }
+    | undefined) ?? null;
 }
 
 export async function GET(request: Request) {
@@ -441,11 +584,12 @@ export async function PATCH(request: Request) {
       interview_datetime,
       interview_reschedule_reason,
       interview_cancel_reason,
-      interview_no_show,
-      interview_substatus,
-      interview_status_note,
-      reminder_sent,
-      send_email,
+        interview_no_show,
+        interview_substatus,
+        interview_status_note,
+        interview_attendee_emails,
+        reminder_sent,
+        send_email,
       round_action,
       interview_decision,
       interview_decision_audience,
@@ -458,11 +602,12 @@ export async function PATCH(request: Request) {
       interview_datetime?: string;
       interview_reschedule_reason?: string | null;
       interview_cancel_reason?: string | null;
-      interview_no_show?: boolean;
-      interview_substatus?: InterviewSubstatus | null;
-      interview_status_note?: string | null;
-      reminder_sent?: boolean;
-      send_email?: boolean;
+        interview_no_show?: boolean;
+        interview_substatus?: InterviewSubstatus | null;
+        interview_status_note?: string | null;
+        interview_attendee_emails?: string[] | string;
+        reminder_sent?: boolean;
+        send_email?: boolean;
       round_action?: "next" | "previous";
       interview_decision?: "next_round" | "final_selected" | "rejected";
       /** When `internal`, progress emails for interview decisions are skipped (audit still recorded). */
@@ -485,8 +630,8 @@ export async function PATCH(request: Request) {
     const hasTeam = await hasJobTeamTable();
     const accessWhere2 = applicationAccessPredicate("applications", "$2", hasTeam);
     const accessWhere4 = applicationAccessPredicate("applications", "$4", hasTeam);
-    const accessWhere12 = applicationAccessPredicate("applications", "$12", hasTeam);
-    const accessWhere5 = applicationAccessPredicate("applications", "$5", hasTeam);
+      const accessWhere13 = applicationAccessPredicate("applications", "$13", hasTeam);
+      const accessWhere5 = applicationAccessPredicate("applications", "$5", hasTeam);
     const accessWhereA2 = applicationAccessPredicate("a", "$2", hasTeam);
 
     if (!id) {
@@ -533,6 +678,37 @@ export async function PATCH(request: Request) {
       }
       const row0 = upd.rows[0] as { id: number; candidate_id: number };
       try {
+        const existingMeeting = await loadInterviewMeetingContext(row0.id, user.user_id, accessWhere2);
+        if (existingMeeting?.external_calendar_event_id) {
+          const syncResult = await syncInterviewMeeting({
+            action: "cancel",
+            applicationId: row0.id,
+            title: existingMeeting.job_title || "Interview",
+            candidateName: existingMeeting.candidate_full_name || "Candidate",
+            candidateEmail: existingMeeting.candidate_email || null,
+            interviewDatetime: existingMeeting.interview_datetime,
+            internalAttendeeEmails: normalizeInterviewAttendeeEmails(existingMeeting.interview_attendee_emails),
+            existingEventId: existingMeeting.external_calendar_event_id,
+            existingMeetLink: existingMeeting.meet_link,
+          });
+          await persistApplicationCalendarState({
+            applicationId: row0.id,
+            userId: user.user_id,
+            accessWhere2,
+            calendar_provider: "google",
+            external_calendar_event_id: syncResult.external_calendar_event_id,
+            meet_link: syncResult.meet_link,
+            calendar_organizer_email: syncResult.organizer_email,
+            calendar_last_synced_at: syncResult.synced_at,
+            calendar_sync_status: normalizeMeetingSyncStatus(syncResult.status),
+            calendar_sync_error: syncResult.error,
+            interview_attendee_emails: syncResult.attendee_emails,
+          });
+        }
+      } catch (calendarError) {
+        console.error("Failed to cancel Google Meet on interview board removal", calendarError);
+      }
+      try {
         await logScreeningAudit({
           event_type: "stage_override",
           application_id: row0.id,
@@ -569,10 +745,11 @@ export async function PATCH(request: Request) {
       interview_datetime === undefined &&
       interview_reschedule_reason === undefined &&
       interview_cancel_reason === undefined &&
-      interview_no_show === undefined &&
-      interview_substatus === undefined &&
-      interview_status_note === undefined &&
-      reminder_sent === undefined &&
+        interview_no_show === undefined &&
+        interview_substatus === undefined &&
+        interview_status_note === undefined &&
+        interview_attendee_emails === undefined &&
+        reminder_sent === undefined &&
       send_email === undefined &&
       round_action === undefined &&
       interview_decision === undefined &&
@@ -623,6 +800,12 @@ export async function PATCH(request: Request) {
       prev_interview_substatus: InterviewSubstatus | null;
       prev_interview_completed_at: string | null;
       prev_interview_status_note: string | null;
+      prev_interview_attendee_emails: unknown;
+      prev_external_calendar_event_id: string | null;
+      prev_meet_link: string | null;
+      prev_calendar_sync_status: string | null;
+      prev_calendar_sync_error: string | null;
+      prev_calendar_organizer_email: string | null;
       prev_job_id: number;
       prev_round_id: number | null;
       prev_round_order: number | null;
@@ -634,6 +817,17 @@ export async function PATCH(request: Request) {
     const prevInterviewSubstatus = prevRow0.prev_interview_substatus ?? null;
     const prevInterviewCompletedAt = prevRow0.prev_interview_completed_at ?? null;
     const prevInterviewStatusNote = prevRow0.prev_interview_status_note ?? null;
+    const prevInterviewAttendeeEmails = normalizeInterviewAttendeeEmails(prevRow0.prev_interview_attendee_emails);
+    const prevExternalCalendarEventId = prevRow0.prev_external_calendar_event_id ?? null;
+    const prevMeetLink = prevRow0.prev_meet_link ?? null;
+    const prevCalendarSyncStatus = normalizeMeetingSyncStatus(prevRow0.prev_calendar_sync_status);
+    const prevCalendarSyncError = prevRow0.prev_calendar_sync_error ?? null;
+    const prevCalendarOrganizerEmail = prevRow0.prev_calendar_organizer_email ?? null;
+
+    const normalizedInterviewAttendeeEmails =
+      interview_attendee_emails === undefined
+        ? prevInterviewAttendeeEmails
+        : normalizeInterviewAttendeeEmails(interview_attendee_emails);
 
     let normalizedInterviewSubstatus: InterviewSubstatus | null =
       interview_substatus === undefined ? prevInterviewSubstatus : interview_substatus;
@@ -712,8 +906,9 @@ export async function PATCH(request: Request) {
       interview_substatus: normalizedInterviewSubstatus,
       interview_completed_at: normalizedInterviewCompletedAt,
       interview_status_note: normalizedInterviewStatusNote,
+      interview_attendee_emails: normalizedInterviewAttendeeEmails,
       userId: user.user_id,
-      accessWhere12,
+      accessWhere13,
       accessWhere5,
     });
 
@@ -736,6 +931,14 @@ export async function PATCH(request: Request) {
       interview_substatus: InterviewSubstatus | null;
       interview_completed_at: string | null;
       interview_status_note: string | null;
+      interview_attendee_emails: unknown;
+      calendar_provider: string | null;
+      external_calendar_event_id: string | null;
+      meet_link: string | null;
+      calendar_organizer_email: string | null;
+      calendar_last_synced_at: string | null;
+      calendar_sync_status: string | null;
+      calendar_sync_error: string | null;
       current_interview_round_id: number | null;
       current_interview_round_order: number | null;
       interview_round_status: string;
@@ -1027,24 +1230,6 @@ export async function PATCH(request: Request) {
       }
     }
 
-    const prevMs = prevInterviewDatetime ? new Date(prevInterviewDatetime).getTime() : null;
-    const updatedMs = updated.interview_datetime ? new Date(updated.interview_datetime).getTime() : null;
-    const interviewDatetimeChanged =
-      prevMs !== null && updatedMs !== null ? prevMs !== updatedMs : true;
-
-    const isReschedule = prevInterviewDatetime !== null;
-    const isSchedule = prevInterviewScheduled === false;
-
-    const shouldSendScheduledEmail =
-      updated.stage === "Interview" &&
-      updated.interview_scheduled === true &&
-      updated.interview_substatus !== "completed_followup" &&
-      updated.interview_substatus !== "no_show" &&
-      updated.interview_substatus !== "cancelled" &&
-      !!updated.interview_datetime &&
-      send_email === true &&
-      ((isSchedule === true) || (isReschedule === true && interviewDatetimeChanged === true));
-
     const movedAppliedToScreening = prevStage === "Applied" && updated.stage === "Screening";
     const movedAppliedToInterview = prevStage === "Applied" && updated.stage === "Interview";
 
@@ -1076,6 +1261,103 @@ export async function PATCH(request: Request) {
         // optional table guard
       }
     }
+
+    let calendarSyncStatus = prevCalendarSyncStatus;
+    let calendarSyncError = prevCalendarSyncError;
+    let meetLink = prevMeetLink;
+    let externalCalendarEventId = prevExternalCalendarEventId;
+    let calendarOrganizerEmail = prevCalendarOrganizerEmail;
+    let calendarProvider = prevExternalCalendarEventId || prevMeetLink || prevCalendarSyncStatus ? "google" : null;
+    let calendarLastSyncedAt: string | null = null;
+
+    const shouldUpsertGoogleMeeting =
+      updated.stage === "Interview" &&
+      updated.interview_scheduled === true &&
+      updated.interview_substatus !== "completed_followup" &&
+      updated.interview_substatus !== "no_show" &&
+      updated.interview_substatus !== "cancelled" &&
+      Boolean(updated.interview_datetime) &&
+      (
+        typeof interview_datetime === "string" ||
+        typeof interview_scheduled === "boolean" ||
+        interview_attendee_emails !== undefined ||
+        prevExternalCalendarEventId != null
+      );
+
+    const shouldCancelGoogleMeeting =
+      prevExternalCalendarEventId != null &&
+      (
+        removeFromInterviewsBoard ||
+        interview_cancel_reason !== undefined ||
+        (updated.stage === "Interview" &&
+          (updated.interview_substatus === "cancelled" ||
+            updated.interview_scheduled === false ||
+            !updated.interview_datetime))
+      );
+
+    if (shouldUpsertGoogleMeeting || shouldCancelGoogleMeeting) {
+      const meetingContext = await loadInterviewMeetingContext(updated.id, user.user_id, accessWhere2);
+      if (meetingContext) {
+        const syncResult = await syncInterviewMeeting({
+          action: shouldCancelGoogleMeeting ? "cancel" : "upsert",
+          applicationId: updated.id,
+          title: meetingContext.job_title || "Interview",
+          candidateName: meetingContext.candidate_full_name || "Candidate",
+          candidateEmail: meetingContext.candidate_email || null,
+          interviewDatetime: meetingContext.interview_datetime,
+          internalAttendeeEmails: normalizedInterviewAttendeeEmails,
+          existingEventId: prevExternalCalendarEventId,
+          existingMeetLink: prevMeetLink,
+          notes: normalizedInterviewStatusNote,
+        });
+
+        calendarSyncStatus = normalizeMeetingSyncStatus(syncResult.status);
+        calendarSyncError = syncResult.error;
+        meetLink = syncResult.meet_link;
+        externalCalendarEventId = syncResult.external_calendar_event_id;
+        calendarOrganizerEmail = syncResult.organizer_email;
+        calendarProvider = syncResult.source === "google_calendar" || syncResult.status !== "google_not_connected" ? "google" : calendarProvider;
+        calendarLastSyncedAt = syncResult.synced_at;
+
+        const persistedCalendar = await persistApplicationCalendarState({
+          applicationId: updated.id,
+          userId: user.user_id,
+          accessWhere2,
+          calendar_provider: calendarProvider,
+          external_calendar_event_id: externalCalendarEventId,
+          meet_link: meetLink,
+          calendar_organizer_email: calendarOrganizerEmail,
+          calendar_last_synced_at: calendarLastSyncedAt,
+          calendar_sync_status: calendarSyncStatus,
+          calendar_sync_error: calendarSyncError,
+          interview_attendee_emails: syncResult.attendee_emails,
+        });
+        if (persistedCalendar.rowCount > 0) {
+          Object.assign(updated, persistedCalendar.rows[0]);
+        }
+      }
+    }
+
+    const prevMs = prevInterviewDatetime ? new Date(prevInterviewDatetime).getTime() : null;
+    const updatedMs = updated.interview_datetime ? new Date(updated.interview_datetime).getTime() : null;
+    const interviewDatetimeChanged =
+      prevMs !== null && updatedMs !== null ? prevMs !== updatedMs : true;
+
+    const isReschedule = prevInterviewDatetime !== null;
+    const isSchedule = prevInterviewScheduled === false;
+    const googleInviteHandled =
+      calendarSyncStatus === "meet_created" || calendarSyncStatus === "invite_sent";
+
+    const shouldSendScheduledEmail =
+      updated.stage === "Interview" &&
+      updated.interview_scheduled === true &&
+      updated.interview_substatus !== "completed_followup" &&
+      updated.interview_substatus !== "no_show" &&
+      updated.interview_substatus !== "cancelled" &&
+      !!updated.interview_datetime &&
+      send_email === true &&
+      !googleInviteHandled &&
+      ((isSchedule === true) || (isReschedule === true && interviewDatetimeChanged === true));
 
     // Expire interview alerts when interview is no longer active/scheduled.
     if (

@@ -27,6 +27,14 @@ type ApplicationRow = {
   interview_substatus?: "scheduled" | "completed_followup" | "no_show" | "cancelled" | null;
   interview_completed_at?: string | null;
   interview_status_note?: string | null;
+  interview_attendee_emails?: string[] | null;
+  calendar_provider?: string | null;
+  external_calendar_event_id?: string | null;
+  meet_link?: string | null;
+  calendar_organizer_email?: string | null;
+  calendar_last_synced_at?: string | null;
+  calendar_sync_status?: "meet_created" | "invite_sent" | "calendar_sync_failed" | "google_not_connected" | "calendar_event_cancelled" | null;
+  calendar_sync_error?: string | null;
   candidate_full_name: string;
   job_title: string;
   reminder_sent?: boolean | null;
@@ -323,12 +331,17 @@ export default function PipelineBoard({
   const [confirmScheduleOpen, setConfirmScheduleOpen] = useState(false);
   const [confirmScheduleIso, setConfirmScheduleIso] = useState<string>("");
   const [scheduleSendEmail, setScheduleSendEmail] = useState(false);
+  const [scheduleAttendees, setScheduleAttendees] = useState("");
 
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleApp, setRescheduleApp] = useState<ApplicationRow | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
+  const [rescheduleAttendees, setRescheduleAttendees] = useState("");
+  const [calendarStatus, setCalendarStatus] = useState<{
+    shared_google?: { connected: boolean; configured: boolean; account_email: string | null };
+  } | null>(null);
   const [decisionOpen, setDecisionOpen] = useState(false);
   const [decisionApp, setDecisionApp] = useState<ApplicationRow | null>(null);
   const [checklistLoading, setChecklistLoading] = useState(false);
@@ -464,6 +477,22 @@ export default function PipelineBoard({
   }, [applications]);
 
   useEffect(() => {
+    let alive = true;
+    apiFetchJson<{ shared_google?: { connected: boolean; configured: boolean; account_email: string | null } }>(
+      "/api/settings/calendar"
+    )
+      .then((data) => {
+        if (alive) setCalendarStatus(data);
+      })
+      .catch(() => {
+        if (alive) setCalendarStatus(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const target = localApplications.filter((x) => x.stage === "Screening" || x.stage === "Screening Failed");
     if (target.length === 0) {
       setScreeningByApplication({});
@@ -562,6 +591,7 @@ export default function PipelineBoard({
     setConfirmScheduleIso("");
     setConfirmScheduleOpen(false);
     setScheduleSendEmail(false);
+    setScheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
     setScheduleOpen(true);
     void loadChecklist(app.id);
   }
@@ -785,33 +815,44 @@ export default function PipelineBoard({
     try {
       optimisticallyPatchApplication(scheduleApp.id, optimisticUpdated);
       onStageUpdated(optimisticUpdated);
-      const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: scheduleApp.id,
-          stage: "Interview",
-          interview_scheduled: true,
-          interview_datetime: confirmScheduleIso,
-          send_email: scheduleSendEmail,
-        }),
-      });
+        const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: scheduleApp.id,
+            stage: "Interview",
+            interview_scheduled: true,
+            interview_datetime: confirmScheduleIso,
+            interview_attendee_emails: scheduleAttendees,
+            send_email: scheduleSendEmail,
+          }),
+        });
 
       reconcileLocalApplication(updated);
       onStageUpdated(updated);
       await saveChecklist(scheduleApp.id);
       setSuccess(scheduleSendEmail ? "Interview scheduled and candidate email sent." : "Interview scheduled.");
       setConfirmScheduleOpen(false);
-      setScheduleOpen(false);
-      setScheduleApp(null);
-      setScheduleDate("");
-      setScheduleTime("");
-      setConfirmScheduleIso("");
-      setScheduleSendEmail(false);
-    } catch (err: any) {
-      flushSync(() => setLocalApplications(previousApplications));
-      onStageUpdated(scheduleApp);
-      if (!notifyForbidden(err)) setError(err.message || "Something went wrong");
+        setScheduleOpen(false);
+        setScheduleApp(null);
+        setScheduleDate("");
+        setScheduleTime("");
+        setConfirmScheduleIso("");
+        setScheduleSendEmail(false);
+        setScheduleAttendees("");
+        setSuccess(
+          updated.meet_link
+            ? "Interview scheduled and Google Meet invite created."
+            : updated.calendar_sync_status === "google_not_connected"
+              ? "Interview scheduled. Google Calendar is not connected yet."
+              : scheduleSendEmail
+                ? "Interview scheduled and candidate email sent."
+                : "Interview scheduled."
+        );
+      } catch (err: any) {
+        flushSync(() => setLocalApplications(previousApplications));
+        onStageUpdated(scheduleApp);
+        if (!notifyForbidden(err)) setError(err.message || "Something went wrong");
     } finally {
       setBusyId(null);
     }
@@ -835,6 +876,7 @@ export default function PipelineBoard({
     setRescheduleDate(date);
     setRescheduleTime(time);
     setRescheduleSendEmail(false);
+    setRescheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
     setRescheduleOpen(true);
     setError(null);
     void loadChecklist(app.id);
@@ -851,27 +893,37 @@ export default function PipelineBoard({
     setBusyId(rescheduleApp.id);
     setError(null);
     try {
-      const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: rescheduleApp.id,
-          interview_datetime: iso,
-          reminder_sent: false,
-          send_email: rescheduleSendEmail,
-        }),
-      });
+        const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: rescheduleApp.id,
+            interview_datetime: iso,
+            interview_attendee_emails: rescheduleAttendees,
+            reminder_sent: false,
+            send_email: rescheduleSendEmail,
+          }),
+        });
 
       reconcileLocalApplication(updated);
       onStageUpdated(updated);
       await saveChecklist(rescheduleApp.id);
       setRescheduleOpen(false);
-      setRescheduleApp(null);
-      setRescheduleDate("");
-      setRescheduleTime("");
-      setRescheduleSendEmail(false);
-      setSuccess(rescheduleSendEmail ? "Interview rescheduled and candidate email sent." : "Interview rescheduled.");
-    } catch (err: any) {
+        setRescheduleApp(null);
+        setRescheduleDate("");
+        setRescheduleTime("");
+        setRescheduleSendEmail(false);
+        setRescheduleAttendees("");
+        setSuccess(
+          updated.meet_link
+            ? "Interview rescheduled and Google Meet invite updated."
+            : updated.calendar_sync_status === "google_not_connected"
+              ? "Interview rescheduled. Google Calendar is not connected yet."
+              : rescheduleSendEmail
+                ? "Interview rescheduled and candidate email sent."
+                : "Interview rescheduled."
+        );
+      } catch (err: any) {
       if (!notifyForbidden(err)) setError(err.message || "Something went wrong");
     } finally {
       setBusyId(null);
@@ -1369,6 +1421,22 @@ export default function PipelineBoard({
                 </div>
               </div>
 
+              <div className="mt-4">
+                <label className="block mb-1 text-sm text-gray-600">Internal panel emails</label>
+                <textarea
+                  className="min-h-[88px] w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={scheduleAttendees}
+                  onChange={(e) => setScheduleAttendees(e.target.value)}
+                  placeholder="panel1@aasthix.com, panel2@aasthix.com"
+                  disabled={busyId === scheduleApp.id}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  {calendarStatus?.shared_google?.connected
+                    ? `Google Meet invite will be created from ${calendarStatus.shared_google.account_email || "the shared Google account"} and sent to the candidate plus these attendees.`
+                    : "Google Calendar is not connected yet. The ATS will still save the interview without creating a Meet link."}
+                </p>
+              </div>
+
               <div className="mt-4 rounded-xl border border-slate-200 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Interview Questions Checklist</div>
                 {checklistLoading ? <div className="mt-2 text-xs text-slate-500">Loading checklist...</div> : null}
@@ -1470,14 +1538,14 @@ export default function PipelineBoard({
                 </div>
               </div>
 
-              <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
+                <label className="mt-5 flex items-center gap-2 text-sm text-slate-700">
                 <input
                   type="checkbox"
                   checked={scheduleSendEmail}
                   onChange={(e) => setScheduleSendEmail(e.target.checked)}
                   disabled={busyId === scheduleApp.id}
                 />
-                Send email to candidate
+                {calendarStatus?.shared_google?.connected ? "Also send ATS email to candidate" : "Send email to candidate"}
               </label>
 
               <div className="mt-6">
@@ -1540,6 +1608,22 @@ export default function PipelineBoard({
                 </div>
               </div>
 
+              <div className="mt-4">
+                <label className="block mb-1 text-sm text-gray-600">Internal panel emails</label>
+                <textarea
+                  className="min-h-[88px] w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={rescheduleAttendees}
+                  onChange={(e) => setRescheduleAttendees(e.target.value)}
+                  placeholder="panel1@aasthix.com, panel2@aasthix.com"
+                  disabled={busyId === rescheduleApp.id}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  {calendarStatus?.shared_google?.connected
+                    ? "The shared Google Calendar will update the Meet invite for the candidate and these attendees."
+                    : "Google Calendar is not connected yet. Rescheduling will stay inside the ATS only."}
+                </p>
+              </div>
+
               <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
                 <input
                   type="checkbox"
@@ -1547,7 +1631,7 @@ export default function PipelineBoard({
                   onChange={(e) => setRescheduleSendEmail(e.target.checked)}
                   disabled={busyId === rescheduleApp.id}
                 />
-                Send updated schedule to candidate
+                {calendarStatus?.shared_google?.connected ? "Also send ATS email to candidate" : "Send updated schedule to candidate"}
               </label>
 
               <div className="mt-6">
@@ -1792,6 +1876,26 @@ export default function PipelineBoard({
                                           title={a.interview_datetime || ""}
                                         >
                                           {formatCardDateTime(a.interview_datetime)}
+                                        </span>
+                                      ) : null}
+                                      {a.meet_link ? (
+                                        <a
+                                          href={a.meet_link}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
+                                          onClick={(e) => e.stopPropagation()}
+                                          onPointerDown={(e) => e.stopPropagation()}
+                                        >
+                                          Join Meet
+                                        </a>
+                                      ) : a.calendar_sync_status === "google_not_connected" ? (
+                                        <span className="inline-flex rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                          Google not connected
+                                        </span>
+                                      ) : a.calendar_sync_status === "calendar_sync_failed" ? (
+                                        <span className="inline-flex rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                                          Meet sync failed
                                         </span>
                                       ) : null}
                                     </div>

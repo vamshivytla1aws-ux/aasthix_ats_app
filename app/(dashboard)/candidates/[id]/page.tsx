@@ -41,6 +41,10 @@ type Candidate = {
   interview_completed_at?: string | null;
   interview_status_note?: string | null;
   latest_application_id?: number | null;
+  meet_link?: string | null;
+  calendar_sync_status?: string | null;
+  calendar_sync_error?: string | null;
+  calendar_organizer_email?: string | null;
 };
 
 type TimelineItem = {

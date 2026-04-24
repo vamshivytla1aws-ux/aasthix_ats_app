@@ -27,6 +27,8 @@ export type DrawerApplication = {
   current_interview_round_label?: string | null;
   interview_round_total?: number | null;
   interview_substatus?: "scheduled" | "completed_followup" | "no_show" | "cancelled" | null;
+  meet_link?: string | null;
+  calendar_sync_status?: "meet_created" | "invite_sent" | "calendar_sync_failed" | "google_not_connected" | "calendar_event_cancelled" | null;
 };
 
 function formatWhen(iso?: string | null) {
@@ -145,6 +147,20 @@ export default function PipelineApplicationDrawer({
                           ? "Scheduled"
                           : "Awaiting schedule / decision"}
                 </div>
+                {app.meet_link ? (
+                  <a
+                    href={app.meet_link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700"
+                  >
+                    Join Google Meet
+                  </a>
+                ) : app.calendar_sync_status === "google_not_connected" ? (
+                  <div className="mt-3 text-xs font-medium text-amber-700">Google Calendar not connected</div>
+                ) : app.calendar_sync_status === "calendar_sync_failed" ? (
+                  <div className="mt-3 text-xs font-medium text-rose-700">Meet sync failed</div>
+                ) : null}
               </div>
             </div>
           ) : null}

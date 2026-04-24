@@ -33,6 +33,10 @@ type CandidateProfile = {
   interview_substatus: string | null;
   interview_completed_at: string | null;
   interview_status_note: string | null;
+  meet_link: string | null;
+  calendar_sync_status: string | null;
+  calendar_sync_error: string | null;
+  calendar_organizer_email: string | null;
   /** Latest application by updated_at — compare with pipeline row for same candidate */
   latest_application_id: number | null;
 };
@@ -181,7 +185,11 @@ export async function GET(
         latest.interview_round_status,
         latest.interview_substatus,
         latest.interview_completed_at,
-        latest.interview_status_note
+        latest.interview_status_note,
+        latest.meet_link,
+        latest.calendar_sync_status,
+        latest.calendar_sync_error,
+        latest.calendar_organizer_email
       FROM candidates c
       LEFT JOIN LATERAL (
         SELECT
@@ -194,7 +202,11 @@ export async function GET(
           a.interview_round_status,
           a.interview_substatus,
           a.interview_completed_at,
-          a.interview_status_note
+          a.interview_status_note,
+          a.meet_link,
+          a.calendar_sync_status,
+          a.calendar_sync_error,
+          a.calendar_organizer_email
         ${lateralFromWhere}
       ) latest ON true
       LEFT JOIN jobs j ON j.id = latest.job_id
@@ -230,6 +242,10 @@ export async function GET(
       candidate.interview_substatus = null;
       candidate.interview_completed_at = null;
       candidate.interview_status_note = null;
+      candidate.meet_link = null;
+      candidate.calendar_sync_status = null;
+      candidate.calendar_sync_error = null;
+      candidate.calendar_organizer_email = null;
     }
 
     const timelineRes = await query(
