@@ -27,30 +27,31 @@ function normalizeParagraphs(lines: string[]) {
 function buildFallbackDraft(input: InterviewInviteDraftInput) {
   const candidateName = clean(input.candidateName) || "Candidate";
   const jobTitle = clean(input.jobTitle) || "the role";
-  const company = clean(input.company);
-  const companyLine = company ? ` with ${company}` : "";
+  const company = clean(input.company) || "Aasthix";
   const meetingMode = clean(input.meetingMode) || (input.meetLink ? "Google Meet" : "Interview");
   const meetingLocation = clean(input.meetingLocation);
   const recruiterName = clean(input.recruiterName) || "Aasthix Talent";
   const notes = clean(input.notes);
 
-  const subjectPrefix = input.isReschedule ? "Updated Interview Schedule" : "Interview Invitation";
-  const subject = `${subjectPrefix} - ${jobTitle}`;
+  const subject = input.isReschedule
+    ? `Updated interview schedule for ${jobTitle}`
+    : `Interview invitation for ${jobTitle}`;
 
   const paragraphs = normalizeParagraphs([
+    `Hi ${candidateName},`,
     input.isReschedule
-      ? `Your interview for ${jobTitle}${companyLine} has been rescheduled.`
-      : `Thank you for your interest in ${jobTitle}${companyLine}. We would like to invite you to the next interview round.`,
-    `Interview details: ${input.interviewDateTimeLabel}${input.timezoneLabel ? ` (${input.timezoneLabel})` : ""}.`,
+      ? `Your interview for the ${jobTitle} role at ${company} has been rescheduled.`
+      : `You have been shortlisted for the ${jobTitle} role at ${company}.`,
+    `Your interview is scheduled on ${input.interviewDateTimeLabel}${input.timezoneLabel ? ` (${input.timezoneLabel})` : ""}.`,
     input.meetLink
-      ? `Meeting mode: ${meetingMode}. Please use the following link to join: ${input.meetLink}`
+      ? `Please join through Google Meet using this link: ${input.meetLink}`
       : meetingLocation
-        ? `Meeting mode: ${meetingMode}. Location / access details: ${meetingLocation}`
-        : `Meeting mode: ${meetingMode}.`,
-    input.panelEmails?.length ? `Panel members: ${input.panelEmails.join(", ")}.` : "",
-    notes ? `Additional notes: ${notes}` : "",
-    `Please confirm your availability and let us know if you need any changes.`,
-    `We look forward to speaking with you, ${candidateName}.`,
+        ? `Interview mode: ${meetingMode}. Details: ${meetingLocation}`
+        : `Interview mode: ${meetingMode}.`,
+    "Please join a few minutes before the scheduled time.",
+    notes ? `Additional details: ${notes}` : "",
+    `Please let me know if you have any questions.`,
+    `Regards,\n${recruiterName}`,
   ]);
 
   return {
@@ -89,12 +90,22 @@ export async function draftInterviewInviteWithAi(
   ].join("\n");
 
   const userPrompt = [
-    "Act as a senior technical recruiter writing a professional interview invitation email.",
+    "You are writing an interview invitation email for an ATS platform.",
+    "Write the email like a real recruiter would write it. The tone should be polite, simple, professional, and natural. It should not sound overly formal, robotic, promotional, or AI-generated.",
+    "Use plain text only.",
+    "Do not use Markdown.",
+    "Do not use asterisks.",
+    "Do not use bold text.",
+    "Do not use bullet points.",
+    "Do not use emojis.",
+    "Do not use HTML.",
+    'Do not add unnecessary greetings like "I hope this email finds you well."',
+    'Do not use generic AI-style phrases such as "we are delighted", "exciting opportunity", "seamless experience", or "kindly be informed."',
+    "Keep the email short and realistic.",
+    "Write only the subject and email body.",
+    "The body should invite the candidate to join the interview through Google Meet when a Meet link is available, mention the date and time clearly, and ask them to join a few minutes before the scheduled time.",
+    "If this is a reschedule, make that clear naturally.",
     "Use the JD context to make the message feel tailored to the role, but do not invent facts.",
-    "Write a concise, polished subject and body in plain text.",
-    "Include the interview date/time, meeting mode, and the join/location details if available.",
-    "If panel members exist, acknowledge that the panel will be part of the interview, but do not dump raw CC formatting into the body.",
-    "If this is a reschedule, make that clear.",
     'Return JSON only with keys "subject" and "body".',
     "",
     context,
@@ -115,7 +126,7 @@ export async function draftInterviewInviteWithAi(
           {
             role: "system",
             content:
-              "You help recruiters draft interview invitation emails. Output valid JSON only. Never invent compensation, office addresses, or interviewers not present in the context.",
+              "You help recruiters draft plain-text interview invitation emails. Output valid JSON only. Never invent compensation, office addresses, interviewers, durations, or logistics not present in the context.",
           },
           { role: "user", content: userPrompt },
         ],
