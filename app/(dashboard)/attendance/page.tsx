@@ -351,6 +351,7 @@ export default function AttendancePage() {
                       <option value="recruiter">Recruiter</option>
                       <option value="hiring_manager">Hiring manager</option>
                       <option value="coordinator">Coordinator</option>
+                      <option value="employee">Employee</option>
                       <option value="user">User</option>
                     </select>
                   </div>

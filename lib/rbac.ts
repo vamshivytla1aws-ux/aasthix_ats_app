@@ -8,6 +8,10 @@ export const BOARD_PERMISSION_KEYS = [
   "attendance.manage_self",
   "attendance.view_all",
   "attendance.manage_all",
+  "timesheet.view_self",
+  "timesheet.manage_self",
+  "timesheet.view_all",
+  "timesheet.manage_all",
   "candidates.view",
   "candidates.manage",
   "jobs.view",
@@ -61,6 +65,8 @@ const BASELINE_USER = mergeBaseline({
   "dashboard.view": true,
   "attendance.view_self": true,
   "attendance.manage_self": true,
+  "timesheet.view_self": true,
+  "timesheet.manage_self": true,
   "candidates.view": true,
   "jobs.view": true,
   "alerts.view": true,
@@ -71,6 +77,8 @@ const BASELINE_RECRUITER = mergeBaseline({
   "dashboard.view": true,
   "attendance.view_self": true,
   "attendance.manage_self": true,
+  "timesheet.view_self": true,
+  "timesheet.manage_self": true,
   "candidates.view": true,
   "candidates.manage": true,
   "jobs.view": true,
@@ -89,6 +97,8 @@ const BASELINE_HIRING_MANAGER = mergeBaseline({
   "dashboard.view": true,
   "attendance.view_self": true,
   "attendance.manage_self": true,
+  "timesheet.view_self": true,
+  "timesheet.manage_self": true,
   "candidates.view": true,
   "jobs.view": true,
   "pipeline.view": true,
@@ -105,12 +115,26 @@ const BASELINE_COORDINATOR = mergeBaseline({
   "attendance.manage_self": true,
   "attendance.view_all": true,
   "attendance.manage_all": true,
+  "timesheet.view_self": true,
+  "timesheet.manage_self": true,
+  "timesheet.view_all": true,
+  "timesheet.manage_all": true,
   "pipeline.view": true,
   "pipeline.manage": true,
   "interviews.view": true,
   "interviews.manage": true,
   "alerts.view": true,
   "coordinator.view": true,
+  "chat.view": true,
+});
+
+const BASELINE_EMPLOYEE = mergeBaseline({
+  "dashboard.view": true,
+  "attendance.view_self": true,
+  "attendance.manage_self": true,
+  "timesheet.view_self": true,
+  "timesheet.manage_self": true,
+  "alerts.view": true,
   "chat.view": true,
 });
 
@@ -127,6 +151,8 @@ export function baselineForRole(role: string): Record<BoardPermissionKey, boolea
       return BASELINE_HIRING_MANAGER;
     case "coordinator":
       return BASELINE_COORDINATOR;
+    case "employee":
+      return BASELINE_EMPLOYEE;
     default:
       return BASELINE_USER;
   }
@@ -139,6 +165,7 @@ export function normalizeRole(role: string | null | undefined): string {
   if (r === "recruiter") return "recruiter";
   if (r === "hiring_manager") return "hiring_manager";
   if (r === "coordinator") return "coordinator";
+  if (r === "employee") return "employee";
   return "user";
 }
 

@@ -41,6 +41,8 @@ const PRESETS: Record<string, string> = {
     "bg-teal-50 text-teal-800 ring-teal-200 dark:bg-teal-900/60 dark:text-teal-200 dark:ring-teal-700",
   draft:
     "bg-gray-100 text-gray-600 ring-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:ring-gray-600",
+  submitted:
+    "bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-900/60 dark:text-emerald-200 dark:ring-emerald-700",
   pending_approval:
     "bg-indigo-50 text-indigo-800 ring-indigo-200 dark:bg-indigo-900/60 dark:text-indigo-200 dark:ring-indigo-700",
   critical:
@@ -67,6 +69,7 @@ function resolveVariant(label: string): string {
   if (s === "read") return "read";
   if (s === "expired") return "expired";
   if (s === "draft") return "draft";
+  if (s === "submitted") return "submitted";
   if (s === "closed") return "closed";
   if (s === "filled") return "filled";
   if (s === "critical") return "critical";
