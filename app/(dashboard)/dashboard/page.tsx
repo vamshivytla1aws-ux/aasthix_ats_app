@@ -15,6 +15,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import AccessGate from "@/components/AccessGate";
+import DashboardAttendanceCard from "@/components/attendance/DashboardAttendanceCard";
 import HrAssistantPanel from "@/components/hrAssistant/HrAssistantPanel";
 
 type Stage = "Applied" | "Screening" | "Screening Failed" | "Interview" | "Selected" | "Rejected";
@@ -311,6 +312,8 @@ export default function DashboardPage() {
                 </div>
               </section>
             </div>
+
+            <DashboardAttendanceCard />
 
             <HrAssistantPanel />
 

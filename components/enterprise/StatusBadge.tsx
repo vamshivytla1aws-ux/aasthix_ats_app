@@ -15,6 +15,14 @@ const PRESETS: Record<string, string> = {
     "bg-teal-50 text-teal-800 ring-teal-200 dark:bg-teal-900/60 dark:text-teal-200 dark:ring-teal-700",
   scheduled:
     "bg-sky-50 text-sky-900 ring-sky-200 dark:bg-sky-900/60 dark:text-sky-200 dark:ring-sky-700",
+  present:
+    "bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-900/60 dark:text-emerald-200 dark:ring-emerald-700",
+  late:
+    "bg-amber-50 text-amber-900 ring-amber-200 dark:bg-amber-900/60 dark:text-amber-200 dark:ring-amber-700",
+  absent:
+    "bg-rose-50 text-rose-800 ring-rose-200 dark:bg-rose-900/60 dark:text-rose-200 dark:ring-rose-700",
+  not_checked_in:
+    "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-600",
   unscheduled:
     "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-600",
   unread:
@@ -49,6 +57,10 @@ function resolveVariant(label: string): string {
   const s = label.trim().toLowerCase();
 
   if (s === "active" || s === "open") return "open";
+  if (s === "present") return "present";
+  if (s === "late") return "late";
+  if (s === "absent") return "absent";
+  if (s === "not checked in" || s === "not_checked_in") return "not_checked_in";
   if (s === "placed") return "placed";
   if (s === "selected") return "selected";
   if (s === "unread") return "unread";

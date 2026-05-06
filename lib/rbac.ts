@@ -4,6 +4,10 @@ import { APP_ROLES as APP_ROLES_CONST, INVITE_ROLES as INVITE_ROLES_CONST } from
 
 export const BOARD_PERMISSION_KEYS = [
   "dashboard.view",
+  "attendance.view_self",
+  "attendance.manage_self",
+  "attendance.view_all",
+  "attendance.manage_all",
   "candidates.view",
   "candidates.manage",
   "jobs.view",
@@ -55,6 +59,8 @@ function mergeBaseline(partial: Partial<Record<BoardPermissionKey, boolean>>): R
 /** Default access for new `user` role (overridable by explicit user_permissions rows). */
 const BASELINE_USER = mergeBaseline({
   "dashboard.view": true,
+  "attendance.view_self": true,
+  "attendance.manage_self": true,
   "candidates.view": true,
   "jobs.view": true,
   "alerts.view": true,
@@ -63,6 +69,8 @@ const BASELINE_USER = mergeBaseline({
 
 const BASELINE_RECRUITER = mergeBaseline({
   "dashboard.view": true,
+  "attendance.view_self": true,
+  "attendance.manage_self": true,
   "candidates.view": true,
   "candidates.manage": true,
   "jobs.view": true,
@@ -79,6 +87,8 @@ const BASELINE_RECRUITER = mergeBaseline({
 
 const BASELINE_HIRING_MANAGER = mergeBaseline({
   "dashboard.view": true,
+  "attendance.view_self": true,
+  "attendance.manage_self": true,
   "candidates.view": true,
   "jobs.view": true,
   "pipeline.view": true,
@@ -91,6 +101,10 @@ const BASELINE_HIRING_MANAGER = mergeBaseline({
 
 const BASELINE_COORDINATOR = mergeBaseline({
   "dashboard.view": true,
+  "attendance.view_self": true,
+  "attendance.manage_self": true,
+  "attendance.view_all": true,
+  "attendance.manage_all": true,
   "pipeline.view": true,
   "pipeline.manage": true,
   "interviews.view": true,

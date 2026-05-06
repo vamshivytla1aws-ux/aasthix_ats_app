@@ -25,6 +25,7 @@ export const DASHBOARD_PRIMARY_NAV: DashboardNavItem[] = [
 
 export const DASHBOARD_MORE_NAV: DashboardNavItem[] = [
   { id: "analytics", label: "Analytics", href: "/analytics", permissionKey: "jobs.view" },
+  { id: "attendance", label: "Attendance", href: "/attendance", permissionKey: "attendance.view_self" },
   { id: "alerts", label: "Alerts", href: "/alerts", permissionKey: "alerts.view" },
   { id: "activity", label: "Activity Center", href: "/activity-center", permissionKey: "dashboard.view" },
   { id: "screening", label: "Screening", href: "/screening", permissionKey: "pipeline.view" },
