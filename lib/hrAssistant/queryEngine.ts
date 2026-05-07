@@ -21,6 +21,10 @@ function canViewBoard(access: AuthAccess, permissionKey: string) {
   return access.role === "admin" || access.permissions[permissionKey] !== false;
 }
 
+function isSelectedStage(stage: string | null | undefined) {
+  return String(stage || "").trim().toLowerCase() === "selected";
+}
+
 function addDateRange(
   filters: HrFilters | undefined,
   params: unknown[],
@@ -317,7 +321,10 @@ async function queryApplications(
   if (interviewsOnly && (filters.date_from || filters.date_to)) {
     addInterviewCalendarWindow(filters, params, where);
   } else {
-    addDateRange(filters, params, where, "a.created_at");
+    // For Selected-stage queries, "this week" should reflect stage transition timing.
+    // We use updated_at because stage updates are persisted there.
+    const dateColumn = isSelectedStage(filters.stage) ? "a.updated_at" : "a.created_at";
+    addDateRange(filters, params, where, dateColumn);
   }
 
   const orderSql = interviewsOnly
@@ -529,13 +536,15 @@ async function runAnalytics(access: AuthAccess, plan: HrAssistantPlan): Promise<
     params.push(filters.stage.trim());
     where.push(`a.stage = $${params.length}`);
   }
+  // For Selected-stage counts, use updated_at so "selected this week" matches pipeline moves.
+  const analyticsDateColumn = isSelectedStage(filters.stage) ? "a.updated_at" : "a.created_at";
   if (filters.date_from) {
     params.push(filters.date_from);
-    where.push(`a.created_at >= $${params.length}::timestamptz`);
+    where.push(`${analyticsDateColumn} >= $${params.length}::timestamptz`);
   }
   if (filters.date_to) {
     params.push(filters.date_to);
-    where.push(`a.created_at <= $${params.length}::timestamptz`);
+    where.push(`${analyticsDateColumn} <= $${params.length}::timestamptz`);
   }
   const sql = `SELECT COUNT(*)::int AS total FROM applications a WHERE ${where.join(" AND ")}`;
   const res = await query(sql, params);
