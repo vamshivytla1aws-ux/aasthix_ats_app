@@ -1,13 +1,25 @@
 import { NextResponse } from "next/server";
-import { requirePermission } from "@/lib/rbac";
+import { getAuthAccess, requirePermission } from "@/lib/rbac";
 import { getTimesheetHeaderById, updateTimesheetHeader } from "@/lib/timesheet";
 import { writeAuditLog } from "@/lib/auditLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+async function requireTimesheetSelfWrite() {
+  const strict = await requirePermission("timesheet.manage_self");
+  if (strict.ok) return strict;
+  if (strict.status !== 403) return strict;
+  const access = await getAuthAccess();
+  if (!access) return strict;
+  if (access.role === "admin" || access.permissions["timesheet.view_self"] === true) {
+    return { ok: true as const, access };
+  }
+  return strict;
+}
+
 export async function POST(request: Request) {
-  const auth = await requirePermission("timesheet.manage_self");
+  const auth = await requireTimesheetSelfWrite();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   try {

@@ -39,6 +39,10 @@ export type AttendanceRegisterRow = {
   total_minutes: number;
   source: AttendanceSource | null;
   admin_note: string | null;
+  shift_start_time_local: string | null;
+  shift_grace_minutes: number | null;
+  effective_start_time_local: string;
+  effective_grace_minutes: number;
 };
 
 const DEFAULT_SETTINGS: AttendanceSettings = {
@@ -121,6 +125,18 @@ function isWorkingDay(attendanceDate: string, settings: AttendanceSettings) {
 function deriveStatus(date: Date, settings: AttendanceSettings): AttendanceStatus {
   const [startHour, startMinute] = settings.start_time_local.split(":").map((part) => toNumber(part));
   const startMinutes = startHour * 60 + startMinute + settings.grace_minutes;
+  return localMinutes(date, settings.company_timezone) > startMinutes ? "late" : "present";
+}
+
+function deriveStatusWithShift(
+  date: Date,
+  settings: AttendanceSettings,
+  shift?: { start_time_local: string | null; grace_minutes: number | null } | null
+): AttendanceStatus {
+  const start = cleanTime(shift?.start_time_local, settings.start_time_local);
+  const grace = Math.max(0, Math.min(240, toNumber(shift?.grace_minutes, settings.grace_minutes)));
+  const [startHour, startMinute] = start.split(":").map((part) => toNumber(part));
+  const startMinutes = startHour * 60 + startMinute + grace;
   return localMinutes(date, settings.company_timezone) > startMinutes ? "late" : "present";
 }
 
@@ -242,7 +258,15 @@ export async function checkInUser(userId: number, source: AttendanceSource = "se
   const settings = await getAttendanceSettings();
   const now = new Date();
   const attendanceDate = formatAttendanceDate(now, settings.company_timezone);
-  const status = deriveStatus(now, settings);
+  const userShiftRes = await query(
+    `SELECT shift_start_time_local, shift_grace_minutes FROM users WHERE id = $1 LIMIT 1`,
+    [userId]
+  ).catch(() => ({ rows: [] }));
+  const userShiftRow = (userShiftRes.rows?.[0] as Record<string, unknown> | undefined) ?? null;
+  const status = deriveStatusWithShift(now, settings, {
+    start_time_local: userShiftRow?.shift_start_time_local ? String(userShiftRow.shift_start_time_local) : null,
+    grace_minutes: userShiftRow?.shift_grace_minutes == null ? null : toNumber(userShiftRow.shift_grace_minutes),
+  });
 
   const res = await query(
     `
@@ -412,6 +436,7 @@ export async function getAttendanceRegister(input: {
   userId?: number | null;
   q?: string | null;
 }) {
+  const settings = await getAttendanceSettings();
   const params: unknown[] = [input.attendanceDate];
   const where: string[] = ["COALESCE(u.attendance_enabled, TRUE) = TRUE"];
 
@@ -444,6 +469,8 @@ export async function getAttendanceRegister(input: {
       u.email,
       LOWER(COALESCE(u.role, 'user')) AS role,
       COALESCE(u.attendance_enabled, TRUE) AS attendance_enabled,
+      u.shift_start_time_local,
+      u.shift_grace_minutes,
       $1::date::text AS attendance_date,
       CASE
         WHEN ar.id IS NULL THEN 'not_checked_in'
@@ -484,6 +511,13 @@ export async function getAttendanceRegister(input: {
     total_minutes: toNumber(row.total_minutes),
     source: row.source ? (String(row.source) as AttendanceSource) : null,
     admin_note: row.admin_note ? String(row.admin_note) : null,
+    shift_start_time_local: row.shift_start_time_local ? String(row.shift_start_time_local) : null,
+    shift_grace_minutes: row.shift_grace_minutes == null ? null : toNumber(row.shift_grace_minutes),
+    effective_start_time_local: cleanTime(row.shift_start_time_local, settings.start_time_local),
+    effective_grace_minutes:
+      row.shift_grace_minutes == null
+        ? settings.grace_minutes
+        : Math.max(0, Math.min(240, toNumber(row.shift_grace_minutes, settings.grace_minutes))),
   })) as AttendanceRegisterRow[];
 }
 
@@ -496,13 +530,21 @@ export async function adminUpsertAttendance(input: {
   adminNote?: string | null;
 }) {
   const settings = await getAttendanceSettings();
+  const userShiftRes = await query(
+    `SELECT shift_start_time_local, shift_grace_minutes FROM users WHERE id = $1 LIMIT 1`,
+    [input.userId]
+  ).catch(() => ({ rows: [] }));
+  const userShiftRow = (userShiftRes.rows?.[0] as Record<string, unknown> | undefined) ?? null;
   const firstCheckInAt = input.status === "absent" ? null : input.firstCheckInAt || null;
   const lastCheckOutAt = input.status === "absent" ? null : input.lastCheckOutAt || null;
   const derivedStatus =
     input.status === "absent"
       ? "absent"
       : firstCheckInAt
-        ? deriveStatus(new Date(firstCheckInAt), settings)
+        ? deriveStatusWithShift(new Date(firstCheckInAt), settings, {
+            start_time_local: userShiftRow?.shift_start_time_local ? String(userShiftRow.shift_start_time_local) : null,
+            grace_minutes: userShiftRow?.shift_grace_minutes == null ? null : toNumber(userShiftRow.shift_grace_minutes),
+          })
         : input.status;
   const totalMinutes = totalMinutesBetween(firstCheckInAt, lastCheckOutAt);
 
@@ -534,4 +576,37 @@ export async function adminUpsertAttendance(input: {
     [input.userId, input.attendanceDate, derivedStatus, firstCheckInAt, lastCheckOutAt, totalMinutes, input.adminNote || null]
   );
   return normalizeRecord(res.rows?.[0] as Record<string, unknown>);
+}
+
+export async function updateUserAttendanceShift(input: {
+  userId: number;
+  startTimeLocal: string | null;
+  graceMinutes: number | null;
+}) {
+  const startTime =
+    input.startTimeLocal && input.startTimeLocal.trim().length
+      ? cleanTime(input.startTimeLocal, DEFAULT_SETTINGS.start_time_local)
+      : null;
+  const grace =
+    input.graceMinutes == null ? null : Math.max(0, Math.min(240, toNumber(input.graceMinutes, DEFAULT_SETTINGS.grace_minutes)));
+
+  const res = await query(
+    `
+    UPDATE users
+    SET
+      shift_start_time_local = $2,
+      shift_grace_minutes = $3
+    WHERE id = $1
+    RETURNING id, shift_start_time_local, shift_grace_minutes
+    `,
+    [input.userId, startTime, grace]
+  );
+
+  const row = (res.rows?.[0] as Record<string, unknown> | undefined) ?? null;
+  if (!row) return null;
+  return {
+    user_id: toNumber(row.id),
+    shift_start_time_local: row.shift_start_time_local ? String(row.shift_start_time_local) : null,
+    shift_grace_minutes: row.shift_grace_minutes == null ? null : toNumber(row.shift_grace_minutes),
+  };
 }

@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { adminUpsertAttendance, getAttendanceRegister, getAttendanceSettings, getAttendanceTargetDates, markAbsentForDate } from "@/lib/attendance";
+import {
+  adminUpsertAttendance,
+  getAttendanceRegister,
+  getAttendanceSettings,
+  getAttendanceTargetDates,
+  markAbsentForDate,
+  updateUserAttendanceShift,
+} from "@/lib/attendance";
 import { requirePermission } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/auditLog";
 
@@ -50,6 +57,23 @@ export async function PATCH(request: Request) {
         metadata: result,
       });
       return NextResponse.json(result);
+    }
+    if (body.action === "update_shift") {
+      const userId = Number(body.user_id);
+      if (!Number.isFinite(userId)) {
+        return NextResponse.json({ error: "user_id is required." }, { status: 400 });
+      }
+      const shift = await updateUserAttendanceShift({
+        userId,
+        startTimeLocal: body.shift_start_time_local == null ? null : String(body.shift_start_time_local || ""),
+        graceMinutes: body.shift_grace_minutes == null ? null : Number(body.shift_grace_minutes),
+      });
+      await writeAuditLog({
+        actorUserId: auth.access.user_id,
+        action: "attendance.shift_updated",
+        metadata: { user_id: userId, shift },
+      });
+      return NextResponse.json({ shift });
     }
 
     const record = await adminUpsertAttendance({

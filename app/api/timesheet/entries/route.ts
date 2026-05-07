@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePermission } from "@/lib/rbac";
+import { getAuthAccess, requirePermission } from "@/lib/rbac";
 import {
   deleteTimesheetEntry,
   getOrCreateTimesheetHeader,
@@ -11,6 +11,18 @@ import { writeAuditLog } from "@/lib/auditLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+async function requireTimesheetSelfWrite() {
+  const strict = await requirePermission("timesheet.manage_self");
+  if (strict.ok) return strict;
+  if (strict.status !== 403) return strict;
+  const access = await getAuthAccess();
+  if (!access) return strict;
+  if (access.role === "admin" || access.permissions["timesheet.view_self"] === true) {
+    return { ok: true as const, access };
+  }
+  return strict;
+}
 
 async function resolveHeaderForSelf(userId: number, entryDate: string) {
   return getOrCreateTimesheetHeader({ userId, entryDate, source: "self" });
@@ -56,7 +68,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requirePermission("timesheet.manage_self");
+  const auth = await requireTimesheetSelfWrite();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   try {
@@ -100,7 +112,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const auth = await requirePermission("timesheet.manage_self");
+  const auth = await requireTimesheetSelfWrite();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   try {
@@ -140,7 +152,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const auth = await requirePermission("timesheet.manage_self");
+  const auth = await requireTimesheetSelfWrite();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   try {

@@ -61,6 +61,10 @@ type AttendanceRegisterRow = {
   total_minutes: number;
   source: "self" | "admin" | "system" | null;
   admin_note: string | null;
+  shift_start_time_local: string | null;
+  shift_grace_minutes: number | null;
+  effective_start_time_local: string;
+  effective_grace_minutes: number;
 };
 
 type RegisterResponse = {
@@ -126,6 +130,9 @@ export default function AttendancePage() {
   const [editCheckIn, setEditCheckIn] = useState("");
   const [editCheckOut, setEditCheckOut] = useState("");
   const [editNote, setEditNote] = useState("");
+  const [shiftRow, setShiftRow] = useState<AttendanceRegisterRow | null>(null);
+  const [shiftStart, setShiftStart] = useState("09:30");
+  const [shiftGrace, setShiftGrace] = useState(15);
 
   React.useEffect(() => {
     let active = true;
@@ -258,6 +265,36 @@ export default function AttendancePage() {
     }
   }
 
+  function openShiftEdit(row: AttendanceRegisterRow) {
+    setShiftRow(row);
+    setShiftStart(row.shift_start_time_local || row.effective_start_time_local || "09:30");
+    setShiftGrace(row.shift_grace_minutes ?? row.effective_grace_minutes ?? 15);
+  }
+
+  async function saveShiftSettings() {
+    if (!shiftRow) return;
+    setBusy("save-shift");
+    try {
+      await apiFetchJson("/api/attendance/register", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_shift",
+          user_id: shiftRow.user_id,
+          shift_start_time_local: shiftStart || null,
+          shift_grace_minutes: Number.isFinite(shiftGrace) ? shiftGrace : 15,
+        }),
+      });
+      setToast({ message: `Shift updated for ${shiftRow.full_name}.`, variant: "success" });
+      setShiftRow(null);
+      await Promise.all([registerSwr.mutate(), meSwr.mutate(), summarySwr.mutate()]);
+    } catch (error) {
+      setToast({ message: error instanceof Error ? error.message : "Failed to update shift settings.", variant: "error" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const recentRows = useMemo(() => meSwr.data?.recent_records || [], [meSwr.data]);
   const registerRows = useMemo(() => registerSwr.data?.rows || [], [registerSwr.data]);
   const todayStatus = meSwr.data?.record?.status?.replace(/_/g, " ") || "not checked in";
@@ -372,6 +409,7 @@ export default function AttendancePage() {
                           <th className="px-4 py-3 w-[16%]">Check in</th>
                           <th className="px-4 py-3 w-[16%]">Check out</th>
                           <th className="px-4 py-3 w-[10%]">Worked</th>
+                          <th className="px-4 py-3 w-[10%]">Shift</th>
                           <th className="px-4 py-3 w-[8%]">Source</th>
                           <th className="px-4 py-3 w-[8%] text-right">Actions</th>
                         </tr>
@@ -388,6 +426,7 @@ export default function AttendancePage() {
                             <td className="px-4 py-3 text-[var(--ats-text)]">{formatDateTime(row.first_check_in_at)}</td>
                             <td className="px-4 py-3 text-[var(--ats-text)]">{formatDateTime(row.last_check_out_at)}</td>
                             <td className="px-4 py-3 text-[var(--ats-text)]">{formatMinutes(row.total_minutes)}</td>
+                            <td className="px-4 py-3 text-[var(--ats-text-muted)]">{row.effective_start_time_local} +{row.effective_grace_minutes}m</td>
                             <td className="px-4 py-3 text-[var(--ats-text-muted)]">{row.source || "—"}</td>
                             <td className="px-4 py-3 text-right">
                               {canManageAll ? (
@@ -398,6 +437,11 @@ export default function AttendancePage() {
                                       label: "Edit attendance",
                                       onClick: () => openEdit(row),
                                     },
+                                    {
+                                      type: "button",
+                                      label: "Set shift timing",
+                                      onClick: () => openShiftEdit(row),
+                                    },
                                   ]}
                                 />
                               ) : null}
@@ -406,7 +450,7 @@ export default function AttendancePage() {
                         ))}
                         {registerRows.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className="px-4 py-8 text-center text-sm text-[var(--ats-text-muted)]">
+                            <td colSpan={9} className="px-4 py-8 text-center text-sm text-[var(--ats-text-muted)]">
                               No attendance rows matched the current filters.
                             </td>
                           </tr>
@@ -534,6 +578,39 @@ export default function AttendancePage() {
                 <button type="button" onClick={() => setEditRow(null)} className={UI.secondaryButton + " py-2 text-sm"}>Cancel</button>
                 <button type="button" onClick={() => void saveEdit()} disabled={busy !== null} className={UI.primaryButton + " py-2 text-sm"}>
                   {busy === "save-edit" ? "Saving…" : "Save attendance"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {shiftRow ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-xl rounded-[1.6rem] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-6 shadow-[var(--ats-shadow-md)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-lg font-semibold text-[var(--ats-text)]">Set shift timing</div>
+                  <div className="mt-1 text-sm text-[var(--ats-text-muted)]">{shiftRow.full_name} · {shiftRow.role}</div>
+                </div>
+                <button type="button" onClick={() => setShiftRow(null)} className={UI.secondaryButton + " py-2 text-xs"}>Close</button>
+              </div>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className={UI.label}>Shift start time</label>
+                  <input type="time" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)} className={UI.input} />
+                </div>
+                <div>
+                  <label className={UI.label}>Grace minutes</label>
+                  <input type="number" min={0} max={240} value={shiftGrace} onChange={(e) => setShiftGrace(Number(e.target.value || 0))} className={UI.input} />
+                </div>
+              </div>
+              <div className="mt-2 text-xs text-[var(--ats-text-muted)]">This user-level shift overrides company default shift timing.</div>
+
+              <div className="mt-5 flex justify-end gap-2">
+                <button type="button" onClick={() => setShiftRow(null)} className={UI.secondaryButton + " py-2 text-sm"}>Cancel</button>
+                <button type="button" onClick={() => void saveShiftSettings()} disabled={busy !== null} className={UI.primaryButton + " py-2 text-sm"}>
+                  {busy === "save-shift" ? "Saving..." : "Save shift"}
                 </button>
               </div>
             </div>
