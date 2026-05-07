@@ -39,7 +39,7 @@ export async function GET(request: Request) {
           params.push(`%${kw}%`);
           const idx = params.length;
           return `(
-            c.full_name ILIKE $${idx}
+            COALESCE(NULLIF(TRIM(c.full_name), ''), SPLIT_PART(c.email, '@', 1)) ILIKE $${idx}
             OR c.location ILIKE $${idx}
             OR EXISTS (
               SELECT 1
@@ -113,7 +113,7 @@ export async function GET(request: Request) {
       `
       SELECT
         c.id,
-        c.full_name,
+        COALESCE(NULLIF(TRIM(c.full_name), ''), SPLIT_PART(c.email, '@', 1)) AS full_name,
         c.email,
         c.phone,
         c.created_at,

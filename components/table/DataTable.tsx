@@ -55,6 +55,14 @@ function normalize(text: string) {
   return text.trim().toLowerCase();
 }
 
+function toDisplayName(candidate: Candidate) {
+  const fromName = (candidate.full_name || "").trim();
+  if (fromName) return fromName;
+  const fromEmail = (candidate.email || "").split("@")[0]?.replace(/[._-]+/g, " ").trim();
+  if (fromEmail) return fromEmail;
+  return `Candidate ${candidate.id}`;
+}
+
 function formatCreatedDate(value: string | null | undefined) {
   if (!value) return "—";
   try {
@@ -170,7 +178,7 @@ export default function DataTable({
       .filter(Boolean);
 
     return data.filter((c) => {
-      const name = normalize(c.full_name || "");
+      const name = normalize(toDisplayName(c));
       const email = normalize(c.email || "");
       const phone = normalize(c.phone || "");
       const loc = normalize(c.location || "");
@@ -668,14 +676,14 @@ export default function DataTable({
                       type="checkbox"
                       className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                       checked={selectedIds.has(c.id)}
-                      aria-label={`Select ${c.full_name}`}
+                      aria-label={`Select ${toDisplayName(c)}`}
                       onChange={() => toggleSelectOne(c.id)}
                       onClick={(e) => e.stopPropagation()}
                     />
                   </td>
                   {columns.name ? <td style={{ width: columnWidths.name }} className={[rowClass, "font-semibold text-slate-900"].join(" ")}>
                     <span className="block max-w-[200px] truncate">
-                      {c.full_name}
+                      {toDisplayName(c)}
                       <span className="ml-1 text-[10px] font-normal text-slate-400">#{c.id}</span>
                     </span>
                   </td> : null}
