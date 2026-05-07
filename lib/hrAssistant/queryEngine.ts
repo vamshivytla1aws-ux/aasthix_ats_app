@@ -1,8 +1,9 @@
 import { query } from "@/lib/db";
 import type { AuthAccess } from "@/lib/rbac";
-import type { HrAssistantPlan, HrFilters, HrQueryResult } from "./types";
+import type { HrAssistantPlan, HrFilters, HrQueryResult, HrVerificationMeta } from "./types";
 import { PIPELINE_STAGES } from "./types";
 import { applicationsScopeSql, candidatesScopeSql, jobsScopeSql } from "./visibility";
+import { getHrAssistantReportingTimezone } from "./relativeDates";
 import {
   candidatesHasExperience,
   candidatesHasSkillsCsv,
@@ -23,6 +24,12 @@ function canViewBoard(access: AuthAccess, permissionKey: string) {
 
 function isSelectedStage(stage: string | null | undefined) {
   return String(stage || "").trim().toLowerCase() === "selected";
+}
+
+function isStrictCriticalCount(plan: HrAssistantPlan) {
+  if (plan.kind !== "query") return false;
+  if ((plan.analytics?.metric ?? "count") !== "count") return false;
+  return plan.entity === "applications" || plan.entity === "interviews" || Boolean(plan.filters?.stage);
 }
 
 function addDateRange(
@@ -434,6 +441,48 @@ async function runBoardTotals(access: AuthAccess): Promise<HrQueryResult> {
   };
 }
 
+async function verifyApplicationsCountStrict(input: {
+  where: string[];
+  params: unknown[];
+  countValue: number;
+  definitionUsed: string;
+}): Promise<HrVerificationMeta> {
+  const timezone = getHrAssistantReportingTimezone();
+  const idSql = `
+    SELECT a.id::int AS application_id
+    FROM applications a
+    WHERE ${input.where.join(" AND ")}
+    ORDER BY a.updated_at DESC NULLS LAST
+    LIMIT 500
+  `;
+  const idRes = await query(idSql, input.params);
+  const ids = (idRes.rows as Array<{ application_id: number }>).map((r) => Number(r.application_id)).filter(Number.isFinite);
+  if (ids.length === input.countValue) {
+    return {
+      verified: true,
+      definition_used: input.definitionUsed,
+      timezone_used: timezone,
+      query_variant: "count_plus_id_set_v1",
+      sample_ids: ids.slice(0, 10),
+    };
+  }
+
+  const distinctCountSql = `SELECT COUNT(DISTINCT a.id)::int AS total FROM applications a WHERE ${input.where.join(" AND ")}`;
+  const fallbackRes = await query(distinctCountSql, input.params);
+  const fallbackTotal = Number((fallbackRes.rows?.[0] as { total?: number } | undefined)?.total ?? 0);
+  const fallbackOk = fallbackTotal === ids.length;
+  return {
+    verified: fallbackOk,
+    definition_used: input.definitionUsed,
+    timezone_used: timezone,
+    query_variant: fallbackOk ? "distinct_count_plus_id_set_v2" : "count_mismatch_exposed",
+    sample_ids: ids.slice(0, 10),
+    warning: fallbackOk
+      ? undefined
+      : `Verification mismatch: count=${input.countValue}, ids=${ids.length}, distinct_count=${fallbackTotal}.`,
+  };
+}
+
 async function runAnalytics(access: AuthAccess, plan: HrAssistantPlan): Promise<HrQueryResult> {
   const metric = plan.analytics?.metric ?? "count";
   const filters = plan.filters ?? {};
@@ -448,11 +497,11 @@ async function runAnalytics(access: AuthAccess, plan: HrAssistantPlan): Promise<
     const where: string[] = [scope];
     if (filters.date_from) {
       params.push(filters.date_from);
-      where.push(`a.created_at >= $${params.length}::timestamptz`);
+      where.push(`a.updated_at >= $${params.length}::timestamptz`);
     }
     if (filters.date_to) {
       params.push(filters.date_to);
-      where.push(`a.created_at <= $${params.length}::timestamptz`);
+      where.push(`a.updated_at <= $${params.length}::timestamptz`);
     }
     const sql = `
       SELECT a.stage, COUNT(*)::int AS count
@@ -549,5 +598,21 @@ async function runAnalytics(access: AuthAccess, plan: HrAssistantPlan): Promise<
   const sql = `SELECT COUNT(*)::int AS total FROM applications a WHERE ${where.join(" AND ")}`;
   const res = await query(sql, params);
   const total = (res.rows[0] as { total: number })?.total ?? 0;
-  return { entity: "analytics", columns: ["metric", "total"], rows: [{ metric: "applications", total }] };
+  const definitionUsed = isSelectedStage(filters.stage)
+    ? "Selected stage based on applications.updated_at"
+    : "Applications count based on applications.created_at (or stage filter)";
+  const verification = isStrictCriticalCount(plan)
+    ? await verifyApplicationsCountStrict({
+        where,
+        params,
+        countValue: total,
+        definitionUsed,
+      })
+    : undefined;
+  return {
+    entity: "analytics",
+    columns: ["metric", "total"],
+    rows: [{ metric: "applications", total }],
+    verification,
+  };
 }

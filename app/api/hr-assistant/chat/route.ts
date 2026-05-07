@@ -9,6 +9,7 @@ import { summarizeQueryResult } from "@/lib/hrAssistant/formatReply";
 import type { HrAssistantPlan, HrDirectAction, HrEntity } from "@/lib/hrAssistant/types";
 import { alignPlanWithUserMessage } from "@/lib/hrAssistant/planNormalize";
 import { applyRelativeDatesFromMessage } from "@/lib/hrAssistant/relativeDates";
+import { applyStrictMetricPolicy } from "@/lib/hrAssistant/policy";
 import { buildStructuredContextFromHistory } from "@/lib/hrAssistant/conversationContext";
 import { enrichQueryReply } from "@/lib/hrAssistant/enrichReply";
 import { checkHrAssistantRateLimit } from "@/lib/hrAssistant/rateLimit";
@@ -156,6 +157,7 @@ export async function POST(request: Request) {
 
     if (plan.kind === "query") {
       plan = alignPlanWithUserMessage(plan, message);
+      plan = applyStrictMetricPolicy(plan, message);
       plan = applyRelativeDatesFromMessage(plan, message);
     }
 
@@ -225,6 +227,7 @@ export async function POST(request: Request) {
         suggestedFollowUps: enriched.suggestedFollowUps,
         relatedLinks: enriched.relatedLinks,
         chartSeries: enriched.chartSeries,
+        verification: result.verification,
       };
       await persistMessage(access.user_id, "assistant", persistPayload);
       return NextResponse.json({
@@ -241,6 +244,7 @@ export async function POST(request: Request) {
           suggestedFollowUps: enriched.suggestedFollowUps,
           relatedLinks: enriched.relatedLinks,
           chartSeries: enriched.chartSeries,
+          verification: result.verification,
         },
       });
     } catch (qe) {

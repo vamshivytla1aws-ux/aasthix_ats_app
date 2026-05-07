@@ -7,7 +7,12 @@ export function summarizeQueryResult(plan: HrAssistantPlan, result: HrQueryResul
     const row = result.rows[0] as { metric?: string; total?: number } | undefined;
     const total = row?.total ?? 0;
     const metric = row?.metric ?? "records";
-    return `Total **${total}** ${metric.replace(/_/g, " ")} (${plan.intent_summary}).`;
+    const suffix = result.verification?.verified
+      ? " [Verified]"
+      : result.verification?.warning
+        ? " [Verification warning]"
+        : "";
+    return `Total **${total}** ${metric.replace(/_/g, " ")} (${plan.intent_summary}).${suffix}`;
   }
 
   if (result.entity === "analytics" && result.columns.includes("stage")) {

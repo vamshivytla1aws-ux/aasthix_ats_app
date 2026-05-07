@@ -22,6 +22,7 @@ import type {
   HrQueryResult,
   HrQuickAction,
   HrRelatedLink,
+  HrVerificationMeta,
 } from "@/lib/hrAssistant/types";
 
 type ChatReply = {
@@ -34,6 +35,7 @@ type ChatReply = {
   suggestedFollowUps?: string[];
   relatedLinks?: HrRelatedLink[];
   chartSeries?: HrChartPoint[] | null;
+  verification?: HrVerificationMeta;
 };
 
 type StoredMessage = {
@@ -50,6 +52,7 @@ type StoredMessage = {
     suggestedFollowUps?: string[];
     relatedLinks?: HrRelatedLink[];
     chartSeries?: HrChartPoint[] | null;
+    verification?: HrVerificationMeta;
   };
   created_at: string;
 };
@@ -385,6 +388,33 @@ export default function HrAssistantPanel() {
               {msg.content.insights && (
                 <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50/80 px-2.5 py-2 text-xs text-indigo-900 dark:border-indigo-900/50 dark:bg-indigo-950/40 dark:text-indigo-100">
                   {renderInlineBold(msg.content.insights)}
+                </div>
+              )}
+              {msg.content.verification && (
+                <div className="mt-2 rounded-lg border border-slate-200 bg-white/80 px-2.5 py-2 text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200">
+                  <span
+                    className={[
+                      "mr-2 inline-flex rounded-full px-2 py-0.5 font-semibold",
+                      msg.content.verification.verified
+                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                        : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+                    ].join(" ")}
+                  >
+                    {msg.content.verification.verified ? "Verified" : "Verification warning"}
+                  </span>
+                  <span>Definition: {msg.content.verification.definition_used}</span>
+                  <span className="ml-2">TZ: {msg.content.verification.timezone_used}</span>
+                  <span className="ml-2">Variant: {msg.content.verification.query_variant}</span>
+                  {msg.content.verification.sample_ids?.length ? (
+                    <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                      Sample IDs: {msg.content.verification.sample_ids.join(", ")}
+                    </div>
+                  ) : null}
+                  {msg.content.verification.warning ? (
+                    <div className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
+                      {msg.content.verification.warning}
+                    </div>
+                  ) : null}
                 </div>
               )}
               {msg.content.error && (

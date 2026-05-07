@@ -88,6 +88,16 @@ export type HrQueryResult = {
   columns: string[];
   rows: Record<string, unknown>[];
   entity: HrEntity | null;
+  verification?: HrVerificationMeta;
+};
+
+export type HrVerificationMeta = {
+  verified: boolean;
+  definition_used: string;
+  timezone_used: string;
+  query_variant: string;
+  sample_ids: number[];
+  warning?: string;
 };
 
 export type HrChartPoint = { name: string; value: number };
@@ -108,4 +118,5 @@ export type HrAssistantReply = {
   relatedLinks?: HrRelatedLink[];
   /** When present, UI may render a bar chart (analytics) */
   chartSeries?: HrChartPoint[] | null;
+  verification?: HrVerificationMeta;
 };
