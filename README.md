@@ -40,7 +40,6 @@ Then open `http://localhost:3000`.
 Railway-ready config files have been added for:
 
 - the main Next.js web app: `railway.json`
-- the Python matcher service: `matcher-service/railway.json`
 
 Deployment guide:
 

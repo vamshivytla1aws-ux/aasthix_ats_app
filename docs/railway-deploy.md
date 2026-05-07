@@ -5,8 +5,7 @@ This repo deploys best as multiple Railway services inside one project:
 1. `web` for the Next.js app
 2. `postgres` for the database
 3. `redis` for BullMQ
-4. `python-matcher` for `matcher-service/`
-5. `ai-worker` for queued AI matching
+4. `ai-worker` for queued AI matching
 
 ## 1. Create the Railway project
 
@@ -31,7 +30,6 @@ Add these variables to the web service:
 - `JWT_SECRET`
 - `APP_PUBLIC_URL`
 - `CRON_SECRET`
-- `MATCHER_PYTHON_URL`
 - `CAREERS_PUBLISHER_USER_ID` if you want `/careers` and the jobs preview portal to publish jobs
 - `OPENAI_API_KEY` if AI features should work (matching, embeddings, drafts, etc.)
 - `OPEN_ADMIN_AI_KEY` (optional) org **Admin** API key used **only** by the Usage dashboard OpenAI tab. Set it **in addition to** `OPENAI_API_KEY`. If you replace or remove `OPENAI_API_KEY`, features like 1:1 match will stop working. The app also checks `OPENAI_ADMIN_API_KEY`, `Open_admin_AI_Key`, and `OPEN_AI_ADMIN_KEY` if the primary name is missing (Railway names are case-sensitive). Do not paste a leading `Bearer ` in the value. For multi-org accounts, add `OPEN_ADMIN_USAGE_ORG` or `OPENAI_ORGANIZATION_ID` with your `org-…` id if usage calls fail or return the wrong org.
@@ -64,24 +62,7 @@ Important:
 - keep secrets in Railway Variables only
 - remove `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, and `SEED_ADMIN_NAME` if they were used during first-time setup, because startup admin seeding is not part of normal access control
 
-## 3. Create the Python matcher service
-
-Create another service from the `matcher-service/` directory:
-
-- Root directory: `/matcher-service`
-- Start command: auto from `matcher-service/railway.json`
-
-The stdlib matcher now binds to Railway's `PORT` and `0.0.0.0`, so it can run without extra packages.
-
-After deploy, copy its public URL into the web service:
-
-- `MATCHER_PYTHON_URL=https://<python-matcher-domain>/match`
-
-Optional health check:
-
-- `https://<python-matcher-domain>/health`
-
-## 4. Create the AI worker service
+## 3. Create the AI worker service
 
 Create a third code service from the repo root:
 
@@ -97,7 +78,7 @@ Add at least:
 
 Keep the worker env aligned with the web app for any `AI_*` or `MATCH_*` tuning vars.
 
-## 5. Run database migrations
+## 4. Run database migrations
 
 This repo uses ordered SQL files in `migrations/`, not Prisma runtime migrations.
 
@@ -159,7 +140,7 @@ Important:
 - `0047_match_pgvector_embeddings.sql` means your Postgres must support `pgvector`
 - check missing migration numbers before production if they existed in a different branch or private history
 
-## 6. Set up the cron endpoint
+## 5. Set up the cron endpoint
 
 This repo already includes a renewal email cron route:
 
@@ -175,12 +156,11 @@ Header:
 
 Only configure this after SMTP vars are set if you expect email delivery.
 
-## 7. Smoke test after deploy
+## 6. Smoke test after deploy
 
 1. Open `/login`
 2. Log in
 3. Verify dashboard pages load
 4. Create or edit a record backed by Postgres
-5. Hit the matcher `/health` endpoint
-6. Trigger one queue-backed AI match flow
-7. Trigger the cron route manually with the bearer token
+5. Trigger one queue-backed AI match flow
+6. Trigger the cron route manually with the bearer token

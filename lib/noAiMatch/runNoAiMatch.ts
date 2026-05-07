@@ -5,7 +5,7 @@ import {
   fetchCandidatePayloadRows,
   prefilterCandidateIdsForJob,
 } from "@/lib/noAiMatch/prefilterCandidates";
-import { callPythonNoAiMatcher, validatePythonResults, type PythonMatchRow } from "@/lib/noAiMatch/pythonMatcherClient";
+import { runLocalNoAiMatcher, validateLocalResults, type LocalMatchRow } from "@/lib/noAiMatch/localMatcher";
 import { resolveCandidateResumeTextForMatch } from "@/lib/candidateResumeForMatch";
 
 export type NoAiCandidateRow = {
@@ -26,7 +26,7 @@ export type NoAiMatchResult = {
   success: true;
   jobId: number;
   processed: number;
-  top_10: PythonMatchRow[];
+  top_10: LocalMatchRow[];
   candidates: NoAiCandidateRow[];
   meta: { matcher_ms: number; pool_total: number; prefilter: boolean };
 };
@@ -45,7 +45,7 @@ async function getCandidatePoolIds(jobId: number): Promise<number[]> {
   return (all.rows as { id: number }[]).map((r) => Number(r.id));
 }
 
-function computeNoAiRanks(allResults: PythonMatchRow[]): Map<string, number> {
+function computeNoAiRanks(allResults: LocalMatchRow[]): Map<string, number> {
   const sorted = [...allResults].sort((a, b) => {
     const ds = (b.match_score ?? 0) - (a.match_score ?? 0);
     if (ds !== 0) return ds;
@@ -99,23 +99,11 @@ export async function runNoAiMatchForJob(jobId: number): Promise<NoAiMatchResult
     });
   }
 
-  const py = await callPythonNoAiMatcher({ jd, candidates });
-  if (!py.ok) {
-    const isTimeout = py.status === 504;
-    const isUnavailable = py.status === 503;
-    const msg = isTimeout
-      ? "Matcher timed out"
-      : isUnavailable
-        ? py.body
-        : `Matcher error (${py.status}): ${py.body.slice(0, 500)}`;
-    const code = isTimeout ? 504 : isUnavailable ? 503 : 502;
-    throw Object.assign(new Error(msg), { statusCode: code });
-  }
-
-  const matcherMs = py.data.meta?.latency_ms ?? 0;
-  const resultMap = validatePythonResults(py.data.all_results);
-  const rankById = computeNoAiRanks(py.data.all_results);
-  const top10 = [...py.data.top_10].slice(0, 10).map((r) => resultMap.get(String(r.id)) ?? r);
+  const local = await runLocalNoAiMatcher({ jd, candidates });
+  const matcherMs = local.meta?.latency_ms ?? 0;
+  const resultMap = validateLocalResults(local.all_results);
+  const rankById = computeNoAiRanks(local.all_results);
+  const top10 = [...local.top_10].slice(0, 10).map((r) => resultMap.get(String(r.id)) ?? r);
 
   const outRows: NoAiCandidateRow[] = [];
   for (const c of candidates) {

@@ -3,7 +3,7 @@
  * Does not call OpenAI or embeddings.
  */
 import type { CompactCandidateForRerank } from "@/lib/aiMatcher/buildTop10RerankPayload";
-import type { PythonMatchRow } from "@/lib/noAiMatch/pythonMatcherClient";
+import type { LocalMatchRow } from "@/lib/noAiMatch/localMatcher";
 import { parseCandidateSkillsNormalized } from "@/lib/skillNormalization";
 import { scanLexicon } from "@/lib/jdSkillExtraction";
 
@@ -110,7 +110,7 @@ export function buildCompactAiCandidateProfile(
     domain_tags?: string[] | null;
     normalized_title?: string | null;
   },
-  py: PythonMatchRow,
+  py: LocalMatchRow,
   noAiRank: number
 ): CompactCandidateForRerank {
   const skills_normalized =

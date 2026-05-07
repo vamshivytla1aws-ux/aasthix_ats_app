@@ -2,13 +2,13 @@
  * One job × one candidate evaluation. Does not read or write candidate_job_matches.
  *
  * - useAI=true: **pure OpenAI** full JD ↔ resume scoring (`scoreCandidatesBatchWithOpenAI`), no Python matcher.
- * - useAI=false: rule-based Python matcher only.
+ * - useAI=false: rule-based local matcher only.
  */
 import { query } from "@/lib/db";
 import { resolveCandidateResumeTextForMatch } from "@/lib/candidateResumeForMatch";
 import { extractSkillsRuleBased } from "@/lib/jdSkillExtraction";
 import { scoreCandidatesBatchWithOpenAI } from "@/lib/matchScoreAi";
-import { callPythonNoAiMatcher, validatePythonResults } from "@/lib/noAiMatch/pythonMatcherClient";
+import { runLocalNoAiMatcher, validateLocalResults } from "@/lib/noAiMatch/localMatcher";
 import type { SingleMatchCheckResultPayload } from "@/lib/singleMatch/types";
 
 type JobRow = {
@@ -199,26 +199,11 @@ export async function runSingleMatchCheck(opts: {
     return { result };
   }
 
-  const py = await callPythonNoAiMatcher(
-    {
-      jd,
-      candidates: [{ id: String(candidateId), resume: resume || "" }],
-    },
-    { timeoutMs: 25_000 }
-  );
-  if (!py.ok) {
-    const isTimeout = py.status === 504;
-    const isUnavailable = py.status === 503;
-    const msg = isTimeout
-      ? "No-AI matcher timed out"
-      : isUnavailable
-        ? py.body
-        : `No-AI matcher error (${py.status}): ${py.body.slice(0, 500)}`;
-    const code = isTimeout ? 504 : isUnavailable ? 503 : 502;
-    throw Object.assign(new Error(msg), { statusCode: code });
-  }
-
-  const resultMap = validatePythonResults(py.data.all_results);
+  const local = await runLocalNoAiMatcher({
+    jd,
+    candidates: [{ id: String(candidateId), resume: resume || "" }],
+  });
+  const resultMap = validateLocalResults(local.all_results);
   const hit = resultMap.get(String(candidateId));
   if (!hit) {
     throw Object.assign(new Error("No-AI matcher returned no result for this candidate"), { statusCode: 502 });
