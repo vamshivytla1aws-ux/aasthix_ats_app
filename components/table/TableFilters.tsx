@@ -35,7 +35,7 @@ export default function TableFilters(props: TableFiltersProps) {
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
-      <div className={["grid grid-cols-1 gap-3", hideSearch ? "lg:grid-cols-3" : "lg:grid-cols-5"].join(" ")}>
+      <div className={["grid grid-cols-1 gap-3", hideSearch ? "md:grid-cols-2 lg:grid-cols-3" : "md:grid-cols-2 lg:grid-cols-5"].join(" ")}>
         {!hideSearch ? (
           <div className="lg:col-span-2">
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -45,7 +45,7 @@ export default function TableFilters(props: TableFiltersProps) {
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Search by name or email"
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-950/50 dark:text-slate-100"
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-950/50 dark:text-slate-100 lg:py-2"
             />
           </div>
         ) : null}
@@ -55,7 +55,7 @@ export default function TableFilters(props: TableFiltersProps) {
           <select
             value={location}
             onChange={(e) => onLocationChange(e.target.value)}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 lg:py-2"
           >
             <option value="">All</option>
             {locations.map((loc) => (
@@ -73,7 +73,7 @@ export default function TableFilters(props: TableFiltersProps) {
             value={skillsetInput}
             onChange={(e) => onSkillsetInputChange(e.target.value)}
             placeholder="Filter by skills (e.g. React, AWS)"
-            className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 lg:py-2"
           />
           {skillChips.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -96,13 +96,13 @@ export default function TableFilters(props: TableFiltersProps) {
           )}
         </div>
 
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-2 md:col-span-2 lg:col-span-1">
           <div className="flex-1">
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
             <select
               value={status}
               onChange={(e) => onStatusChange(e.target.value as "All" | "Active" | "Placed")}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 lg:py-2"
             >
               <option value="All">All</option>
               <option value="Active">Active</option>
@@ -112,7 +112,7 @@ export default function TableFilters(props: TableFiltersProps) {
           <button
             type="button"
             onClick={onClear}
-            className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 lg:py-2"
           >
             Clear
           </button>
@@ -121,4 +121,3 @@ export default function TableFilters(props: TableFiltersProps) {
     </div>
   );
 }
-

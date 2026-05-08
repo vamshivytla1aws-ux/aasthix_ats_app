@@ -554,7 +554,7 @@ function PipelinePageContent() {
         row ⋮ menu for interview scheduling and stage moves.
       </p>
 
-      <div className="sticky top-[4.75rem] z-30 rounded-xl border border-slate-200/90 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/90 lg:top-[7.25rem]">
+      <div className="sticky top-[5.5rem] z-30 rounded-xl border border-slate-200/90 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/90 sm:top-[5.75rem] lg:top-[7.25rem]">
         {pipeAnalytics?.bottlenecks && pipeAnalytics.bottlenecks.length > 0 ? (
           <div className="mb-2 rounded-lg border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
             <span className="font-semibold">Pipeline signals: </span>

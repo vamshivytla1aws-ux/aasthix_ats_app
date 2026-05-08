@@ -76,6 +76,25 @@ export default function MegaMenuNavbar() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [moreOpen, quickOpen, profileOpen]);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMobileOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+    setMoreOpen(false);
+    setUsageOpen(false);
+    setQuickOpen(false);
+    setProfileOpen(false);
+  }, [pathname]);
+
   async function logout() {
     setLoading(true);
     try {
@@ -502,14 +521,16 @@ export default function MegaMenuNavbar() {
                   : null}
               </nav>
               <div className="border-t border-slate-100 p-4 dark:border-slate-700">
-                <button
-                  type="button"
-                  onClick={logout}
-                  disabled={loading}
-                  className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  Logout
-                </button>
+                <form method="POST" action="/api/auth/logout">
+                  <input type="hidden" name="redirect_to" value="/login?message=Logged out" />
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    Logout
+                  </button>
+                </form>
               </div>
             </motion.div>
           </>

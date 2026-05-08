@@ -489,7 +489,7 @@ export default function DataTable({
             <button
               type="button"
               onClick={exportCsv}
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-gray-50"
+            className="inline-flex min-h-[40px] items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-gray-50 lg:min-h-0"
             >
               <Download className="h-3.5 w-3.5" />
               Export
@@ -497,7 +497,7 @@ export default function DataTable({
             <button
               type="button"
               onClick={() => setShowColumnsMenu((p) => !p)}
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-gray-50"
+            className="inline-flex min-h-[40px] items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-gray-50 lg:min-h-0"
             >
               <EyeOff className="h-3.5 w-3.5" />
               Columns
@@ -548,8 +548,8 @@ export default function DataTable({
 
       <div className={`${UI.enterprise.elevatedCard} overflow-hidden`}>
         <div className="max-h-[72vh] overflow-y-auto">
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px]">
+          <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+          <table className="w-full min-w-[980px] sm:min-w-[1100px]">
             <thead>
               <tr className="border-b border-[var(--enterprise-table-border)]">
                 <th
@@ -771,7 +771,7 @@ export default function DataTable({
                 setPageSize(Number(e.target.value));
                 setPage(1);
               }}
-              className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm"
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
             >
               <option value={10}>10</option>
               <option value={25}>25</option>
@@ -781,7 +781,7 @@ export default function DataTable({
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="rounded-lg border border-slate-300 px-3 py-1 text-sm disabled:opacity-50"
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-50"
             >
               Prev
             </button>
@@ -792,7 +792,7 @@ export default function DataTable({
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="rounded-lg border border-slate-300 px-3 py-1 text-sm disabled:opacity-50"
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-50"
             >
               Next
             </button>

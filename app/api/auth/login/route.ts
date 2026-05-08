@@ -6,8 +6,22 @@ import { writeAuditLog } from "@/lib/auditLog";
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { email, password } = body as { email?: string; password?: string };
+    const contentType = request.headers.get("content-type") || "";
+    let email: string | undefined;
+    let password: string | undefined;
+    let redirectTo: string | undefined;
+
+    if (contentType.includes("application/json")) {
+      const body = (await request.json()) as { email?: string; password?: string; redirect_to?: string };
+      email = body.email;
+      password = body.password;
+      redirectTo = body.redirect_to;
+    } else {
+      const form = await request.formData();
+      email = String(form.get("email") || "");
+      password = String(form.get("password") || "");
+      redirectTo = String(form.get("redirect_to") || "");
+    }
 
     if (!email || !password) {
       return NextResponse.json({ error: "email and password are required" }, { status: 400 });
@@ -46,7 +60,11 @@ export async function POST(request: Request) {
       metadata: { email: user.email },
     });
 
-    const res = NextResponse.json({ user: { id: user.id, email: user.email, full_name: user.full_name } });
+    const reqUrl = new URL(request.url);
+    const wantsRedirect = Boolean(redirectTo && redirectTo.startsWith("/"));
+    const res = wantsRedirect
+      ? NextResponse.redirect(new URL(redirectTo!, reqUrl.origin), { status: 303 })
+      : NextResponse.json({ user: { id: user.id, email: user.email, full_name: user.full_name } });
     res.cookies.set(tokenCookieName(), token, {
       httpOnly: true,
       sameSite: "lax",

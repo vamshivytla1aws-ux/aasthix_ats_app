@@ -213,8 +213,8 @@ export default function CandidateTable({
         </div>
       )}
 
-      <div className="overflow-x-auto overflow-y-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-slate-200">
+      <div className="-mx-1 overflow-x-auto overflow-y-visible rounded-2xl border border-slate-200 bg-white shadow-sm sm:mx-0">
+        <table className="min-w-[1100px] divide-y divide-slate-200 sm:min-w-full">
         <thead className="bg-slate-50">
           <tr>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -409,7 +409,7 @@ export default function CandidateTable({
                 <div className="relative inline-flex items-center gap-2" ref={openActionsId === c.id ? actionsRef : undefined}>
                   <Link
                     href={`/candidates/${c.id}`}
-                    className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-all duration-200"
+                    className="inline-flex min-h-[40px] items-center rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-all duration-200 lg:min-h-0"
                   >
                     Profile
                   </Link>
@@ -417,7 +417,7 @@ export default function CandidateTable({
                   <button
                     type="button"
                     onClick={() => setOpenActionsId((prev) => (prev === c.id ? null : c.id))}
-                    className="rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 transition-all duration-200"
+                    className="inline-flex min-h-[40px] items-center rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-gray-50 transition-all duration-200 lg:min-h-0"
                     aria-haspopup="menu"
                     aria-expanded={openActionsId === c.id}
                   >

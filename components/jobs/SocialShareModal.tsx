@@ -166,6 +166,15 @@ export default function SocialShareModal({
     };
   }, [job.id, open, track]);
 
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
   const shareUrl = payload?.public_url || "";
   const longCaption = useMemo(() => buildCaption(job, shareUrl), [job, shareUrl]);
   const shortCaption = useMemo(() => buildShortCaption(job, shareUrl), [job, shareUrl]);
@@ -261,9 +270,9 @@ export default function SocialShareModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-2 sm:p-4 sm:items-center">
       <button type="button" className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onClick={onClose} aria-label="Close" />
-      <div className="relative z-10 my-4 max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+      <div className="relative z-10 my-2 max-h-[calc(100vh-1rem)] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 sm:my-4 sm:max-h-[calc(100vh-2rem)] sm:rounded-3xl">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-6 py-5 dark:border-slate-800 dark:bg-slate-950">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
@@ -285,7 +294,7 @@ export default function SocialShareModal({
           </button>
         </div>
 
-        <div className="grid gap-6 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="grid gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/70">
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Preview</div>
