@@ -520,7 +520,7 @@ export default function MegaMenuNavbar() {
                     ))
                   : null}
               </nav>
-              <div className="border-t border-slate-100 p-4 dark:border-slate-700">
+              <div className="mobile-safe-bottom border-t border-slate-100 p-4 dark:border-slate-700 sm:pb-4">
                 <form method="POST" action="/api/auth/logout">
                   <input type="hidden" name="redirect_to" value="/login?message=Logged out" />
                   <button

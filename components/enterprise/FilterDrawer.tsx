@@ -63,7 +63,7 @@ export default function FilterDrawer({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
-        <div className="flex gap-2 border-t border-slate-200 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-slate-700">
+        <div className="mobile-safe-bottom flex gap-2 border-t border-slate-200 p-4 dark:border-slate-700 sm:pb-4">
           {onReset ? (
             <button type="button" onClick={onReset} className={UI.secondaryButton + " flex-1 justify-center py-2 text-sm"}>
               Reset

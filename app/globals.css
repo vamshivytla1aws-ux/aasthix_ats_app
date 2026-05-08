@@ -108,4 +108,18 @@ html.dark {
   .ats-page-inner {
     @apply mx-auto w-full max-w-7xl;
   }
+
+  .mobile-safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .mobile-vh-screen {
+    min-height: 100vh;
+  }
+
+  @supports (height: 100dvh) {
+    .mobile-vh-screen {
+      min-height: 100dvh;
+    }
+  }
 }

@@ -20,7 +20,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "guard:side-effect-links": "node scripts/checkSideEffectLinks.mjs",
+    "guard:missing-imports": "node scripts/checkMissingAliasImports.mjs",
+    "guard:desktop-freeze": "playwright test e2e/desktop-parity.spec.ts --project=desktop-chrome",
+    "test:e2e:mobile-hardening": "playwright test e2e/mobile-hardening.spec.ts --project=desktop-chrome --project=mobile-chrome",
+    "test:e2e:mobile-safari": "playwright test e2e/mobile-hardening.spec.ts --project=mobile-safari"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.7.6",
