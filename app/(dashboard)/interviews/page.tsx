@@ -1429,8 +1429,8 @@ export default function InterviewsPage() {
           </div>
         </div>
       ) : view === "table" ? (
-        <div className="max-h-[min(70vh,36rem)] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+        <div className="max-h-[min(70vh,36rem)] overflow-x-auto overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+          <table className="min-w-[1120px] divide-y divide-slate-200 dark:divide-slate-700 lg:min-w-full">
             <thead>
               <tr>
                 <th className="sticky top-0 z-20 bg-slate-50 px-4 py-2 shadow-[0_1px_0_0_rgb(226_232_240)] dark:bg-slate-900 dark:shadow-[0_1px_0_0_rgb(51_65_85)]">

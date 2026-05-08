@@ -320,8 +320,9 @@ export default function TimesheetPage() {
             </div>
           </section>
 
-          <section className={UI.enterprise.elevatedCard + " overflow-x-auto"}>
-            <table className="min-w-[980px] w-full text-sm">
+          <section className={UI.enterprise.elevatedCard + " overflow-hidden"}>
+            <div className="overflow-x-auto">
+            <table className="min-w-[980px] w-full text-sm lg:min-w-full">
               <thead className={UI.enterprise.tableHeaderSticky}>
                 <tr className="text-left text-xs uppercase tracking-[0.12em] text-[var(--ats-text-soft)]">
                   <th className="px-4 py-3">Ticket</th>
@@ -357,6 +358,7 @@ export default function TimesheetPage() {
                 ) : null}
               </tbody>
             </table>
+            </div>
           </section>
 
           {canViewAll ? (
@@ -410,8 +412,9 @@ export default function TimesheetPage() {
                 </div>
               </section>
 
-              <section className={UI.enterprise.elevatedCard + " overflow-x-auto"}>
-                <table className="min-w-[980px] w-full text-sm">
+              <section className={UI.enterprise.elevatedCard + " overflow-hidden"}>
+                <div className="overflow-x-auto">
+                <table className="min-w-[980px] w-full text-sm lg:min-w-full">
                   <thead className={UI.enterprise.tableHeaderSticky}>
                     <tr className="text-left text-xs uppercase tracking-[0.12em] text-[var(--ats-text-soft)]">
                       <th className="px-4 py-3">User</th>
@@ -488,6 +491,7 @@ export default function TimesheetPage() {
                     ) : null}
                   </tbody>
                 </table>
+                </div>
               </section>
 
               {selectedHeaderId && selectedHeaderDetails ? (

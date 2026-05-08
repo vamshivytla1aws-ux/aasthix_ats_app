@@ -93,8 +93,8 @@ export default function ActivityCenterPage() {
                 Work queue
               </span>
             </div>
-            <div className="max-h-[70vh] overflow-auto">
-              <table className="w-full min-w-[900px] text-sm">
+            <div className="max-h-[70vh] overflow-x-auto overflow-y-auto">
+              <table className="w-full min-w-[900px] text-sm lg:min-w-full">
                 <thead>
                   <tr className="sticky top-0 z-10 border-b border-[var(--enterprise-table-border)] bg-[var(--enterprise-table-header)] dark:bg-slate-900/98">
                     {["Activity", "Type", "Candidate", "Job", "Owner", "When", "Priority"].map((h) => (

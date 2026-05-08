@@ -191,12 +191,12 @@ export default function AlertsPage() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search alerts…"
-              className="min-w-[200px] flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-950/50 dark:text-slate-100"
+              className="w-full min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:min-w-[220px] dark:border-slate-600 dark:bg-slate-950/50 dark:text-slate-100"
             />
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as typeof status)}
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950/50 dark:text-slate-100"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm sm:w-auto dark:border-slate-600 dark:bg-slate-950/50 dark:text-slate-100"
             >
               <option value="all">All status</option>
               <option value="unread">Unread</option>
@@ -206,7 +206,7 @@ export default function AlertsPage() {
             <select
               value={type}
               onChange={(e) => setType(e.target.value as typeof type)}
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950/50 dark:text-slate-100"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm sm:w-auto dark:border-slate-600 dark:bg-slate-950/50 dark:text-slate-100"
             >
               <option value="all">All types</option>
               <option value="ongoing">Ongoing</option>
@@ -217,7 +217,7 @@ export default function AlertsPage() {
               type="button"
               onClick={() => void markVisibleRead()}
               disabled={unreadIds.length === 0}
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-gray-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-gray-50 disabled:opacity-50 sm:w-auto dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
             >
               Mark visible read
             </button>
@@ -247,16 +247,16 @@ export default function AlertsPage() {
           </div>
         ) : (
           <div className={`${UI.enterprise.elevatedCard} overflow-hidden`}>
-            <div className="max-h-[calc(100vh-320px)] overflow-auto">
-              <table className="w-full table-fixed text-sm">
+            <div className="max-h-[calc(100vh-320px)] overflow-x-auto overflow-y-auto">
+              <table className="w-full min-w-[960px] text-sm lg:min-w-full">
                 <thead className="sticky top-0 z-10 bg-[var(--enterprise-table-header)] dark:bg-slate-900/98">
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    <th className="px-4 py-3 w-[36%]">Message</th>
-                    <th className="px-4 py-3 w-[12%]">Type</th>
-                    <th className="px-4 py-3 w-[12%]">Status</th>
-                    <th className="px-4 py-3 w-[16%]">Created</th>
-                    <th className="px-4 py-3 w-[14%]">Expires</th>
-                    <th className="px-4 py-3 w-[10%] text-right">Actions</th>
+                    <th className="min-w-[320px] px-4 py-3">Message</th>
+                    <th className="min-w-[120px] px-4 py-3">Type</th>
+                    <th className="min-w-[110px] px-4 py-3">Status</th>
+                    <th className="min-w-[150px] px-4 py-3">Created</th>
+                    <th className="min-w-[150px] px-4 py-3">Expires</th>
+                    <th className="min-w-[90px] px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700">

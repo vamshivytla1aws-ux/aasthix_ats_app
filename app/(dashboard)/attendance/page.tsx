@@ -399,19 +399,19 @@ export default function AttendancePage() {
                 </div>
 
                 <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--ats-border)]">
-                  <div className="max-h-[55vh] overflow-auto">
-                    <table className="w-full table-fixed text-sm">
+                  <div className="max-h-[55vh] overflow-x-auto overflow-y-auto">
+                    <table className="w-full min-w-[1080px] text-sm lg:min-w-full">
                       <thead className={UI.enterprise.tableHeaderSticky}>
                         <tr className="text-left text-xs uppercase tracking-wide text-[var(--ats-text-muted)]">
-                          <th className="px-4 py-3 w-[18%]">Employee</th>
-                          <th className="px-4 py-3 w-[12%]">Role</th>
-                          <th className="px-4 py-3 w-[12%]">Status</th>
-                          <th className="px-4 py-3 w-[16%]">Check in</th>
-                          <th className="px-4 py-3 w-[16%]">Check out</th>
-                          <th className="px-4 py-3 w-[10%]">Worked</th>
-                          <th className="px-4 py-3 w-[10%]">Shift</th>
-                          <th className="px-4 py-3 w-[8%]">Source</th>
-                          <th className="px-4 py-3 w-[8%] text-right">Actions</th>
+                          <th className="min-w-[220px] px-4 py-3">Employee</th>
+                          <th className="min-w-[120px] px-4 py-3">Role</th>
+                          <th className="min-w-[120px] px-4 py-3">Status</th>
+                          <th className="min-w-[150px] px-4 py-3">Check in</th>
+                          <th className="min-w-[150px] px-4 py-3">Check out</th>
+                          <th className="min-w-[110px] px-4 py-3">Worked</th>
+                          <th className="min-w-[120px] px-4 py-3">Shift</th>
+                          <th className="min-w-[100px] px-4 py-3">Source</th>
+                          <th className="min-w-[90px] px-4 py-3 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--enterprise-table-border)]">
@@ -502,17 +502,17 @@ export default function AttendancePage() {
               <UserCheck className="h-4 w-4 text-[var(--ats-primary)]" />
               Your recent attendance
             </div>
-            <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--ats-border)]">
-              <div className="max-h-[42vh] overflow-auto">
-                <table className="w-full table-fixed text-sm">
+                <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--ats-border)]">
+              <div className="max-h-[42vh] overflow-x-auto overflow-y-auto">
+                <table className="w-full min-w-[760px] text-sm lg:min-w-full">
                   <thead className={UI.enterprise.tableHeaderSticky}>
                     <tr className="text-left text-xs uppercase tracking-wide text-[var(--ats-text-muted)]">
-                      <th className="px-4 py-3 w-[22%]">Date</th>
-                      <th className="px-4 py-3 w-[16%]">Status</th>
-                      <th className="px-4 py-3 w-[20%]">Check in</th>
-                      <th className="px-4 py-3 w-[20%]">Check out</th>
-                      <th className="px-4 py-3 w-[12%]">Worked</th>
-                      <th className="px-4 py-3 w-[10%]">Source</th>
+                      <th className="min-w-[130px] px-4 py-3">Date</th>
+                      <th className="min-w-[120px] px-4 py-3">Status</th>
+                      <th className="min-w-[150px] px-4 py-3">Check in</th>
+                      <th className="min-w-[150px] px-4 py-3">Check out</th>
+                      <th className="min-w-[100px] px-4 py-3">Worked</th>
+                      <th className="min-w-[100px] px-4 py-3">Source</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--enterprise-table-border)]">

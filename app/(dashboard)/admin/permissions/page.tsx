@@ -260,7 +260,7 @@ export default function AdminPermissionsPage() {
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm text-sm text-slate-600">Loading...</div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-[1100px] w-full text-sm">
+          <table className="min-w-[1100px] w-full text-sm lg:min-w-full">
             <thead className="bg-slate-50">
               <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">User</th>
