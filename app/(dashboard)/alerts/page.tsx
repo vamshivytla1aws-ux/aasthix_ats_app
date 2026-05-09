@@ -84,7 +84,7 @@ function fmt(value: string) {
 
 export default function AlertsPage() {
   const [status, setStatus] = useState<"all" | "unread" | "read" | "expired">("all");
-  const [type, setType] = useState<"all" | "ongoing" | "upcoming" | "careers_apply">("all");
+  const [type, setType] = useState<"all" | "ongoing" | "upcoming" | "careers_apply" | "interview_complete" | "renewal">("all");
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [filterDrawer, setFilterDrawer] = useState(false);
@@ -211,7 +211,9 @@ export default function AlertsPage() {
               <option value="all">All types</option>
               <option value="ongoing">Ongoing</option>
               <option value="upcoming">Upcoming</option>
+              <option value="interview_complete">Interview complete</option>
               <option value="careers_apply">Careers apply</option>
+              <option value="renewal">Renewal</option>
             </select>
             <button
               type="button"

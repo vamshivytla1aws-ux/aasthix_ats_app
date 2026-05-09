@@ -65,7 +65,7 @@ export function SingleMatchHistoryTable({
   if (runs.length === 0) {
     return (
       <p className="py-4 text-center text-sm text-slate-500">
-        No 1-to-1 checks yet for this job. Use <span className="font-semibold text-slate-700">Check one candidate</span>{" "}
+        No 1-to-1 checks yet for this job. Use <span className="font-semibold text-slate-700">AI Matching</span>{" "}
         to run a match — results appear here and are saved for next time.
       </p>
     );

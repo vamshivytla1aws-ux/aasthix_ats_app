@@ -14,6 +14,7 @@ import JobTeamPanel from "@/components/enterprise/JobTeamPanel";
 import JobInterviewRoundsPanel from "@/components/JobInterviewRoundsPanel";
 import DispositionReasonModal from "@/components/DispositionReasonModal";
 import SocialShareModal from "@/components/jobs/SocialShareModal";
+import { SingleMatchHistoryTable } from "@/components/SingleMatchHistoryTable";
 import Toast from "@/components/Toast";
 import { jobStatusRequiresDispositionReason } from "@/lib/dispositionRules";
 import { REQUISITION_WORKFLOW_STEPS } from "@/lib/requisitionWorkflow";
@@ -46,18 +47,8 @@ type JobStats = {
   last_activity_at: string | null;
 };
 
-type SingleMatchHistoryRun = {
-  id: number;
-  candidate_id: number;
-  candidate_full_name: string;
-  match_score: number;
-  ai_match_score: number | null;
-  ai_decision: string | null;
-  created_at: string;
-};
-
 function AiCandidateHistorySummaryCard({ jobId }: { jobId: number }) {
-  const { data, isLoading } = useSWR<{ runs: SingleMatchHistoryRun[] }>(`/api/jobs/${jobId}/single-match-check/history`);
+  const { data, isLoading } = useSWR<{ runs: any[]; migration_required?: boolean }>(`/api/jobs/${jobId}/single-match-check/history`);
   const rows = data?.runs ?? [];
 
   if (isLoading) {
@@ -74,25 +65,14 @@ function AiCandidateHistorySummaryCard({ jobId }: { jobId: number }) {
   return (
     <div className={`${UI.enterprise.elevatedCard} p-4`}>
       <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-        AI candidates 1-to-1 match history
+        AI Match history
       </h3>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-        Latest single-candidate AI checks for this job. Open &quot;JD &amp; resume matches&quot; and run AI matching to add new history.
+        Full 1-to-1 AI matching history for this job, including matched skills, gaps, and summary details.
       </p>
-      <ul className="mt-3 divide-y divide-slate-100 text-sm dark:divide-slate-700">
-        {rows.slice(0, 8).map((m) => (
-          <li key={m.candidate_id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
-            <span className="font-medium text-slate-900 dark:text-slate-100">{m.candidate_full_name}</span>
-            <span className="text-xs text-slate-600 dark:text-slate-300">
-              <span className="text-indigo-700 dark:text-indigo-300">AI {m.ai_match_score ?? m.match_score}%</span>
-              {" · "}
-              <span>{m.ai_decision || "Decision pending"}</span>
-              {" · "}
-              <span>{new Date(m.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span>
-            </span>
-          </li>
-        ))}
-      </ul>
+      <div className="mt-3">
+        <SingleMatchHistoryTable runs={rows as any[]} loading={isLoading} migrationRequired={Boolean(data?.migration_required)} />
+      </div>
     </div>
   );
 }

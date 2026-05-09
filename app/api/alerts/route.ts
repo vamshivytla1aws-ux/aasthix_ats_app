@@ -7,7 +7,7 @@ import { applicationAccessPredicate, hasJobTeamTable } from "@/lib/applicationVi
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type AlertType = "ongoing" | "upcoming" | "interview_complete";
+type AlertType = "ongoing" | "upcoming" | "interview_complete" | "renewal";
 
 type AlertRow = {
   id: number;
@@ -71,6 +71,11 @@ export async function GET(request: Request) {
     );
 
     // Generate (upsert) interview alerts for the next +/- 1 hour window.
+    const interviewVisibility =
+      user.role === "admin"
+        ? "TRUE"
+        : applicationAccessPredicate("a", "$1", hasTeam);
+
     const generated = await query(
       `
       SELECT
@@ -85,7 +90,7 @@ export async function GET(request: Request) {
       FROM applications a
       JOIN candidates c ON c.id = a.candidate_id
       JOIN jobs j ON j.id = a.job_id
-      WHERE a.created_by_user_id = $1
+      WHERE ${interviewVisibility}
         AND a.stage = 'Interview'
         AND a.interview_scheduled = true
         AND a.interview_datetime IS NOT NULL
@@ -166,7 +171,7 @@ export async function GET(request: Request) {
       params.push("unread");
       where.push(`al.status = $${params.length}`);
     }
-    if (typeParam === "ongoing" || typeParam === "upcoming" || typeParam === "careers_apply" || typeParam === "interview_complete") {
+    if (typeParam === "ongoing" || typeParam === "upcoming" || typeParam === "careers_apply" || typeParam === "interview_complete" || typeParam === "renewal") {
       params.push(typeParam);
       where.push(`al.type = $${params.length}`);
     }
@@ -203,7 +208,7 @@ export async function GET(request: Request) {
       `
       SELECT
         id + 1000000000 AS id,
-        'upcoming'::text AS type,
+        'renewal'::text AS type,
         message,
         created_at,
         status,
