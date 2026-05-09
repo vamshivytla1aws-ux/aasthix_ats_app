@@ -57,6 +57,7 @@ export default function CareersPortal() {
   const [applyJob, setApplyJob] = useState<PublicJob | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [resumeName, setResumeName] = useState<string>("");
   const [form, setForm] = useState({
     full_name: "",
     email: "",
@@ -120,6 +121,7 @@ export default function CareersPortal() {
   function openApply(job: PublicJob) {
     setApplyJob(job);
     setFormError(null);
+    setResumeName("");
     void track("start_apply", job.id);
   }
 
@@ -545,9 +547,16 @@ export default function CareersPortal() {
                       required
                       name="resume"
                       type="file"
-                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      accept=".pdf,.doc,.docx"
+                      onChange={(e) => {
+                        const file = e.currentTarget.files?.[0] ?? null;
+                        setResumeName(file?.name ?? "");
+                      }}
                       className="mt-2 w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
                     />
+                    <div className="mt-1 text-xs text-slate-400">
+                      {resumeName ? `Selected: ${resumeName}` : "Choose from Files on iPhone/iCloud/Drive."}
+                    </div>
                   </div>
                   <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-slate-950/50 px-3 py-3 text-xs text-slate-300">
                     <input
