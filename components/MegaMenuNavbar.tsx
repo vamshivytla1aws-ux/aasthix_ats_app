@@ -95,6 +95,14 @@ export default function MegaMenuNavbar() {
     setProfileOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [pathname]);
+
   async function logout() {
     setLoading(true);
     try {
