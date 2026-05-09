@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, User, Briefcase, FileText, X, Loader2, Clock } from "lucide-react";
@@ -27,8 +27,6 @@ type AppResult = {
   assigned_recruiter_name?: string | null;
 };
 type SearchResults = { candidates: CandidateResult[]; jobs: JobResult[]; applications: AppResult[] };
-
-type SearchScope = "all" | "candidates" | "jobs" | "applications";
 
 type RecentEntry = {
   kind: "candidate" | "job" | "application";
@@ -79,11 +77,7 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
   const [results, setResults] = useState<SearchResults | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
-  const [scope, setScope] = useState<SearchScope>("all");
   const [recent, setRecent] = useState<RecentEntry[]>([]);
-  const [canCandidates, setCanCandidates] = useState(true);
-  const [canJobs, setCanJobs] = useState(true);
-  const [canPipeline, setCanPipeline] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -93,38 +87,6 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
   useEffect(() => {
     setRecent(loadRecent());
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    apiFetchJson<{ permissions?: Record<string, boolean>; user?: { role?: string } }>("/api/auth/me")
-      .then((me) => {
-        if (cancelled) return;
-        const role = (me.user?.role || "user").toLowerCase();
-        const isAdmin = role === "admin";
-        const p = me.permissions || {};
-        setCanCandidates(isAdmin || p["candidates.view"] !== false);
-        setCanJobs(isAdmin || p["jobs.view"] !== false);
-        setCanPipeline(isAdmin || p["pipeline.view"] !== false);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const allowedScopes = useMemo(() => {
-    const list: SearchScope[] = ["all"];
-    if (canCandidates) list.push("candidates");
-    if (canJobs) list.push("jobs");
-    if (canPipeline) list.push("applications");
-    return list;
-  }, [canCandidates, canJobs, canPipeline]);
-
-  useEffect(() => {
-    if (!allowedScopes.includes(scope)) {
-      setScope("all");
-    }
-  }, [allowedScopes, scope]);
 
   // Press "/" to focus search
   useEffect(() => {
@@ -156,7 +118,7 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
         const params = new URLSearchParams();
         params.set("q", q);
         params.set("limit", "8");
-        params.set("scope", scope);
+        params.set("scope", "all");
         const data = await apiFetchJson<SearchResults>(`/api/search?${params.toString()}`);
         const safe: SearchResults = {
           candidates: Array.isArray(data.candidates) ? data.candidates : [],
@@ -174,7 +136,7 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [value, scope]);
+  }, [value]);
 
   // Close on outside click
   useEffect(() => {
@@ -199,12 +161,10 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
       e.preventDefault();
       const q = value.trim();
       if (!q) return;
-      if (scope === "jobs") router.push(`/jobs?q=${encodeURIComponent(q)}`);
-      else if (scope === "applications") router.push(`/pipeline?q=${encodeURIComponent(q)}`);
-      else router.push(`/candidates?q=${encodeURIComponent(q)}`);
+      router.push(`/candidates?q=${encodeURIComponent(q)}`);
       setOpen(false);
     },
-    [router, value, scope]
+    [router, value]
   );
 
   const handleSelect = useCallback(() => {
@@ -227,22 +187,11 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
   const showSearchPanel = open && value.trim().length >= 2;
   const showDropdown =
     open && (showRecentPanel || showSearchPanel || (value.trim().length >= 2 && loading));
-  const shellChipBase = isPanel
-    ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-    : "border-white/25 bg-white/10 text-white/90 hover:bg-white/20";
-
-  function scopeChipActive(s: SearchScope) {
-    return scope === s
-      ? isPanel
-        ? "border-indigo-400 bg-indigo-50 text-indigo-800 dark:border-indigo-500 dark:bg-indigo-950 dark:text-indigo-200"
-        : "border-white/50 bg-white/25 text-white"
-      : shellChipBase;
-  }
 
   return (
     <div ref={containerRef} className={isPanel ? "w-full" : "relative hidden min-w-0 max-w-lg flex-1 sm:block"}>
       <form onSubmit={handleSubmit} role="search">
-        <div className="relative flex flex-col gap-1.5">
+        <div className="relative">
           <div className="relative flex items-center">
             <Search
               className={[
@@ -303,24 +252,6 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
                 <X className="h-4 w-4" />
               </button>
             )}
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {allowedScopes.map((allowedScope) => (
-              <button
-                key={allowedScope}
-                type="button"
-                onClick={() => setScope(allowedScope)}
-                className={[
-                  "rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] transition",
-                  scopeChipActive(allowedScope),
-                ].join(" ")}
-              >
-                {allowedScope === "all" ? "All" : allowedScope}
-              </button>
-            ))}
-            <span className={isPanel ? "ml-auto text-[11px] text-slate-500 dark:text-slate-400" : "ml-auto text-[11px] text-white/65"}>
-              Press / to focus
-            </span>
           </div>
         </div>
       </form>
@@ -471,14 +402,12 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
                       type="button"
                       onClick={() => {
                         const q = value.trim();
-                        if (scope === "jobs") router.push(`/jobs?q=${encodeURIComponent(q)}`);
-                        else if (scope === "applications") router.push(`/pipeline?q=${encodeURIComponent(q)}`);
-                        else router.push(`/candidates?q=${encodeURIComponent(q)}`);
+                        router.push(`/candidates?q=${encodeURIComponent(q)}`);
                         handleSelect();
                       }}
                       className="text-xs font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400"
                     >
-                      View all in {scope === "jobs" ? "jobs" : scope === "applications" ? "pipeline" : "candidates"} →
+                      View all in candidates →
                     </button>
                   </div>
                 </>

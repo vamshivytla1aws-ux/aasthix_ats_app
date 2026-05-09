@@ -655,9 +655,9 @@ export function JobList({
                     <td className={[rowCellClass, "font-medium text-slate-900 dark:text-slate-100"].join(" ")}>
                       <button
                         type="button"
-                        onClick={() => setMatchHubJob(job)}
+                        onClick={() => _onView(job)}
                         className="text-left font-semibold text-blue-700 hover:underline dark:text-blue-400"
-                        title="Open JD & skill match hub"
+                        title="View job details"
                       >
                         {job.title}
                       </button>

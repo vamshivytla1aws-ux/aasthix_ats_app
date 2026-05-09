@@ -176,15 +176,6 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Link href="/jobs" className={UI.secondaryButton + " py-2 text-sm"}>
-                Create job
-              </Link>
-              <Link href="/candidates" className={UI.secondaryButton + " py-2 text-sm"}>
-                Add candidate
-              </Link>
-              <Link href="/pipeline" className={UI.secondaryButton + " py-2 text-sm"}>
-                Open pipeline
-              </Link>
               <button onClick={() => void load()} className={UI.primaryButton + " py-2 text-sm"}>
                 Refresh workspace
               </button>
