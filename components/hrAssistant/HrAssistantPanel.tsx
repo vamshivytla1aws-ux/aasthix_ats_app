@@ -185,10 +185,13 @@ export default function HrAssistantPanel() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<{ stop: () => void; onend: (() => void) | null } | null>(null);
 
   const scrollDown = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, []);
 
   useEffect(() => {
@@ -364,7 +367,7 @@ export default function HrAssistantPanel() {
         </div>
       </div>
 
-      <div className="max-h-[min(440px,58vh)] space-y-4 overflow-y-auto px-4 py-4">
+      <div ref={messagesContainerRef} className="max-h-[min(440px,58vh)] space-y-4 overflow-y-auto px-4 py-4">
         {messages.length === 0 && !loading && (
           <p className="text-center text-sm text-slate-500 dark:text-slate-400">
             Use the chips above or type below. The assistant remembers your last result for follow-ups like “only
