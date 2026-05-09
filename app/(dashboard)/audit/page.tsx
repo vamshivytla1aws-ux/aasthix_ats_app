@@ -328,7 +328,7 @@ export default function AuditPage() {
               Refresh
             </button>
             <Link
-              href="/requisitions"
+              href="/jobs?view=requisition"
               className={UI.secondaryButton + " inline-flex items-center py-2 text-xs"}
             >
               Requisitions

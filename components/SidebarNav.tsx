@@ -166,7 +166,6 @@ function IconSparkles({ className }: { className?: string }) {
 const SIDEBAR_NAV: SidebarNavItem[] = [
   { href: "/dashboard", label: "Dashboard", description: "Metrics overview", icon: IconDashboard, permissionKey: permKeyByHref["/dashboard"] },
   { href: "/jobs", label: "Jobs", description: "Track roles", icon: IconBriefcase, permissionKey: permKeyByHref["/jobs"] },
-  { href: "/requisitions", label: "Requisitions", description: "JD & lifecycle workflow", icon: IconBriefcase, permissionKey: permKeyByHref["/requisitions"] },
   { href: "/recruiter/copilot", label: "Copilot", description: "Priorities & rediscovery", icon: IconSparkles, permissionKey: permKeyByHref["/recruiter/copilot"] },
   { href: "/clients", label: "Clients", description: "End customers & SPOCs", icon: IconBuilding, permissionKey: permKeyByHref["/clients"] },
   { href: "/candidates", label: "Candidates", description: "People database", icon: IconUsers, permissionKey: permKeyByHref["/candidates"] },
@@ -285,4 +284,3 @@ export default function SidebarNav() {
     </aside>
   );
 }
-

@@ -12,7 +12,6 @@ export default function TopNav() {
 
   const pageTitle = useMemo(() => {
     if (pathname === "/jobs" || pathname.startsWith("/jobs/")) return "Jobs";
-    if (pathname === "/requisitions") return "Requisitions";
     if (pathname === "/dashboard") return "Dashboard";
     if (pathname === "/candidates") return "Candidates";
     if (pathname === "/pipeline") return "Pipeline";
@@ -88,4 +87,3 @@ export default function TopNav() {
     </div>
   );
 }
-

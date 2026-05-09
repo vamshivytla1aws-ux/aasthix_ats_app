@@ -1,18 +1,20 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
 import useSWR from "swr";
 import { Plus, SlidersHorizontal } from "lucide-react";
+import Link from "next/link";
 import JobForm from "@/components/JobForm";
 import { JobList } from "@/components/JobList";
 import Toast from "@/components/Toast";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDensity } from "@/lib/useDensity";
 import DensityToggle from "@/components/ui/DensityToggle";
 import AccessGate from "@/components/AccessGate";
 import CareersHubCard from "@/components/CareersHubCard";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import FilterDrawer from "@/components/enterprise/FilterDrawer";
+import RequisitionsWorkflowView from "@/components/jobs/RequisitionsWorkflowView";
 import { UI } from "@/lib/ui";
 import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
@@ -45,7 +47,7 @@ function JobsTableSkeleton() {
   );
 }
 
-export default function JobsPage() {
+function StandardJobsView() {
   const router = useRouter();
   const { density, setDensity } = useDensity("ats:list-density", "compact");
   const { data: jobs = [], error, isLoading, mutate } = useSWR<Job[]>("/api/jobs");
@@ -136,6 +138,9 @@ export default function JobsPage() {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <Link href="/jobs?view=requisition" className={UI.secondaryButton + " py-2 text-xs"}>
+              Requisition workflow
+            </Link>
             <DensityToggle density={density} onChange={setDensity} />
             <button
               type="button"
@@ -194,5 +199,36 @@ export default function JobsPage() {
         )}
       </ModulePageFrame>
     </AccessGate>
+  );
+}
+
+function JobsPageInner() {
+  const searchParams = useSearchParams();
+  const isRequisitionView = searchParams.get("view") === "requisition";
+
+  if (isRequisitionView) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Link href="/jobs?view=standard" className={UI.secondaryButton + " py-2 text-xs"}>
+            Standard view
+          </Link>
+          <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:ring-indigo-800">
+            Requisition Workflow
+          </span>
+        </div>
+        <RequisitionsWorkflowView />
+      </div>
+    );
+  }
+
+  return <StandardJobsView />;
+}
+
+export default function JobsPage() {
+  return (
+    <Suspense fallback={<StandardJobsView />}>
+      <JobsPageInner />
+    </Suspense>
   );
 }

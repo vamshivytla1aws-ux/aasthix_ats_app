@@ -15,7 +15,7 @@ export function resolveDefaultLandingPath(role: string, permissions: Record<stri
   }
 
   if (ok("hiring_manager.view")) {
-    if (ok("approvals.manage")) return "/requisitions";
+    if (ok("approvals.manage")) return "/jobs?view=requisition";
     if (ok("interviews.view")) return "/interviews";
     return "/dashboard";
   }

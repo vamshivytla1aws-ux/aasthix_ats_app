@@ -308,7 +308,7 @@ export default function RecruiterWorkloadPage() {
           <button type="button" onClick={() => void mutate()} className={UI.secondaryButton + " py-2 text-xs"}>
             Refresh
           </button>
-          <Link href="/requisitions" className={UI.secondaryButton + " inline-flex items-center py-2 text-xs"}>
+          <Link href="/jobs?view=requisition" className={UI.secondaryButton + " inline-flex items-center py-2 text-xs"}>
             Requisitions
           </Link>
           <Link href="/recruiter/copilot" className={UI.secondaryButton + " inline-flex items-center py-2 text-xs"}>

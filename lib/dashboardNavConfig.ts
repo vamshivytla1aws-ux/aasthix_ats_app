@@ -15,7 +15,6 @@ export const DASHBOARD_PRIMARY_NAV: DashboardNavItem[] = [
   { id: "home", label: "Home", href: "/dashboard", permissionKey: "dashboard.view" },
   { id: "candidates", label: "Candidates", href: "/candidates", permissionKey: "candidates.view" },
   { id: "jobs", label: "Jobs", href: "/jobs", permissionKey: "jobs.view" },
-  { id: "requisitions", label: "Requisitions", href: "/requisitions", permissionKey: "jobs.view" },
   { id: "pipeline", label: "Pipeline", href: "/pipeline", permissionKey: "pipeline.view" },
   { id: "clients", label: "Clients", href: "/clients", permissionKey: "vendors.view" },
   { id: "interviews", label: "Interviews", href: "/interviews", permissionKey: "interviews.view" },
@@ -49,7 +48,6 @@ export function isNavItemVisible(
 /** Active state for top nav tabs (prefix rules for nested routes). */
 export function isDashboardNavHrefActive(pathname: string, href: string): boolean {
   if (href === "/jobs") return pathname === "/jobs" || pathname.startsWith("/jobs/");
-  if (href === "/requisitions") return pathname === "/requisitions" || pathname.startsWith("/requisitions/");
   if (href === "/candidates") return pathname === "/candidates" || pathname.startsWith("/candidates/");
   if (href === "/clients") return pathname === "/clients" || pathname.startsWith("/clients/");
   if (href === "/dashboard") return pathname === "/dashboard";
