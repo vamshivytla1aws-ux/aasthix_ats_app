@@ -46,20 +46,19 @@ type JobStats = {
   last_activity_at: string | null;
 };
 
-type SkillMatchRow = {
+type SingleMatchHistoryRun = {
+  id: number;
   candidate_id: number;
-  full_name: string;
-  match_score_no_ai: number | null;
-  no_ai_rank?: number | null;
-  ai_rerank_rank?: number | null;
-  ai_rerank_score?: number | null;
-  ai_rerank_decision?: string | null;
-  decision_no_ai?: string | null;
+  candidate_full_name: string;
+  match_score: number;
+  ai_match_score: number | null;
+  ai_decision: string | null;
+  created_at: string;
 };
 
-function HybridMatchSummaryCard({ jobId }: { jobId: number }) {
-  const { data, isLoading } = useSWR<{ matches: SkillMatchRow[] }>(`/api/jobs/${jobId}/skill-matches?limit=8&min_score=0`);
-  const rows = data?.matches ?? [];
+function AiCandidateHistorySummaryCard({ jobId }: { jobId: number }) {
+  const { data, isLoading } = useSWR<{ runs: SingleMatchHistoryRun[] }>(`/api/jobs/${jobId}/single-match-check/history`);
+  const rows = data?.runs ?? [];
 
   if (isLoading) {
     return (
@@ -75,23 +74,21 @@ function HybridMatchSummaryCard({ jobId }: { jobId: number }) {
   return (
     <div className={`${UI.enterprise.elevatedCard} p-4`}>
       <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-        Match ranking (No-AI + hybrid AI rerank)
+        AI candidates 1-to-1 match history
       </h3>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-        Order uses AI rerank rank when present, otherwise No-AI rank. Run &quot;JD &amp; resume matches&quot; → recompute for full hybrid pipeline.
+        Latest single-candidate AI checks for this job. Open &quot;JD &amp; resume matches&quot; and run AI matching to add new history.
       </p>
       <ul className="mt-3 divide-y divide-slate-100 text-sm dark:divide-slate-700">
         {rows.slice(0, 8).map((m) => (
           <li key={m.candidate_id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
-            <span className="font-medium text-slate-900 dark:text-slate-100">{m.full_name}</span>
+            <span className="font-medium text-slate-900 dark:text-slate-100">{m.candidate_full_name}</span>
             <span className="text-xs text-slate-600 dark:text-slate-300">
-              <span className="text-violet-700 dark:text-violet-300">No-AI #{m.no_ai_rank ?? "—"}</span>
+              <span className="text-indigo-700 dark:text-indigo-300">AI {m.ai_match_score ?? m.match_score}%</span>
               {" · "}
-              <span className="text-violet-700 dark:text-violet-300">{m.match_score_no_ai ?? "—"}%</span>
+              <span>{m.ai_decision || "Decision pending"}</span>
               {" · "}
-              <span className="text-indigo-700 dark:text-indigo-300">
-                AI #{m.ai_rerank_rank ?? "—"} ({m.ai_rerank_score ?? "—"}% {m.ai_rerank_decision ?? ""})
-              </span>
+              <span>{new Date(m.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span>
             </span>
           </li>
         ))}
@@ -389,7 +386,7 @@ export default function JobDetailPage() {
 
         <JobPipelineStats jobId={jobId} />
 
-        <HybridMatchSummaryCard jobId={jobId} />
+        <AiCandidateHistorySummaryCard jobId={jobId} />
 
         <ContextualCopilotPanel scope="job" entityId={jobId} subtitle={`${job.title} · ${job.company}`} />
 
@@ -421,6 +418,9 @@ export default function JobDetailPage() {
                     body: JSON.stringify({}),
                   });
                   void mutateQuestions(res, { revalidate: false });
+                  setToast({ message: "Interview questions generated.", variant: "success" });
+                } catch (e) {
+                  handleApiError(e, "Failed to generate interview questions");
                 } finally {
                   setQBusy(false);
                 }

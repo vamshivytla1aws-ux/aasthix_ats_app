@@ -563,7 +563,7 @@ function selectAiShortlisted() {
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
               >
                 {noAiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {noAiBusy ? "Re-scoring…" : "Re-score (No AI)"}
+                {noAiBusy ? "Re-scoring…" : "Re-score"}
               </button>
               <button
                 type="button"
@@ -573,7 +573,7 @@ function selectAiShortlisted() {
                 className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-900 hover:bg-teal-100 disabled:opacity-50"
               >
                 <UserRound className="h-3.5 w-3.5" />
-                Check one candidate
+                AI Matching
               </button>
               <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-200">
                 <X className="h-5 w-5" />
@@ -756,10 +756,10 @@ function selectAiShortlisted() {
             <div className="border-t border-slate-200 px-5 py-4">
               <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <UserRound className="h-4 w-4 text-teal-600" />
-                1-to-1 match history
+                AI 1-to-1 match history
               </div>
               <p className="mb-3 text-xs text-slate-600">
-                Saved runs for this job. Open <span className="font-medium">Check one candidate</span> to add a row — prior
+                Saved runs for this job. Open <span className="font-medium">AI Matching</span> to add a row — prior
                 results stay here so you can skip repeat AI calls when reviewing the same person.
               </p>
               <SingleMatchHistoryTable

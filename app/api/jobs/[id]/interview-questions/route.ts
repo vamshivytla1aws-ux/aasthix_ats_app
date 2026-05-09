@@ -116,16 +116,13 @@ function normalizeQuestions(raw: any): QuestionPayload[] {
   return rows;
 }
 
-async function saveQuestions(jobId: number, userId: number, questions: QuestionPayload[]) {
+async function saveQuestions(jobId: number, questions: QuestionPayload[]) {
   await query("BEGIN");
   try {
     await query(
-      `DELETE FROM job_interview_questions q
-       USING jobs j
-       WHERE q.job_id = j.id
-         AND q.job_id = $1
-         AND j.created_by_user_id = $2`,
-      [jobId, userId]
+      `DELETE FROM job_interview_questions
+       WHERE job_id = $1`,
+      [jobId]
     );
 
     for (let i = 0; i < questions.length; i += 1) {
@@ -133,7 +130,7 @@ async function saveQuestions(jobId: number, userId: number, questions: QuestionP
       await query(
         `INSERT INTO job_interview_questions (job_id, category, question, sort_order)
          VALUES ($1, $2, $3, $4)`,
-        [jobId, q.category, q.question, q.sort_order ?? i + 1]
+      [jobId, q.category, q.question, q.sort_order ?? i + 1]
       );
     }
     await query("COMMIT");
@@ -147,17 +144,15 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   try {
     const auth = await requirePermission("jobs.view");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-    const user = auth.access;
     const jobId = Number(params.id);
     if (!Number.isFinite(jobId)) return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
 
     const rows = await query(
       `SELECT q.id, q.category, q.question, q.sort_order, q.created_at
        FROM job_interview_questions q
-       JOIN jobs j ON j.id = q.job_id
-       WHERE q.job_id = $1 AND j.created_by_user_id = $2
+       WHERE q.job_id = $1
        ORDER BY q.category, q.sort_order, q.id`,
-      [jobId, user.user_id]
+      [jobId]
     );
     return NextResponse.json({ questions: rows.rows });
   } catch (error: any) {
@@ -170,7 +165,6 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   try {
     const auth = await requirePermission("jobs.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-    const user = auth.access;
     const jobId = Number(params.id);
     if (!Number.isFinite(jobId)) return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
 
@@ -184,7 +178,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       }))
       .filter((q: any) => ["technical", "scenario", "behavioral", "hr"].includes(q.category) && q.question);
 
-    await saveQuestions(jobId, user.user_id, normalized);
+    await saveQuestions(jobId, normalized);
     return NextResponse.json({ ok: true, count: normalized.length });
   } catch (error: any) {
     if (error?.code === "42P01") {
@@ -198,16 +192,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
   try {
     const auth = await requirePermission("jobs.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-    const user = auth.access;
     const jobId = Number(params.id);
     if (!Number.isFinite(jobId)) return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
 
     const jobRes = await query(
       `SELECT id, title, description, employment_type
        FROM jobs
-       WHERE id = $1 AND created_by_user_id = $2
+       WHERE id = $1
        LIMIT 1`,
-      [jobId, user.user_id]
+      [jobId]
     );
     if (jobRes.rowCount === 0) return NextResponse.json({ error: "Job not found" }, { status: 404 });
     const job = jobRes.rows[0] as { title: string; description: string; employment_type: string };
@@ -238,7 +231,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     }
 
     const normalized = normalizeQuestions(generated);
-    await saveQuestions(jobId, user.user_id, normalized);
+    await saveQuestions(jobId, normalized);
     return NextResponse.json({
       generated_mode: generatedMode,
       questions: normalized,

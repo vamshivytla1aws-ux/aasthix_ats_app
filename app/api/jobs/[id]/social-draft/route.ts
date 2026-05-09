@@ -85,8 +85,19 @@ function inferHashtags(job: JobRow) {
   return Array.from(tags).slice(0, 12);
 }
 
+function stripAiLookingMarkdown(text: string) {
+  return text
+    .replace(/\*\*/g, "")
+    .replace(/__/g, "")
+    .replace(/`/g, "")
+    .replace(/^\s*[-*]\s+/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function ensureMandatoryFooter(text: string, shareUrl: string, hashtags: string[]) {
-  const withoutFooter = text
+  const normalized = stripAiLookingMarkdown(text);
+  const withoutFooter = normalized
     .replace(/apply here:\s*https?:\/\/\S+/gi, "")
     .replace(/https?:\/\/\S+/gi, "")
     .replace(/#[A-Za-z0-9_]+/g, "")
