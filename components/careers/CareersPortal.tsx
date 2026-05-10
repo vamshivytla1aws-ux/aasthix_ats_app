@@ -18,6 +18,18 @@ type PublicJob = {
   created_at: string | null;
 };
 
+const EMPTY_APPLY_FORM = {
+  full_name: "",
+  email: "",
+  phone: "",
+  experience: "",
+  notice_period: "",
+  current_salary: "",
+  expected_salary: "",
+  location: "",
+  consent: false,
+};
+
 function formatPosted(d: string | null) {
   if (!d) return "—";
   try {
@@ -58,17 +70,7 @@ export default function CareersPortal() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [resumeName, setResumeName] = useState<string>("");
-  const [form, setForm] = useState({
-    full_name: "",
-    email: "",
-    phone: "",
-    experience: "",
-    notice_period: "",
-    current_salary: "",
-    expected_salary: "",
-    location: "",
-    consent: false,
-  });
+  const [form, setForm] = useState(EMPTY_APPLY_FORM);
 
   const track = useCallback(async (event_type: string, job_id?: number | null) => {
     try {
@@ -119,11 +121,62 @@ export default function CareersPortal() {
   }
 
   function openApply(job: PublicJob) {
+    setForm(EMPTY_APPLY_FORM);
+    setResumeName("");
     setApplyJob(job);
     setFormError(null);
-    setResumeName("");
     void track("start_apply", job.id);
   }
+
+  const isApplyDirty = useMemo(() => {
+    if (!applyJob) return false;
+    return (
+      Boolean(form.full_name.trim()) ||
+      Boolean(form.email.trim()) ||
+      Boolean(form.phone.trim()) ||
+      Boolean(form.experience.trim()) ||
+      Boolean(form.notice_period.trim()) ||
+      Boolean(form.current_salary.trim()) ||
+      Boolean(form.expected_salary.trim()) ||
+      Boolean(form.location.trim()) ||
+      form.consent ||
+      Boolean(resumeName.trim())
+    );
+  }, [applyJob, form, resumeName]);
+
+  const confirmDiscard = useCallback(() => {
+    if (typeof window === "undefined") return true;
+    return window.confirm("Unsaved data will be lost. Are you sure you want to leave?");
+  }, []);
+
+  const closeApply = useCallback(() => {
+    if (submitting) return;
+    if (isApplyDirty && !confirmDiscard()) return;
+    setApplyJob(null);
+    setForm(EMPTY_APPLY_FORM);
+    setResumeName("");
+    setFormError(null);
+  }, [confirmDiscard, isApplyDirty, submitting]);
+
+  const onBrandNavigate = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (submitting) {
+      e.preventDefault();
+      return;
+    }
+    if (applyJob && isApplyDirty && !confirmDiscard()) {
+      e.preventDefault();
+    }
+  }, [applyJob, confirmDiscard, isApplyDirty, submitting]);
+
+  useEffect(() => {
+    if (!applyJob || !isApplyDirty || submitting) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [applyJob, isApplyDirty, submitting]);
 
   async function onApplySubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -161,7 +214,11 @@ export default function CareersPortal() {
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
       <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
-          <div className="flex items-center gap-3">
+          <a
+            href="https://www.aasthix.com"
+            onClick={onBrandNavigate}
+            className="flex items-center gap-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+          >
             <BrandLogo
               size={44}
               className="shrink-0 rounded-xl bg-slate-950/70 p-1 ring-1 ring-white/10"
@@ -170,7 +227,7 @@ export default function CareersPortal() {
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-300/90">AASTHIX</p>
               <p className="text-sm text-slate-400">Talent &amp; Delivery</p>
             </div>
-          </div>
+          </a>
           <Link
             href="/login"
             className="text-sm font-medium text-slate-300 underline-offset-4 hover:text-white hover:underline"
@@ -398,12 +455,12 @@ export default function CareersPortal() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <button
-              type="button"
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-              aria-label="Close apply form"
-              onClick={() => !submitting && setApplyJob(null)}
-            />
+              <button
+                type="button"
+                className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+                aria-label="Close apply form"
+                onClick={closeApply}
+              />
             <motion.div
               role="dialog"
               aria-modal="true"
@@ -421,7 +478,7 @@ export default function CareersPortal() {
                 <button
                   type="button"
                   disabled={submitting}
-                  onClick={() => setApplyJob(null)}
+                  onClick={closeApply}
                   className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-40"
                 >
                   <X className="h-5 w-5" />
@@ -576,7 +633,7 @@ export default function CareersPortal() {
                   <button
                     type="button"
                     disabled={submitting}
-                    onClick={() => setApplyJob(null)}
+                    onClick={closeApply}
                     className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-40"
                   >
                     Cancel

@@ -6,6 +6,18 @@ import { Calendar, Clock3, MapPin, Send } from "lucide-react";
 import type { PublicCareersJob } from "@/lib/careersPublicJob";
 import BrandLogo from "@/components/BrandLogo";
 
+const EMPTY_SINGLE_JOB_FORM = {
+  full_name: "",
+  email: "",
+  phone: "",
+  experience: "",
+  notice_period: "",
+  current_salary: "",
+  expected_salary: "",
+  location: "",
+  consent: false,
+};
+
 function formatPosted(d: string | null) {
   if (!d) return "Recently posted";
   try {
@@ -61,17 +73,8 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 export default function SingleJobCareersPage({ job }: { job: PublicCareersJob }) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    full_name: "",
-    email: "",
-    phone: "",
-    experience: "",
-    notice_period: "",
-    current_salary: "",
-    expected_salary: "",
-    location: "",
-    consent: false,
-  });
+  const [resumeName, setResumeName] = useState("");
+  const [form, setForm] = useState(EMPTY_SINGLE_JOB_FORM);
 
   const track = useCallback(async (eventType: string, meta?: Record<string, unknown>) => {
     try {
@@ -94,6 +97,49 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
     void track("open_public_page", { page: "single_job_share" });
     void track("view_jd", { page: "single_job_share" });
   }, [track]);
+
+  const isDirty = useMemo(
+    () =>
+      Boolean(form.full_name.trim()) ||
+      Boolean(form.email.trim()) ||
+      Boolean(form.phone.trim()) ||
+      Boolean(form.experience.trim()) ||
+      Boolean(form.notice_period.trim()) ||
+      Boolean(form.current_salary.trim()) ||
+      Boolean(form.expected_salary.trim()) ||
+      Boolean(form.location.trim()) ||
+      form.consent ||
+      Boolean(resumeName.trim()),
+    [form, resumeName]
+  );
+
+  const confirmDiscard = useCallback(() => {
+    if (typeof window === "undefined") return true;
+    return window.confirm("Unsaved data will be lost. Are you sure you want to leave?");
+  }, []);
+
+  const onBrandNavigate = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>) => {
+      if (submitting) {
+        e.preventDefault();
+        return;
+      }
+      if (isDirty && !confirmDiscard()) {
+        e.preventDefault();
+      }
+    },
+    [confirmDiscard, isDirty, submitting]
+  );
+
+  useEffect(() => {
+    if (!isDirty || submitting) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty, submitting]);
 
   const summaryLine = useMemo(() => heroDescription(job), [job]);
 
@@ -127,7 +173,11 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
       <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
-          <div className="flex items-center gap-3">
+          <a
+            href="https://www.aasthix.com"
+            onClick={onBrandNavigate}
+            className="flex items-center gap-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+          >
             <BrandLogo
               size={44}
               className="shrink-0 rounded-xl bg-slate-950/70 p-1 ring-1 ring-white/10"
@@ -136,7 +186,7 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-300/90">AASTHIX</p>
               <p className="text-sm text-slate-400">Direct job application</p>
             </div>
-          </div>
+          </a>
           <Link
             href="/careers"
             className="text-sm font-medium text-slate-300 underline-offset-4 hover:text-white hover:underline"
@@ -280,7 +330,11 @@ export default function SingleJobCareersPage({ job }: { job: PublicCareersJob })
                     type="file"
                     name="resume"
                     accept=".pdf,.doc,.docx"
-                    onChange={() => void track("resume_file_selected", { page: "single_job_share" })}
+                    onChange={(e) => {
+                      const file = e.currentTarget.files?.[0] ?? null;
+                      setResumeName(file?.name ?? "");
+                      void track("resume_file_selected", { page: "single_job_share" });
+                    }}
                     className="block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-500 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-indigo-400"
                   />
                 </label>
