@@ -175,3 +175,27 @@ Migration required:
 Governance surface:
 
 - `/governance` (dashboard module)
+
+## Phase 4 Enterprise Scale + Trust Layer
+
+Phase 4 rollout flags:
+
+- `NEXT_PUBLIC_ORG_GOVERNANCE_V4_ENABLED`
+- `NEXT_PUBLIC_COMPLIANCE_V4_ENABLED`
+- `NEXT_PUBLIC_INTEGRATIONS_V4_ENABLED`
+- `NEXT_PUBLIC_SRE_HARDENING_V4_ENABLED`
+- `NEXT_PUBLIC_AI_GOVERNANCE_V4_ENABLED`
+
+Phase 4 APIs:
+
+- `/api/org/*`
+- `/api/compliance/*`
+- `/api/security/*`
+- `/api/integrations/*`
+- `/api/webhooks/rotate-secret`
+- `/api/ops/*`
+- `/api/ai-governance/*`
+
+Migration:
+
+- `0070_phase4_enterprise_scale_trust.sql`
