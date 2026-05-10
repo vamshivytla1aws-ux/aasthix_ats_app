@@ -51,6 +51,10 @@ function StandardJobsView() {
   const router = useRouter();
   const { density, setDensity } = useDensity("ats:list-density", "compact");
   const { data: jobs = [], error, isLoading, mutate } = useSWR<Job[]>("/api/jobs");
+  const { data: jobRisksData } = useSWR<{ enabled?: boolean; rows?: Array<{ entity_id: number; risk_score: number }> }>(
+    "/api/intelligence/job-risk",
+    dashboardFetcher
+  );
   const { data: meData } = useSWR<{ user?: { role?: string }; permissions?: Record<string, boolean> }>(
     "/api/auth/me",
     dashboardFetcher
@@ -103,6 +107,8 @@ function StandardJobsView() {
   }
 
   const openCount = jobs.filter((j) => (j.status || "Open").toLowerCase().includes("open")).length;
+  const highRiskJobs =
+    Array.isArray(jobRisksData?.rows) ? jobRisksData!.rows.filter((row) => Number(row.risk_score) >= 75).length : 0;
 
   return (
     <AccessGate permissionKey="jobs.view">
@@ -132,7 +138,8 @@ function StandardJobsView() {
           ) : (
             <span>
               <span className="font-semibold text-slate-800 dark:text-slate-200">{jobs.length}</span> roles ·{" "}
-              <span className="font-semibold text-emerald-700 dark:text-emerald-400">{openCount}</span> open
+              <span className="font-semibold text-emerald-700 dark:text-emerald-400">{openCount}</span> open ·{" "}
+              <span className="font-semibold text-amber-700 dark:text-amber-300">{highRiskJobs}</span> high risk
             </span>
           )
         }

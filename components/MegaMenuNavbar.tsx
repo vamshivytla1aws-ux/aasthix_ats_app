@@ -17,12 +17,16 @@ import DashboardThemeToggle from "@/components/DashboardThemeToggle";
 import GlobalHeaderSearch from "@/components/GlobalHeaderSearch";
 import AIUsageQuickPanel from "@/components/usage/AIUsageQuickPanel";
 import {
+  DASHBOARD_DOMAIN_ITEMS,
+  DASHBOARD_DOMAIN_NAV,
   DASHBOARD_MORE_NAV,
   DASHBOARD_PRIMARY_NAV,
+  getDomainForPath,
   isDashboardNavHrefActive,
   isNavItemVisible,
 } from "@/lib/dashboardNavConfig";
 import BrandLogo from "@/components/BrandLogo";
+import { IA_V2_ENABLED } from "@/lib/featureFlags";
 
 const ADMIN_LINKS = [
   { label: "Access control", href: "/admin/permissions" },
@@ -118,6 +122,19 @@ export default function MegaMenuNavbar() {
     () => DASHBOARD_PRIMARY_NAV.filter((item) => isNavItemVisible(item, role, permissions)),
     [role, permissions]
   );
+  const domainVisible = useMemo(
+    () =>
+      DASHBOARD_DOMAIN_NAV.filter((domain) => {
+        if (domain.id === "admin" && role !== "admin") return false;
+        return true;
+      }),
+    [role]
+  );
+  const domainMoreVisible = useMemo(() => {
+    const activeDomain = getDomainForPath(pathname);
+    const items = DASHBOARD_DOMAIN_ITEMS[activeDomain] ?? [];
+    return items.filter((item) => isNavItemVisible(item, role, permissions));
+  }, [pathname, role, permissions]);
   const moreVisible = useMemo(
     () => DASHBOARD_MORE_NAV.filter((item) => isNavItemVisible(item, role, permissions)),
     [role, permissions]
@@ -130,6 +147,16 @@ export default function MegaMenuNavbar() {
     () => isNavItemVisible({ permissionKey: "pipeline.view" }, role, permissions),
     [role, permissions]
   );
+  const mobileNavItems = useMemo(() => {
+    if (!IA_V2_ENABLED) return [...primaryVisible, ...moreVisible];
+    const all = Object.values(DASHBOARD_DOMAIN_ITEMS).flat();
+    const dedupe = new Map<string, (typeof all)[number]>();
+    for (const item of all) {
+      if (!isNavItemVisible(item, role, permissions)) continue;
+      dedupe.set(item.href, item);
+    }
+    return Array.from(dedupe.values());
+  }, [primaryVisible, moreVisible, role, permissions]);
 
   return (
     <header className="sticky top-0 z-50">
@@ -365,18 +392,34 @@ export default function MegaMenuNavbar() {
         aria-label="Workspace modules"
       >
         <div className="ats-page-inner flex min-h-[2.75rem] flex-wrap items-center gap-1.5 px-4 py-2 sm:px-6">
-          {primaryVisible.map((item) => (
-            <Link
-              key={item.id}
-              href={item.href}
-              className={[
-                UI.enterprise.secondaryNavLink,
-                isDashboardNavHrefActive(pathname, item.href) ? UI.enterprise.secondaryNavLinkActive : "",
-              ].join(" ")}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {!IA_V2_ENABLED
+            ? primaryVisible.map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className={[
+                    UI.enterprise.secondaryNavLink,
+                    isDashboardNavHrefActive(pathname, item.href) ? UI.enterprise.secondaryNavLinkActive : "",
+                  ].join(" ")}
+                >
+                  {item.label}
+                </Link>
+              ))
+            : null}
+          {IA_V2_ENABLED
+            ? domainVisible.map((domain) => (
+                <Link
+                  key={domain.id}
+                  href={domain.href}
+                  className={[
+                    UI.enterprise.secondaryNavLink,
+                    getDomainForPath(pathname) === domain.id ? UI.enterprise.secondaryNavLinkActive : "",
+                  ].join(" ")}
+                >
+                  {domain.label}
+                </Link>
+              ))
+            : null}
 
           <div className="relative pl-1" ref={moreRef}>
             <button
@@ -410,7 +453,7 @@ export default function MegaMenuNavbar() {
                     {usageOpen ? <AIUsageQuickPanel /> : null}
                   </>
                 ) : null}
-                {moreVisible.map((item) => (
+                {(IA_V2_ENABLED ? domainMoreVisible : moreVisible).map((item) => (
                   <Link
                     key={item.id}
                     href={item.href}
@@ -496,7 +539,7 @@ export default function MegaMenuNavbar() {
                 <GlobalHeaderSearch variant="panel" />
               </div>
               <nav className="flex-1 space-y-1 p-3">
-                {[...primaryVisible, ...moreVisible].map((item) => (
+                {mobileNavItems.map((item) => (
                   <Link
                     key={item.id}
                     href={item.href}

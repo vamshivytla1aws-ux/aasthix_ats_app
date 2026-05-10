@@ -11,6 +11,20 @@ export type DashboardNavItem = {
   permissionKey?: string;
 };
 
+export type DashboardDomain =
+  | "hiring"
+  | "delivery"
+  | "collaboration"
+  | "reporting"
+  | "workforce"
+  | "admin";
+
+export type DashboardDomainNav = {
+  id: DashboardDomain;
+  label: string;
+  href: string;
+};
+
 export const DASHBOARD_PRIMARY_NAV: DashboardNavItem[] = [
   { id: "home", label: "Home", href: "/dashboard", permissionKey: "dashboard.view" },
   { id: "candidates", label: "Candidates", href: "/candidates", permissionKey: "candidates.view" },
@@ -33,7 +47,51 @@ export const DASHBOARD_MORE_NAV: DashboardNavItem[] = [
   { id: "roadmap", label: "Roadmap", href: "/roadmap", permissionKey: "pipeline.view" },
   { id: "copilot", label: "Recruiter Copilot", href: "/recruiter/copilot", permissionKey: "jobs.view" },
   { id: "workload", label: "Recruiter Workload", href: "/recruiter/workload", permissionKey: "jobs.view" },
+  { id: "governance", label: "AI Governance", href: "/governance", permissionKey: "jobs.view" },
 ];
+
+export const DASHBOARD_DOMAIN_NAV: DashboardDomainNav[] = [
+  { id: "hiring", label: "Hiring", href: "/jobs" },
+  { id: "delivery", label: "Delivery", href: "/clients" },
+  { id: "collaboration", label: "Collaboration", href: "/chat" },
+  { id: "reporting", label: "Reporting", href: "/analytics" },
+  { id: "workforce", label: "Workforce", href: "/attendance" },
+  { id: "admin", label: "Admin", href: "/admin/permissions" },
+];
+
+export const DASHBOARD_DOMAIN_ITEMS: Record<DashboardDomain, DashboardNavItem[]> = {
+  hiring: [
+    { id: "home", label: "Home", href: "/dashboard", permissionKey: "dashboard.view" },
+    { id: "jobs", label: "Jobs", href: "/jobs", permissionKey: "jobs.view" },
+    { id: "pipeline", label: "Pipeline", href: "/pipeline", permissionKey: "pipeline.view" },
+    { id: "candidates", label: "Candidates", href: "/candidates", permissionKey: "candidates.view" },
+    { id: "interviews", label: "Interviews", href: "/interviews", permissionKey: "interviews.view" },
+  ],
+  delivery: [
+    { id: "clients", label: "Clients", href: "/clients", permissionKey: "vendors.view" },
+    { id: "workload", label: "Recruiter Workload", href: "/recruiter/workload", permissionKey: "jobs.view" },
+    { id: "activity", label: "Activity Center", href: "/activity-center", permissionKey: "dashboard.view" },
+  ],
+  collaboration: [
+    { id: "chat", label: "Chat", href: "/chat", permissionKey: "chat.view" },
+    { id: "notes", label: "Notes", href: "/notes", permissionKey: "pipeline.view" },
+    { id: "alerts", label: "Alerts", href: "/alerts", permissionKey: "alerts.view" },
+  ],
+  reporting: [
+    { id: "analytics", label: "Analytics", href: "/analytics", permissionKey: "jobs.view" },
+    { id: "usage", label: "AI Usage", href: "/usage", permissionKey: "jobs.view" },
+    { id: "audit", label: "Audit trail", href: "/audit", permissionKey: "jobs.view" },
+  ],
+  workforce: [
+    { id: "attendance", label: "Attendance", href: "/attendance", permissionKey: "attendance.view_self" },
+    { id: "timesheet", label: "Timesheet", href: "/timesheet", permissionKey: "timesheet.view_self" },
+  ],
+  admin: [
+    { id: "permissions", label: "Access control", href: "/admin/permissions", permissionKey: "jobs.view" },
+    { id: "disposition", label: "Disposition reasons", href: "/admin/disposition-reasons", permissionKey: "jobs.view" },
+    { id: "settings", label: "Settings", href: "/settings", permissionKey: "dashboard.view" },
+  ],
+};
 
 export function isNavItemVisible(
   item: Pick<DashboardNavItem, "permissionKey">,
@@ -52,5 +110,38 @@ export function isDashboardNavHrefActive(pathname: string, href: string): boolea
   if (href === "/clients") return pathname === "/clients" || pathname.startsWith("/clients/");
   if (href === "/dashboard") return pathname === "/dashboard";
   if (href === "/notes") return pathname === "/notes" || pathname.startsWith("/notes/");
+  if (href === "/admin/permissions") return pathname.startsWith("/admin/");
+  if (href === "/analytics") return pathname === "/analytics" || pathname.startsWith("/usage");
+  if (href === "/chat") return pathname === "/chat" || pathname.startsWith("/notes");
+  if (href === "/attendance") return pathname === "/attendance" || pathname.startsWith("/timesheet");
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function getDomainForPath(pathname: string): DashboardDomain {
+  if (
+    pathname === "/dashboard" ||
+    pathname.startsWith("/jobs") ||
+    pathname.startsWith("/pipeline") ||
+    pathname.startsWith("/candidates") ||
+    pathname.startsWith("/interviews") ||
+    pathname.startsWith("/screening")
+  ) {
+    return "hiring";
+  }
+  if (pathname.startsWith("/clients") || pathname.startsWith("/recruiter/workload") || pathname.startsWith("/activity-center")) {
+    return "delivery";
+  }
+  if (pathname.startsWith("/chat") || pathname.startsWith("/notes") || pathname.startsWith("/alerts")) {
+    return "collaboration";
+  }
+  if (pathname.startsWith("/analytics") || pathname.startsWith("/usage") || pathname.startsWith("/audit")) {
+    return "reporting";
+  }
+  if (pathname.startsWith("/attendance") || pathname.startsWith("/timesheet")) {
+    return "workforce";
+  }
+  if (pathname.startsWith("/admin") || pathname.startsWith("/settings")) {
+    return "admin";
+  }
+  return "hiring";
 }

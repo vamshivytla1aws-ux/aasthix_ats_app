@@ -17,6 +17,7 @@ import {
 import AccessGate from "@/components/AccessGate";
 import DashboardAttendanceCard from "@/components/attendance/DashboardAttendanceCard";
 import HrAssistantPanel from "@/components/hrAssistant/HrAssistantPanel";
+import { DASHBOARD_V2_ENABLED, INTELLIGENCE_V3_ENABLED, PERSONALIZATION_V2_ENABLED } from "@/lib/featureFlags";
 
 type Stage = "Applied" | "Screening" | "Screening Failed" | "Interview" | "Selected" | "Rejected";
 const STAGES: Stage[] = ["Applied", "Screening", "Screening Failed", "Interview", "Selected", "Rejected"];
@@ -84,6 +85,9 @@ export default function DashboardPage() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [role, setRole] = useState<string>("user");
+  const [widgetOrder, setWidgetOrder] = useState<string[]>([]);
+  const [intelligenceSummary, setIntelligenceSummary] = useState<any>(null);
 
   async function load() {
     setLoading(true);
@@ -123,6 +127,9 @@ export default function DashboardPage() {
   useEffect(() => {
     void load();
     void loadAlerts();
+    apiFetchJson<{ user?: { role?: string } }>("/api/auth/me")
+      .then((data) => setRole(String(data.user?.role || "user").toLowerCase()))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -159,6 +166,145 @@ export default function DashboardPage() {
   }, [alerts]);
   const riskCount = (sla?.stale_in_stage_over_days || 0) + (sla?.interview_overdue_after_hours || 0);
 
+  useEffect(() => {
+    if (!DASHBOARD_V2_ENABLED || !PERSONALIZATION_V2_ENABLED) return;
+    apiFetchJson<{ layout?: { dashboard?: { widgets?: string[] } } }>("/api/workspace/layout")
+      .then((data) => {
+        const widgets = data.layout?.dashboard?.widgets;
+        if (Array.isArray(widgets) && widgets.length > 0) setWidgetOrder(widgets);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!INTELLIGENCE_V3_ENABLED) return;
+    apiFetchJson("/api/intelligence/summary")
+      .then((data) => setIntelligenceSummary(data))
+      .catch(() => {});
+  }, []);
+
+  const rolePresetWidgets = useMemo(() => {
+    if (role === "admin") return ["kpi", "risk", "pipeline", "actions", "assistant", "attendance"];
+    if (role === "recruiter") return ["kpi", "pipeline", "actions", "risk", "assistant", "attendance"];
+    if (role === "employee") return ["attendance", "actions", "assistant", "kpi"];
+    return ["kpi", "pipeline", "actions", "risk", "assistant", "attendance"];
+  }, [role]);
+
+  const activeWidgets = widgetOrder.length > 0 ? widgetOrder : rolePresetWidgets;
+
+  async function persistWidgetOrder(nextOrder: string[]) {
+    setWidgetOrder(nextOrder);
+    if (!PERSONALIZATION_V2_ENABLED) return;
+    try {
+      await apiFetchJson("/api/workspace/layout", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dashboard: { widgets: nextOrder, hidden_widgets: [] }, modules: {} }),
+      });
+    } catch {
+      // non-blocking
+    }
+  }
+
+  function moveWidget(id: string, direction: -1 | 1) {
+    const current = [...activeWidgets];
+    const idx = current.indexOf(id);
+    if (idx < 0) return;
+    const nextIdx = idx + direction;
+    if (nextIdx < 0 || nextIdx >= current.length) return;
+    const [item] = current.splice(idx, 1);
+    current.splice(nextIdx, 0, item);
+    void persistWidgetOrder(current);
+  }
+
+  const sections: Record<string, React.ReactNode> = {
+    kpi: (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard title="Open jobs" value={openJobs} detail={`${closedJobs} closed roles in the system`} icon={<BriefcaseBusiness className="h-6 w-6" />} />
+        <MetricCard title="Candidate pool" value={candidates.length} detail={`${applications.length} active application records`} icon={<UsersRound className="h-6 w-6" />} />
+        <MetricCard title="Interview load" value={interviewLoad} detail={`${alertSummary.upcoming} upcoming and ${alertSummary.ongoing} live signals`} icon={<Clock3 className="h-6 w-6" />} />
+        <MetricCard title="Operational risk" value={riskCount} detail="Stale pipeline items and overdue interview actions" icon={<ShieldAlert className="h-6 w-6" />} />
+      </div>
+    ),
+    pipeline: (
+      <section className={`${UI.enterprise.elevatedCard} p-6`}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">Pipeline health</div>
+            <div className="mt-1 text-lg font-semibold text-[var(--ats-text)]">Stage distribution and conversion</div>
+          </div>
+          <div className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-4 py-3 text-right">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">Conversion</div>
+            <div className="mt-1 text-2xl font-semibold text-[var(--ats-text)]">{conversionRate}%</div>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {STAGES.map((s) => (
+            <div key={s} className="rounded-2xl border border-[var(--ats-border-subtle)] bg-[var(--ats-bg-panel)] p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">{s}</div>
+              <div className="mt-2 text-3xl font-semibold tracking-tight text-[var(--ats-text)]">{perStage[s]}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+    ),
+    risk: (
+      <section className={`${UI.enterprise.elevatedCard} p-6`}>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">Risk and exceptions</div>
+        <div className="mt-3 space-y-3">
+          {sla ? (
+            <>
+              <div className="rounded-2xl border border-[color:rgb(245_158_11_/_0.22)] bg-[color:rgb(245_158_11_/_0.11)] p-4">
+                <div className="text-sm font-semibold text-[var(--ats-text)]">Pipeline aging</div>
+                <div className="mt-1 text-sm text-[var(--ats-text-muted)]">{sla.stale_in_stage_over_days} applications have had no stage change for {sla.stale_days_threshold}+ days.</div>
+              </div>
+              <div className="rounded-2xl border border-[color:rgb(239_68_68_/_0.2)] bg-[color:rgb(239_68_68_/_0.1)] p-4">
+                <div className="text-sm font-semibold text-[var(--ats-text)]">Interview latency</div>
+                <div className="mt-1 text-sm text-[var(--ats-text-muted)]">{sla.interview_overdue_after_hours} scheduled interviews are older than {sla.interview_stale_hours_threshold} hours.</div>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-4 text-sm text-[var(--ats-text-muted)]">SLA telemetry is not available right now.</div>
+          )}
+        </div>
+      </section>
+    ),
+    actions: (
+      <section className={`${UI.enterprise.elevatedCard} p-6`}>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">Action queue</div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {[{ href: "/jobs", title: "Create job", body: "Open a role and start delivery planning." }, { href: "/candidates", title: "Add candidate", body: "Add/import talent into pool." }, { href: "/pipeline", title: "Manage pipeline", body: "Move stages and rebalance ownership." }, { href: "/interviews", title: "Interview desk", body: "Schedule and close interview actions." }].map((item) => (
+            <Link key={item.href} href={item.href} className="group rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-4 shadow-[var(--ats-shadow-sm)] transition hover:border-[var(--ats-border-strong)] hover:bg-[var(--ats-bg-panel-strong)]">
+              <div className="text-base font-semibold text-[var(--ats-text)]">{item.title}</div>
+              <div className="mt-2 text-sm leading-6 text-[var(--ats-text-muted)]">{item.body}</div>
+            </Link>
+          ))}
+        </div>
+      </section>
+    ),
+    assistant: <HrAssistantPanel />,
+    attendance: <DashboardAttendanceCard />,
+    risk_heatmap: INTELLIGENCE_V3_ENABLED ? (
+      <section className={`${UI.enterprise.elevatedCard} p-6`}>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-text-soft)]">Risk heatmap</div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-4">
+            <div className="text-sm text-[var(--ats-text-muted)]">High-risk applications</div>
+            <div className="mt-1 text-3xl font-semibold text-[var(--ats-text)]">
+              {intelligenceSummary?.summary?.totals?.high_risk_applications ?? 0}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-4">
+            <div className="text-sm text-[var(--ats-text-muted)]">High-risk jobs</div>
+            <div className="mt-1 text-3xl font-semibold text-[var(--ats-text)]">
+              {intelligenceSummary?.summary?.totals?.high_risk_jobs ?? 0}
+            </div>
+          </div>
+        </div>
+      </section>
+    ) : null,
+  };
+
   return (
     <AccessGate permissionKey="dashboard.view">
       <div className="space-y-5">
@@ -190,6 +336,32 @@ export default function DashboardPage() {
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className={`${UI.enterprise.metricCard} h-36 animate-pulse bg-[var(--ats-bg-panel)]`} />
             ))}
+          </div>
+        ) : DASHBOARD_V2_ENABLED ? (
+          <div className="space-y-4">
+            {activeWidgets.map((widgetId) =>
+              sections[widgetId] ? (
+                <section key={widgetId} className="space-y-2">
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => moveWidget(widgetId, -1)}
+                      className="rounded-lg border border-[var(--ats-border)] px-2 py-1 text-xs text-[var(--ats-text-muted)]"
+                    >
+                      Move up
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveWidget(widgetId, 1)}
+                      className="rounded-lg border border-[var(--ats-border)] px-2 py-1 text-xs text-[var(--ats-text-muted)]"
+                    >
+                      Move down
+                    </button>
+                  </div>
+                  {sections[widgetId]}
+                </section>
+              ) : null
+            )}
           </div>
         ) : (
           <>

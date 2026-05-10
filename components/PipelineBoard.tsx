@@ -12,6 +12,7 @@ import Toast from "@/components/Toast";
 import DispositionReasonModal from "@/components/DispositionReasonModal";
 import ApplicationEmailModal from "@/components/pipeline/ApplicationEmailModal";
 import PipelineApplicationDrawer from "@/components/pipeline/PipelineApplicationDrawer";
+import { INTELLIGENCE_V3_ENABLED } from "@/lib/featureFlags";
 
 const STAGES = ["Applied", "Screening", "Screening Failed", "Interview", "Selected", "Rejected"] as const;
 type Stage = (typeof STAGES)[number];
@@ -412,6 +413,7 @@ export default function PipelineBoard({
   const [decisionSendEmail, setDecisionSendEmail] = useState(false);
   const [undoStage, setUndoStage] = useState<{ applicationId: number; stage: Stage } | null>(null);
   const [drawerApp, setDrawerApp] = useState<ApplicationRow | null>(null);
+  const [riskByApplicationId, setRiskByApplicationId] = useState<Record<number, number>>({});
 
   /** True from drag start until drag end — blocks prop sync that would break @hello-pangea/dnd mid-drag */
   const dragSessionRef = useRef(false);
@@ -485,6 +487,29 @@ export default function PipelineBoard({
       );
     });
   }, []);
+
+  useEffect(() => {
+    if (!INTELLIGENCE_V3_ENABLED) return;
+    let cancelled = false;
+    apiFetchJson<{ rows?: Array<{ entity_id: number; risk_score: number; risk_type: string }> }>(
+      "/api/intelligence/application-risk"
+    )
+      .then((data) => {
+        if (cancelled) return;
+        const map: Record<number, number> = {};
+        for (const row of data.rows || []) {
+          const id = Number(row.entity_id);
+          const score = Number(row.risk_score || 0);
+          if (!Number.isFinite(id) || id <= 0) continue;
+          map[id] = Math.max(map[id] ?? 0, score);
+        }
+        setRiskByApplicationId(map);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [localApplications.length]);
 
   const optimisticallyPatchApplication = useCallback((applicationId: number, patch: Partial<ApplicationRow>) => {
     lastOptimisticMoveAtRef.current = Date.now();
@@ -2275,6 +2300,23 @@ export default function PipelineBoard({
                                       {a.candidate_full_name}
                                     </Link>
                                   </div>
+                                  {INTELLIGENCE_V3_ENABLED && Number.isFinite(riskByApplicationId[a.id]) ? (
+                                    <div className="mt-1">
+                                      <span
+                                        className={[
+                                          "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                          (riskByApplicationId[a.id] ?? 0) >= 75
+                                            ? "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+                                            : (riskByApplicationId[a.id] ?? 0) >= 45
+                                              ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+                                        ].join(" ")}
+                                        title="Application risk score"
+                                      >
+                                        Risk {(riskByApplicationId[a.id] ?? 0)}%
+                                      </span>
+                                    </div>
+                                  ) : null}
                                   <div className={`${cardSubClass} text-slate-800 dark:text-slate-200`} title={a.job_title}>
                                     {a.job_title}
                                   </div>

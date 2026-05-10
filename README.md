@@ -126,3 +126,52 @@ Known limitations:
 - OpenAI usage / costs endpoints may require organization-level admin access on the configured key. When that access is missing, the UI shows `Unavailable from provider`.
 - Railway plan and quota details are not always returned directly by the provider. Those values can be supplied with `RAILWAY_PLAN_NAME` and `RAILWAY_USAGE_LIMIT`.
 - Some Railway usage metrics are returned as raw infrastructure measurements rather than invoice-ready dollar totals, so derived values are labeled `Calculated estimate`.
+
+## Phase 2 Redesign Flags and Personalization
+
+Phase 2 deep redesign is controlled by runtime flags for safe release and instant rollback.
+
+Required (set in Railway Variables):
+
+- `NEXT_PUBLIC_IA_V2_ENABLED`
+- `NEXT_PUBLIC_DASHBOARD_V2_ENABLED`
+- `NEXT_PUBLIC_PERSONALIZATION_V2_ENABLED`
+
+Workspace personalization APIs:
+
+- `GET/PUT /api/workspace/preferences`
+- `GET/PUT /api/workspace/layout`
+- `GET /api/workspace/defaults`
+
+Migration required:
+
+- `0068_workspace_personalization.sql`
+
+Rollback guide:
+
+- `docs/phase2-rollout-runbook.md`
+
+## Phase 3 Intelligence / Automation / Forecasting
+
+Phase 3 is additive and controlled by flags:
+
+- `NEXT_PUBLIC_INTELLIGENCE_V3_ENABLED`
+- `NEXT_PUBLIC_AUTOMATION_V3_ENABLED`
+- `NEXT_PUBLIC_FORECAST_V3_ENABLED`
+- `NEXT_PUBLIC_CALIBRATION_V3_ENABLED`
+
+New APIs:
+
+- `/api/intelligence/*`
+- `/api/automation/*`
+- `/api/forecast/*`
+- `/api/interviews/scorecard-template`
+- `/api/interviews/scorecard`
+
+Migration required:
+
+- `0069_phase3_intelligence_automation_forecast.sql`
+
+Governance surface:
+
+- `/governance` (dashboard module)
