@@ -61,7 +61,7 @@ export default function ClientsPage() {
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setFilterDrawer(true)} className={UI.secondaryButton + " py-2 text-xs"}>
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              More filters
+              Filters
             </button>
             <button type="button" onClick={() => void mutate()} className={UI.secondaryButton + " py-2 text-xs"}>
               Refresh
@@ -210,4 +210,3 @@ export default function ClientsPage() {
     </AccessGate>
   );
 }
-

@@ -62,7 +62,7 @@ export default function JobInfo({
           Application context
         </div>
         <div className="mt-1 text-sm text-[var(--ats-text-muted)]">
-          The current requisition, pipeline stage, and interview progress for this profile.
+          The current job, pipeline stage, and interview progress for this profile.
         </div>
       </div>
 

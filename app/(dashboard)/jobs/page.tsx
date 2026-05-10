@@ -123,7 +123,7 @@ function StandardJobsView() {
 
       <ModulePageFrame
         title="Jobs"
-        subtitle="Open requisitions, JD workflow, and hiring status — dense table with quick row actions."
+        subtitle="Open jobs, JD workflow, and hiring status — dense table with quick row actions."
         metrics={
           error ? (
             <span className="text-red-600 dark:text-red-400">{(error as Error).message || "Failed to load"}</span>
@@ -139,7 +139,7 @@ function StandardJobsView() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Link href="/jobs?view=requisition" className={UI.secondaryButton + " py-2 text-xs"}>
-              Requisition workflow
+              Job workflow
             </Link>
             <DensityToggle density={density} onChange={setDensity} />
             <button
@@ -148,7 +148,7 @@ function StandardJobsView() {
               className={UI.secondaryButton + " py-2 text-xs"}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              More filters
+              Filters
             </button>
             <button type="button" onClick={() => void mutate()} className={UI.secondaryButton + " py-2 text-xs"}>
               Refresh
@@ -214,7 +214,7 @@ function JobsPageInner() {
             Standard view
           </Link>
           <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:ring-indigo-800">
-            Requisition Workflow
+            Job Workflow
           </span>
         </div>
         <RequisitionsWorkflowView />

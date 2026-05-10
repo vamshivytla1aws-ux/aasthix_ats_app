@@ -195,7 +195,7 @@ export default function DashboardPage() {
           <>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <MetricCard
-                title="Open requisitions"
+                title="Open jobs"
                 value={openJobs}
                 detail={`${closedJobs} closed roles in the system`}
                 icon={<BriefcaseBusiness className="h-6 w-6" />}
@@ -322,7 +322,7 @@ export default function DashboardPage() {
                   {
                     href: "/jobs",
                     title: "Create job",
-                    body: "Open a requisition and start team delivery planning.",
+                    body: "Open a job and start team delivery planning.",
                   },
                   {
                     href: "/candidates",

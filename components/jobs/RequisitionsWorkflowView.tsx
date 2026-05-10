@@ -197,7 +197,7 @@ export default function RequisitionsWorkflowView() {
   // ── Toast helpers
   function handleApiError(e: unknown, fallback: string) {
     if (e instanceof ApiError && e.status === 403) {
-      showToast(`${e.message} — jobs.manage is required to change requisition data.`, "error");
+      showToast(`${e.message} — jobs.manage is required to change job workflow data.`, "error");
     } else {
       showToast((e as Error)?.message || fallback, "error");
     }
@@ -439,7 +439,7 @@ export default function RequisitionsWorkflowView() {
       },
       {
         id: "title",
-        header: "Requisition",
+        header: "Job",
         csvValue: (r) => r.title,
         sortValue: (r) => r.title,
         cell: (r) => (
@@ -555,7 +555,7 @@ export default function RequisitionsWorkflowView() {
           return (
             <div className={busyId === r.id ? "pointer-events-none opacity-50" : ""}>
               <RowActionsMenu
-                ariaLabel={`Requisition actions ${r.title}`}
+                ariaLabel={`Job actions ${r.title}`}
                 items={[
                   { type: "link", label: "Open job record", href: `/jobs/${r.id}` },
                   ...(isDraft && !hasPending && canManage
@@ -683,7 +683,7 @@ export default function RequisitionsWorkflowView() {
   // ── Disposition modal title/description
   const dispositionTitle =
     pendingDisposition?.kind === "advance"
-      ? "Advance requisition"
+      ? "Advance job workflow"
       : pendingDisposition?.kind === "inline-status"
         ? "Update status"
         : "Bulk status update";
@@ -721,7 +721,7 @@ export default function RequisitionsWorkflowView() {
       <FilterDrawer
         open={filterDrawer}
         onClose={() => setFilterDrawer(false)}
-        title="Requisition filters"
+        title="Job workflow filters"
         onApply={() => setFilterDrawer(false)}
         onReset={() => {
           setStepFilter("");
@@ -915,13 +915,13 @@ export default function RequisitionsWorkflowView() {
             columns={columns}
             storageKey="ats:requisitions-table-columns"
             density={density}
-            exportBasename="requisitions"
+            exportBasename="jobs-workflow"
             maxBodyHeight="min(68vh, 680px)"
             toolbarLeft={bulkBar}
             emptyMessage={
               <div>
                 <div className="font-semibold text-slate-800 dark:text-slate-200">
-                  No requisitions match
+                  No jobs match
                 </div>
                 <p className="mt-1">Clear filters or create a job from the Jobs page.</p>
               </div>

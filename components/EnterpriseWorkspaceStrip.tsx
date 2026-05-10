@@ -25,7 +25,7 @@ const WORKSPACE_MAP: Array<{
   },
   {
     match: (pathname) => pathname.startsWith("/jobs"),
-    title: "Requisition operations",
+    title: "Job operations",
     summary: "Manage open roles, public distribution, approval state, and delivery readiness.",
     icon: <FolderKanban className="h-4 w-4" />,
   },

@@ -46,7 +46,7 @@ export default function ActivityCenterPage() {
     <AccessGate permissionKey="dashboard.view">
       <ModulePageFrame
         title="Activity Center"
-        subtitle="Live queue: alerts, screening, interview follow-ups, and empty requisitions."
+        subtitle="Live queue: alerts, screening, interview follow-ups, and empty jobs."
         metrics={
           error ? (
             <span className="text-red-600 dark:text-red-400">{(error as Error).message}</span>

@@ -411,7 +411,7 @@ function PipelinePageContent() {
               className={UI.secondaryButton + " py-2 text-xs"}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              More filters
+              Filters
             </button>
             <button
               type="button"

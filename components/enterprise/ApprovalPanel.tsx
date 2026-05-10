@@ -145,7 +145,7 @@ export default function ApprovalPanel({
           {isDraft && !pending && canManage && (
             <div className="mt-3 space-y-2">
               <p className="text-xs text-indigo-800 dark:text-indigo-300">
-                Submit this requisition for approval to move it to &quot;Pending Approval&quot;.
+                Submit this job for approval to move it to &quot;Pending Approval&quot;.
               </p>
               <textarea
                 value={notes}
@@ -253,7 +253,7 @@ export default function ApprovalPanel({
           {/* No approvals and not draft */}
           {approvals.length === 0 && !isDraft && (
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              No approval requests recorded for this requisition.
+              No approval requests recorded for this job.
             </p>
           )}
         </>

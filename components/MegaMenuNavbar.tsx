@@ -169,7 +169,7 @@ export default function MegaMenuNavbar() {
               {quickOpen ? (
                 <div className="absolute right-0 top-full z-50 mt-2 min-w-[220px] rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-2 shadow-[var(--ats-shadow-md)]">
                   {[
-                    { href: "/jobs", label: "New job", hint: "Create a fresh requisition" },
+                    { href: "/jobs", label: "New job", hint: "Create a fresh job record" },
                     { href: "/candidates", label: "New candidate", hint: "Add or import talent" },
                     { href: "/pipeline", label: "Move pipeline", hint: "Update stage and ownership" },
                     { href: "/interviews", label: "Schedule interview", hint: "Open interview desk" },

@@ -48,7 +48,7 @@ type JobStats = {
   last_activity_at: string | null;
 };
 
-function AiCandidateHistorySummaryCard({ jobId }: { jobId: number }) {
+function AiCandidateHistorySummaryCard({ jobId, onReviewQuestions }: { jobId: number; onReviewQuestions: () => void }) {
   const { data, isLoading } = useSWR<{ runs: any[]; migration_required?: boolean }>(`/api/jobs/${jobId}/single-match-check/history`);
   const rows = data?.runs ?? [];
 
@@ -71,6 +71,15 @@ function AiCandidateHistorySummaryCard({ jobId }: { jobId: number }) {
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
         Full 1-to-1 AI matching history for this job, including matched skills, gaps, and summary details.
       </p>
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={onReviewQuestions}
+          className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          Review AI interview questions
+        </button>
+      </div>
       <div className="mt-3">
         <SingleMatchHistoryTable runs={rows as any[]} loading={isLoading} migrationRequired={Boolean(data?.migration_required)} />
       </div>
@@ -367,7 +376,13 @@ export default function JobDetailPage() {
 
         <JobPipelineStats jobId={jobId} />
 
-        <AiCandidateHistorySummaryCard jobId={jobId} />
+        <AiCandidateHistorySummaryCard
+          jobId={jobId}
+          onReviewQuestions={() => {
+            if (typeof document === "undefined") return;
+            document.getElementById("ai-interview-questions")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
 
         <ContextualCopilotPanel scope="job" entityId={jobId} subtitle={`${job.title} · ${job.company}`} />
 
@@ -385,9 +400,10 @@ export default function JobDetailPage() {
           onToast={(msg, v) => setToast({ message: msg, variant: v })}
         />
 
-        <div className={`${UI.enterprise.elevatedCard} p-6`}>
+        <div id="ai-interview-questions" className={`${UI.enterprise.elevatedCard} p-6`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">AI interview questions</div>
+            <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={async () => {
@@ -409,8 +425,16 @@ export default function JobDetailPage() {
               className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 dark:bg-indigo-500"
               disabled={qBusy}
             >
-              {qBusy ? "Generating…" : "Generate (AI)"}
+              {qBusy ? "Generating AI questions..." : "Generate AI questions"}
             </button>
+            <button
+              type="button"
+              onClick={() => setMatchHubOpen(true)}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Review AI match context
+            </button>
+            </div>
           </div>
           {qLoading ? <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">Loading questions…</div> : null}
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -430,7 +454,7 @@ export default function JobDetailPage() {
                     </li>
                   ))}
                   {questions.filter((q) => q.category === cat).length === 0 ? (
-                    <li className="list-none text-xs text-slate-500 dark:text-slate-400">No questions yet.</li>
+                    <li className="list-none text-xs text-slate-500 dark:text-slate-400">No AI questions yet.</li>
                   ) : null}
                 </ul>
               </div>

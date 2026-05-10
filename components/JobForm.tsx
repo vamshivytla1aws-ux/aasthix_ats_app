@@ -477,7 +477,7 @@ export default function JobForm({
                 <div className="md:col-span-2">
                   <label className={UI.label}>Title</label>
                   <input className={UI.input} value={title} onChange={(e) => setTitle(e.target.value)} required />
-                  <p className="mt-1 text-xs text-slate-500">Use the same title hiring managers see on requisitions and reports.</p>
+                  <p className="mt-1 text-xs text-slate-500">Use the same title hiring managers see on jobs and reports.</p>
                 </div>
                 <div>
                   <label className={UI.label}>Company</label>
@@ -592,7 +592,7 @@ export default function JobForm({
                     disabled={questionGenerateBusy || submitting}
                     className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
-                    {questionGenerateBusy ? "Generating..." : "Generate Questions (AI)"}
+                    {questionGenerateBusy ? "Generating AI questions..." : "Generate AI questions"}
                   </button>
                 </div>
                 {questionSaveMode ? (

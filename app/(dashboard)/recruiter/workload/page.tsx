@@ -309,7 +309,7 @@ export default function RecruiterWorkloadPage() {
             Refresh
           </button>
           <Link href="/jobs?view=requisition" className={UI.secondaryButton + " inline-flex items-center py-2 text-xs"}>
-            Requisitions
+            Jobs workflow
           </Link>
           <Link href="/recruiter/copilot" className={UI.secondaryButton + " inline-flex items-center py-2 text-xs"}>
             Copilot

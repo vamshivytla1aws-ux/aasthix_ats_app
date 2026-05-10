@@ -858,7 +858,7 @@ export function JobList({
             <div className="w-full max-w-2xl rounded-2xl border border-gray-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">Interview Questions</div>
+                  <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">AI Interview Questions</div>
                   <div className="text-sm text-slate-600 dark:text-slate-400">{questionsJob.title}</div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -878,7 +878,7 @@ export function JobList({
                       }
                     }}
                   >
-                    Generate (AI)
+                    Generate AI questions
                   </button>
                   <button className="rounded-xl border border-gray-200 px-3 py-2 text-sm dark:border-slate-600 dark:text-slate-300" onClick={() => setQuestionsOpen(false)}>
                     Close
@@ -902,7 +902,7 @@ export function JobList({
                           ) : null}
                         </li>
                       ))}
-                      {questions.filter((q) => q.category === cat).length === 0 ? <li className="list-none text-xs text-slate-500">No questions.</li> : null}
+                      {questions.filter((q) => q.category === cat).length === 0 ? <li className="list-none text-xs text-slate-500">No AI questions yet.</li> : null}
                     </ul>
                   </div>
                 ))}
