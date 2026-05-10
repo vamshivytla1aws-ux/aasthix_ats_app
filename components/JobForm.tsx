@@ -26,6 +26,7 @@ type InterviewQuestion = {
   question_id?: number;
   category: QuestionCategory;
   question: string;
+  reference_answer?: string | null;
   sort_order?: number;
 };
 
@@ -144,11 +145,20 @@ export default function JobForm({
   }
 
   function addQuestion(category: QuestionCategory) {
-    setInterviewQuestions((prev) => [...prev, { category, question: "", sort_order: prev.length + 1 }]);
+    setInterviewQuestions((prev) => [
+      ...prev,
+      { category, question: "", reference_answer: "", sort_order: prev.length + 1 },
+    ]);
   }
 
   function updateQuestion(index: number, next: string) {
     setInterviewQuestions((prev) => prev.map((q, i) => (i === index ? { ...q, question: next } : q)));
+  }
+
+  function updateReferenceAnswer(index: number, next: string) {
+    setInterviewQuestions((prev) =>
+      prev.map((q, i) => (i === index ? { ...q, reference_answer: next } : q))
+    );
   }
 
   function removeQuestion(index: number) {
@@ -323,6 +333,7 @@ export default function JobForm({
         .map((q) => ({
           category: q.category,
           question: String(q.question || "").trim(),
+          reference_answer: String(q.reference_answer || "").trim(),
           sort_order: q.sort_order,
         }))
         .filter((q) => q.question.length > 0);
@@ -607,12 +618,20 @@ export default function JobForm({
                           .filter((q) => q.category === category)
                           .map((item) => (
                             <div key={`${category}-${item.idx}`} className="flex items-start gap-2">
-                              <textarea
-                                className={[UI.input, "min-h-[62px]"].join(" ")}
-                                value={item.question}
-                                onChange={(e) => updateQuestion(item.idx, e.target.value)}
-                                placeholder="Add interview question..."
-                              />
+                              <div className="flex-1 space-y-2">
+                                <textarea
+                                  className={[UI.input, "min-h-[62px]"].join(" ")}
+                                  value={item.question}
+                                  onChange={(e) => updateQuestion(item.idx, e.target.value)}
+                                  placeholder="Add interview question..."
+                                />
+                                <textarea
+                                  className={[UI.input, "min-h-[70px] text-xs"].join(" ")}
+                                  value={String(item.reference_answer || "")}
+                                  onChange={(e) => updateReferenceAnswer(item.idx, e.target.value)}
+                                  placeholder="Reference answer (concise key points for recruiters)..."
+                                />
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => removeQuestion(item.idx)}
@@ -655,4 +674,3 @@ export default function JobForm({
     </>
   );
 }
-

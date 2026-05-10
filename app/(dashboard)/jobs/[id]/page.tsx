@@ -38,6 +38,7 @@ type JobQuestion = {
   id?: number;
   category: "technical" | "scenario" | "behavioral" | "hr";
   question: string;
+  reference_answer?: string | null;
   sort_order?: number;
 };
 
@@ -418,7 +419,15 @@ export default function JobDetailPage() {
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">{cat}</div>
                 <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-700 dark:text-slate-300">
                   {questions.filter((q) => q.category === cat).map((q, idx) => (
-                    <li key={`${cat}-${idx}`}>{q.question}</li>
+                    <li key={`${cat}-${idx}`} className="space-y-1">
+                      <div>{q.question}</div>
+                      {q.reference_answer?.trim() ? (
+                        <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                          <span className="font-semibold">Reference answer: </span>
+                          <span className="whitespace-pre-wrap">{q.reference_answer}</span>
+                        </div>
+                      ) : null}
+                    </li>
                   ))}
                   {questions.filter((q) => q.category === cat).length === 0 ? (
                     <li className="list-none text-xs text-slate-500 dark:text-slate-400">No questions yet.</li>

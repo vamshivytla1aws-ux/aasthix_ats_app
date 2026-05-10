@@ -10,6 +10,7 @@ type QuestionCategory = "technical" | "scenario" | "behavioral" | "hr";
 type QuestionPayload = {
   category: QuestionCategory;
   question: string;
+  reference_answer?: string;
   sort_order?: number;
 };
 
@@ -17,32 +18,112 @@ function fallbackQuestions(title: string) {
   const safeTitle = title || "this role";
   return {
     technical: [
-      `Which core skills are most important for ${safeTitle}, and how have you applied them recently?`,
-      `Walk through a challenging technical issue you solved in your last project.`,
-      "How do you approach code quality, testing, and production readiness?",
-      "What trade-offs do you consider while choosing tools, frameworks, or architecture?",
-      "How do you handle performance issues and debugging under deadlines?",
+      {
+        question: `Which core skills are most important for ${safeTitle}, and how have you applied them recently?`,
+        reference_answer:
+          "Names core stack skills for the role with specific examples.\nExplains impact delivered using those skills.\nMentions recency and depth, not just buzzwords.",
+      },
+      {
+        question: "Walk through a challenging technical issue you solved in your last project.",
+        reference_answer:
+          "Clearly describes the production issue and constraints.\nExplains root-cause analysis and debugging steps.\nCovers final fix and measurable outcome.",
+      },
+      {
+        question: "How do you approach code quality, testing, and production readiness?",
+        reference_answer:
+          "Mentions layered testing strategy and review discipline.\nIncludes monitoring, rollback, and deployment checks.\nBalances speed with reliability.",
+      },
+      {
+        question: "What trade-offs do you consider while choosing tools, frameworks, or architecture?",
+        reference_answer:
+          "Compares options using maintainability, performance, and team fit.\nExplains why one choice is preferred in a real scenario.\nAcknowledges risks and mitigation.",
+      },
+      {
+        question: "How do you handle performance issues and debugging under deadlines?",
+        reference_answer:
+          "Uses a structured triage and profiling approach.\nPrioritizes high-impact fixes with clear communication.\nValidates improvements with metrics.",
+      },
     ],
     scenario: [
-      `You join a project late for ${safeTitle}. How do you ramp up quickly and deliver value in 2 weeks?`,
-      "A critical dependency breaks before release. What is your recovery plan?",
-      "You receive ambiguous requirements from stakeholders. How do you proceed?",
-      "A high-priority bug impacts users in production. Describe your incident workflow.",
-      "How would you prioritize multiple urgent tasks from different teams?",
+      {
+        question: `You join a project late for ${safeTitle}. How do you ramp up quickly and deliver value in 2 weeks?`,
+        reference_answer:
+          "Starts with context gathering and risk mapping.\nDefines a small high-value deliverable for week one.\nAligns with stakeholders and shares daily progress.",
+      },
+      {
+        question: "A critical dependency breaks before release. What is your recovery plan?",
+        reference_answer:
+          "Assesses impact quickly and defines fallback options.\nCoordinates owners and communicates timeline clearly.\nDocuments prevention actions after recovery.",
+      },
+      {
+        question: "You receive ambiguous requirements from stakeholders. How do you proceed?",
+        reference_answer:
+          "Asks clarifying questions and confirms acceptance criteria.\nCreates a written summary of assumptions.\nSeeks quick sign-off before implementation.",
+      },
+      {
+        question: "A high-priority bug impacts users in production. Describe your incident workflow.",
+        reference_answer:
+          "Follows incident triage, containment, and fix flow.\nKeeps stakeholders updated with clear status.\nCompletes post-incident learnings and follow-ups.",
+      },
+      {
+        question: "How would you prioritize multiple urgent tasks from different teams?",
+        reference_answer:
+          "Uses business impact and deadline risk to rank tasks.\nNegotiates scope and sequence transparently.\nProtects quality by setting realistic commitments.",
+      },
     ],
     behavioral: [
-      "Tell me about a time you handled conflict in a project team.",
-      "Describe a time you made a mistake and how you recovered.",
-      "How do you mentor or support teammates when deadlines are tight?",
-      "Share an example where you improved a process, not just a feature.",
-      "How do you handle feedback from peers or managers?",
+      {
+        question: "Tell me about a time you handled conflict in a project team.",
+        reference_answer:
+          "Gives a real conflict example with context.\nShows active listening and resolution steps.\nHighlights team outcome and lesson learned.",
+      },
+      {
+        question: "Describe a time you made a mistake and how you recovered.",
+        reference_answer:
+          "Takes ownership without blame shifting.\nExplains corrective actions and communication.\nShows prevention steps implemented later.",
+      },
+      {
+        question: "How do you mentor or support teammates when deadlines are tight?",
+        reference_answer:
+          "Balances delivery with focused coaching.\nUses practical support like pairing or review checklists.\nDemonstrates improved team throughput.",
+      },
+      {
+        question: "Share an example where you improved a process, not just a feature.",
+        reference_answer:
+          "Identifies bottleneck and baseline metrics.\nImplements process change with team adoption.\nReports measurable efficiency or quality gains.",
+      },
+      {
+        question: "How do you handle feedback from peers or managers?",
+        reference_answer:
+          "Receives feedback with openness and specifics.\nActs on it with concrete behavior changes.\nFollows up to validate improvement.",
+      },
     ],
     hr: [
-      "Why are you interested in this role?",
-      "What type of work environment helps you perform your best?",
-      "What are your short-term and long-term career goals?",
-      "What notice period and joining timeline can you commit to?",
-      "Do you have any constraints around shift, location, or travel?",
+      {
+        question: "Why are you interested in this role?",
+        reference_answer:
+          "Connects motivation to role responsibilities.\nShows understanding of company context.\nKeeps reasons practical and role-specific.",
+      },
+      {
+        question: "What type of work environment helps you perform your best?",
+        reference_answer:
+          "Describes collaboration style and expectations.\nMentions accountability and communication preferences.\nAligns preferences with role realities.",
+      },
+      {
+        question: "What are your short-term and long-term career goals?",
+        reference_answer:
+          "Shares realistic growth goals with timeline.\nLinks goals to role opportunity and skill building.\nAvoids vague or contradictory plans.",
+      },
+      {
+        question: "What notice period and joining timeline can you commit to?",
+        reference_answer:
+          "Provides clear availability date or range.\nExplains constraints transparently.\nShows reliability on commitment.",
+      },
+      {
+        question: "Do you have any constraints around shift, location, or travel?",
+        reference_answer:
+          "States constraints clearly and early.\nConfirms flexibility where possible.\nEnsures expectations are aligned before next round.",
+      },
     ],
   };
 }
@@ -59,11 +140,12 @@ async function generateWithAI(input: {
   const prompt = `Generate structured interview questions for this job.
 Return strict JSON object with keys:
 {
-  "technical": string[5],
-  "scenario": string[5],
-  "behavioral": string[5],
-  "hr": string[5]
+  "technical": { "question": string, "reference_answer": string }[5],
+  "scenario": { "question": string, "reference_answer": string }[5],
+  "behavioral": { "question": string, "reference_answer": string }[5],
+  "hr": { "question": string, "reference_answer": string }[5]
 }
+Reference answers must be concise recruiter-friendly key points (2-4 points), plain text only.
 Job Title: ${input.title}
 Employment Type: ${input.employmentType || "N/A"}
 Skills: ${input.skills || "N/A"}
@@ -92,11 +174,26 @@ ${input.description || "N/A"}`;
   const text = payload?.choices?.[0]?.message?.content;
   if (!text) throw new Error("No AI response");
   const parsed = JSON.parse(text);
+  const normalizeList = (items: any) =>
+    (Array.isArray(items) ? items : [])
+      .map((item) => {
+        if (typeof item === "string") {
+          return {
+            question: item.trim(),
+            reference_answer: "",
+          };
+        }
+        return {
+          question: String(item?.question || "").trim(),
+          reference_answer: String(item?.reference_answer || "").trim(),
+        };
+      })
+      .filter((item) => item.question);
   return {
-    technical: Array.isArray(parsed?.technical) ? parsed.technical : [],
-    scenario: Array.isArray(parsed?.scenario) ? parsed.scenario : [],
-    behavioral: Array.isArray(parsed?.behavioral) ? parsed.behavioral : [],
-    hr: Array.isArray(parsed?.hr) ? parsed.hr : [],
+    technical: normalizeList(parsed?.technical),
+    scenario: normalizeList(parsed?.scenario),
+    behavioral: normalizeList(parsed?.behavioral),
+    hr: normalizeList(parsed?.hr),
   };
 }
 
@@ -105,14 +202,13 @@ function normalizeQuestions(raw: any): QuestionPayload[] {
   const rows: QuestionPayload[] = [];
   for (const category of categories) {
     const list = Array.isArray(raw?.[category]) ? raw[category] : [];
-    list
-      .map((x: any) => String(x || "").trim())
-      .filter(Boolean)
-      .slice(0, 10)
-      .forEach((question: string, idx: number) => {
-        rows.push({ category, question, sort_order: idx + 1 });
+    list.slice(0, 10).forEach((item: any, idx: number) => {
+      const question = String(item?.question || "").trim();
+      const reference_answer = String(item?.reference_answer || "").trim();
+      if (!question) return;
+      rows.push({ category, question, reference_answer, sort_order: idx + 1 });
       });
-  }
+    }
   return rows;
 }
 
@@ -128,9 +224,9 @@ async function saveQuestions(jobId: number, questions: QuestionPayload[]) {
     for (let i = 0; i < questions.length; i += 1) {
       const q = questions[i];
       await query(
-        `INSERT INTO job_interview_questions (job_id, category, question, sort_order)
-         VALUES ($1, $2, $3, $4)`,
-      [jobId, q.category, q.question, q.sort_order ?? i + 1]
+        `INSERT INTO job_interview_questions (job_id, category, question, sort_order, reference_answer)
+         VALUES ($1, $2, $3, $4, $5)`,
+      [jobId, q.category, q.question, q.sort_order ?? i + 1, q.reference_answer || null]
       );
     }
     await query("COMMIT");
@@ -148,7 +244,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (!Number.isFinite(jobId)) return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
 
     const rows = await query(
-      `SELECT q.id, q.category, q.question, q.sort_order, q.created_at
+      `SELECT q.id, q.category, q.question, q.reference_answer, q.sort_order, q.created_at
        FROM job_interview_questions q
        WHERE q.job_id = $1
        ORDER BY q.category, q.sort_order, q.id`,
@@ -174,6 +270,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       .map((q: any, idx: number) => ({
         category: q?.category as QuestionCategory,
         question: String(q?.question || "").trim(),
+        reference_answer: String(q?.reference_answer || "").trim(),
         sort_order: Number.isFinite(Number(q?.sort_order)) ? Number(q.sort_order) : idx + 1,
       }))
       .filter((q: any) => ["technical", "scenario", "behavioral", "hr"].includes(q.category) && q.question);
