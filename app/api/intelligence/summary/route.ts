@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/rbac";
-import { INTELLIGENCE_V3_ENABLED } from "@/lib/featureFlags";
+import { INTELLIGENCE_V3_ENABLED, INTELLIGENCE_V3_FLAG_SOURCE } from "@/lib/featureFlags";
 import { getIntelligenceSummary } from "@/lib/phase3/intelligence";
 
 export const runtime = "nodejs";
@@ -10,11 +10,15 @@ export async function GET() {
   const auth = await requirePermission("jobs.view");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   if (!INTELLIGENCE_V3_ENABLED) {
-    return NextResponse.json({ enabled: false, message: "INTELLIGENCE_V3_ENABLED is disabled" });
+    return NextResponse.json({
+      enabled: false,
+      resolved_from: INTELLIGENCE_V3_FLAG_SOURCE,
+      message: "INTELLIGENCE_V3_ENABLED is disabled",
+    });
   }
   try {
     const summary = await getIntelligenceSummary();
-    return NextResponse.json({ enabled: true, summary });
+    return NextResponse.json({ enabled: true, resolved_from: INTELLIGENCE_V3_FLAG_SOURCE, summary });
   } catch (error) {
     console.error("GET /api/intelligence/summary", error);
     return NextResponse.json({ error: "Failed to load intelligence summary" }, { status: 500 });

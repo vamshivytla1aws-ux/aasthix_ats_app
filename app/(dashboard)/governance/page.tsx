@@ -18,7 +18,10 @@ import { apiFetchJson } from "@/lib/apiClient";
 
 export default function GovernancePage() {
   const [running, setRunning] = useState(false);
-  const { data: intel } = useSWR("/api/intelligence/summary", dashboardFetcher);
+  const { data: intel } = useSWR<{ enabled?: boolean; resolved_from?: string; summary?: unknown; message?: string }>(
+    "/api/intelligence/summary",
+    dashboardFetcher
+  );
   const { data: rules, mutate: mutateRules } = useSWR("/api/automation/rules", dashboardFetcher);
   const { data: runs, mutate: mutateRuns } = useSWR("/api/automation/runs?limit=20", dashboardFetcher);
   const { data: orgSettings } = useSWR("/api/org/settings", dashboardFetcher);
@@ -46,7 +49,7 @@ export default function GovernancePage() {
         subtitle="Model health, automation controls, and operational trust posture."
         metrics={
           <span>
-            Flags: {INTELLIGENCE_V3_ENABLED ? "Intelligence on" : "Intelligence off"} ·{" "}
+            Flags: {(intel?.enabled ?? INTELLIGENCE_V3_ENABLED) ? "Intelligence on" : "Intelligence off"} ·{" "}
             {AUTOMATION_V3_ENABLED ? "Automation on" : "Automation off"} ·{" "}
             {FORECAST_V3_ENABLED ? "Forecast on" : "Forecast off"} ·{" "}
             {CALIBRATION_V3_ENABLED ? "Calibration on" : "Calibration off"} ·{" "}
@@ -55,6 +58,7 @@ export default function GovernancePage() {
             {INTEGRATIONS_V4_ENABLED ? "Integrations V4 on" : "Integrations V4 off"} ·{" "}
             {SRE_HARDENING_V4_ENABLED ? "SRE V4 on" : "SRE V4 off"} ·{" "}
             {AI_GOVERNANCE_V4_ENABLED ? "AI Gov V4 on" : "AI Gov V4 off"}
+            {intel?.resolved_from ? ` · Intelligence source: ${intel.resolved_from}` : ""}
           </span>
         }
         actions={
@@ -68,7 +72,7 @@ export default function GovernancePage() {
             <button
               type="button"
               className={UI.primaryButton + " py-2 text-xs"}
-              disabled={!INTELLIGENCE_V3_ENABLED || running}
+              disabled={!(intel?.enabled ?? INTELLIGENCE_V3_ENABLED) || running}
               onClick={() => void runRecompute()}
             >
               {running ? "Recomputing..." : "Recompute insights"}

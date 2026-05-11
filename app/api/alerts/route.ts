@@ -32,6 +32,13 @@ function buildMessage(type: AlertType, candidateName: string, interviewDateTime:
   return `Interview in ${mins} mins: ${candidateName}`;
 }
 
+function runVisibilityQuery(sql: string, visibilityPredicate: string, userId: number) {
+  if (visibilityPredicate === "TRUE") {
+    return query(sql);
+  }
+  return query(sql, [userId]);
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await requirePermission("alerts.view");
@@ -76,7 +83,7 @@ export async function GET(request: Request) {
         ? "TRUE"
         : applicationAccessPredicate("a", "$1", hasTeam);
 
-    const generated = await query(
+    const generated = await runVisibilityQuery(
       `
       SELECT
         a.id AS application_id,
@@ -106,7 +113,8 @@ export async function GET(request: Request) {
         END ASC,
         a.interview_datetime ASC
       `,
-      [user.user_id]
+      interviewVisibility,
+      user.user_id
     );
 
     for (const row of generated.rows as Array<{
