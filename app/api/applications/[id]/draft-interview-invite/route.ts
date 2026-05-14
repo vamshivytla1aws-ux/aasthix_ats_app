@@ -26,6 +26,11 @@ function formatDateTimeLabel(value: string) {
   return `${formatInAtsTimezone(value)} (${ATS_TIMEZONE_LABEL})`;
 }
 
+function normalizeDurationMinutes(raw: unknown) {
+  const value = Number(raw);
+  return value === 15 || value === 30 || value === 45 || value === 60 ? value : 60;
+}
+
 export async function POST(request: Request, context: { params: { id: string } }) {
   try {
     const auth = await requirePermission("pipeline.manage");
@@ -46,6 +51,7 @@ export async function POST(request: Request, context: { params: { id: string } }
       notes?: string;
       meetLink?: string | null;
       isReschedule?: boolean;
+      durationMinutes?: number;
     };
 
     if (typeof body.interviewDatetime !== "string" || !body.interviewDatetime.trim()) {
@@ -77,6 +83,7 @@ export async function POST(request: Request, context: { params: { id: string } }
       meetingLocation: body.meetingLocation ?? null,
       meetLink: body.meetLink ?? null,
       panelEmails: parseEmails(body.panelEmails),
+      durationLabel: `${normalizeDurationMinutes(body.durationMinutes)} minutes`,
       recruiterName: typeof row.assigned_recruiter_name === "string" ? row.assigned_recruiter_name : null,
       notes: body.notes ?? null,
       isReschedule: Boolean(body.isReschedule),

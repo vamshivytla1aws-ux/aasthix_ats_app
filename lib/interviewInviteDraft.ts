@@ -11,6 +11,7 @@ type InterviewInviteDraftInput = {
   meetingLocation?: string | null;
   meetLink?: string | null;
   panelEmails?: string[];
+  durationLabel?: string | null;
   recruiterName?: string | null;
   notes?: string | null;
   isReschedule?: boolean;
@@ -32,6 +33,7 @@ function buildFallbackDraft(input: InterviewInviteDraftInput) {
   const meetingLocation = clean(input.meetingLocation);
   const recruiterName = clean(input.recruiterName) || "Aasthix Talent";
   const notes = clean(input.notes);
+  const durationLabel = clean(input.durationLabel);
 
   const subject = input.isReschedule
     ? `Updated interview schedule for ${jobTitle}`
@@ -43,6 +45,7 @@ function buildFallbackDraft(input: InterviewInviteDraftInput) {
       ? `Your interview for the ${jobTitle} role at ${company} has been rescheduled.`
       : `You have been shortlisted for the ${jobTitle} role at ${company}.`,
     `Your interview is scheduled on ${input.interviewDateTimeLabel}${input.timezoneLabel ? ` (${input.timezoneLabel})` : ""}.`,
+    durationLabel ? `Duration: ${durationLabel}.` : "",
     input.meetLink
       ? `Please join through Google Meet using this link: ${input.meetLink}`
       : meetingLocation
@@ -79,6 +82,7 @@ export async function draftInterviewInviteWithAi(
     `Timezone: ${clean(input.timezoneLabel) || ""}`,
     `Meeting mode: ${clean(input.meetingMode) || (input.meetLink ? "Google Meet" : "")}`,
     `Meeting details: ${clean(input.meetingLocation) || ""}`,
+    `Duration: ${clean(input.durationLabel) || ""}`,
     `Google Meet link: ${clean(input.meetLink) || ""}`,
     `Panel emails: ${(input.panelEmails ?? []).join(", ") || ""}`,
     `Recruiter: ${clean(input.recruiterName) || "Aasthix Talent"}`,

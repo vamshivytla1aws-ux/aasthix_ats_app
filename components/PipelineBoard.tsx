@@ -351,6 +351,7 @@ export default function PipelineBoard({
   const [scheduleApp, setScheduleApp] = useState<ApplicationRow | null>(null);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleDurationMinutes, setScheduleDurationMinutes] = useState<15 | 30 | 45 | 60>(60);
 
   const [confirmScheduleOpen, setConfirmScheduleOpen] = useState(false);
   const [confirmScheduleIso, setConfirmScheduleIso] = useState<string>("");
@@ -374,6 +375,7 @@ export default function PipelineBoard({
   const [rescheduleApp, setRescheduleApp] = useState<ApplicationRow | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
+  const [rescheduleDurationMinutes, setRescheduleDurationMinutes] = useState<15 | 30 | 45 | 60>(60);
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
   const [rescheduleAttendees, setRescheduleAttendees] = useState("");
   const [rescheduleTimezone, setRescheduleTimezone] = useState(
@@ -578,6 +580,7 @@ export default function PipelineBoard({
     scheduleDate,
     scheduleTime,
     scheduleTimezone,
+    scheduleDurationMinutes,
     scheduleMeetingMode,
     scheduleMeetingLocation,
     scheduleAttendees,
@@ -596,6 +599,7 @@ export default function PipelineBoard({
     rescheduleDate,
     rescheduleTime,
     rescheduleTimezone,
+    rescheduleDurationMinutes,
     rescheduleMeetingMode,
     rescheduleMeetingLocation,
     rescheduleAttendees,
@@ -703,6 +707,7 @@ export default function PipelineBoard({
     setScheduleSendEmail(false);
     setScheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
     setScheduleTimezone(ATS_TIMEZONE_LABEL);
+    setScheduleDurationMinutes(60);
     setScheduleMeetingMode(calendarStatus?.shared_google?.connected ? "Google Meet" : "Manual");
     setScheduleMeetingLocation("");
     setScheduleNotes("");
@@ -738,6 +743,7 @@ export default function PipelineBoard({
         body: JSON.stringify({
           interviewDatetime: iso,
           timezoneLabel: scheduleTimezone,
+          durationMinutes: scheduleDurationMinutes,
           meetingMode: scheduleMeetingMode,
           meetingLocation: scheduleMeetingLocation,
           panelEmails: scheduleAttendees,
@@ -985,6 +991,7 @@ export default function PipelineBoard({
           stage: "Interview",
           interview_scheduled: true,
           interview_datetime: scheduleIso,
+          interview_duration_minutes: scheduleDurationMinutes,
           interview_attendee_emails: scheduleAttendees,
           interview_status_note: scheduleNotes,
           send_email: false,
@@ -1072,6 +1079,7 @@ export default function PipelineBoard({
     setRescheduleSendEmail(false);
     setRescheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
     setRescheduleTimezone(ATS_TIMEZONE_LABEL);
+    setRescheduleDurationMinutes(60);
     setRescheduleMeetingMode(app.meet_link ? "Google Meet" : "Manual");
     setRescheduleMeetingLocation("");
     setRescheduleNotes(app.interview_status_note || "");
@@ -1108,6 +1116,7 @@ export default function PipelineBoard({
         body: JSON.stringify({
           interviewDatetime: iso,
           timezoneLabel: rescheduleTimezone,
+          durationMinutes: rescheduleDurationMinutes,
           meetingMode: rescheduleMeetingMode,
           meetingLocation: rescheduleMeetingLocation,
           panelEmails: rescheduleAttendees,
@@ -1153,6 +1162,7 @@ export default function PipelineBoard({
         body: JSON.stringify({
           id: rescheduleApp.id,
           interview_datetime: iso,
+          interview_duration_minutes: rescheduleDurationMinutes,
           interview_attendee_emails: rescheduleAttendees,
           interview_status_note: rescheduleNotes,
           reminder_sent: false,
@@ -1184,6 +1194,7 @@ export default function PipelineBoard({
       setRescheduleApp(null);
       setRescheduleDate("");
       setRescheduleTime("");
+      setRescheduleDurationMinutes(60);
       setRescheduleSendEmail(false);
       setRescheduleAttendees("");
       setRescheduleMeetingLocation("");
@@ -1699,6 +1710,20 @@ export default function PipelineBoard({
                     disabled={busyId === scheduleApp.id}
                   />
                 </div>
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Duration</label>
+                  <select
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={String(scheduleDurationMinutes)}
+                    onChange={(e) => setScheduleDurationMinutes(Number(e.target.value) as 15 | 30 | 45 | 60)}
+                    disabled={busyId === scheduleApp.id}
+                  >
+                    <option value="15">15 minutes</option>
+                    <option value="30">30 minutes</option>
+                    <option value="45">45 minutes</option>
+                    <option value="60">1 hour</option>
+                  </select>
+                </div>
               </div>
 
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1960,6 +1985,20 @@ export default function PipelineBoard({
                     onChange={(e) => setRescheduleTime(e.target.value)}
                     disabled={busyId === rescheduleApp.id}
                   />
+                </div>
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Duration</label>
+                  <select
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={String(rescheduleDurationMinutes)}
+                    onChange={(e) => setRescheduleDurationMinutes(Number(e.target.value) as 15 | 30 | 45 | 60)}
+                    disabled={busyId === rescheduleApp.id}
+                  >
+                    <option value="15">15 minutes</option>
+                    <option value="30">30 minutes</option>
+                    <option value="45">45 minutes</option>
+                    <option value="60">1 hour</option>
+                  </select>
                 </div>
               </div>
 

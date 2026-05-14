@@ -229,6 +229,7 @@ export default function InterviewsPage() {
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
+  const [rescheduleDurationMinutes, setRescheduleDurationMinutes] = useState<15 | 30 | 45 | 60>(60);
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
   const [rescheduleAttendees, setRescheduleAttendees] = useState("");
   const [rescheduleTimezone, setRescheduleTimezone] = useState(
@@ -282,6 +283,7 @@ export default function InterviewsPage() {
     selectedInterview,
     rescheduleDate,
     rescheduleTime,
+    rescheduleDurationMinutes,
     rescheduleTimezone,
     rescheduleMeetingMode,
     rescheduleMeetingLocation,
@@ -576,6 +578,7 @@ export default function InterviewsPage() {
         body: JSON.stringify({
           interviewDatetime: iso,
           timezoneLabel: ATS_TIMEZONE_LABEL,
+          durationMinutes: rescheduleDurationMinutes,
           meetingMode: rescheduleMeetingMode,
           meetingLocation: rescheduleMeetingLocation,
           panelEmails: rescheduleAttendees,
@@ -708,6 +711,7 @@ export default function InterviewsPage() {
           stage: "Interview",
           interview_scheduled: true,
           interview_datetime: iso,
+          interview_duration_minutes: rescheduleDurationMinutes,
           interview_reschedule_reason: rescheduleReason.trim() || null,
           interview_cancel_reason: "",
           interview_no_show: false,
@@ -839,6 +843,7 @@ export default function InterviewsPage() {
     setRescheduleSendEmail(false);
     setRescheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
     setRescheduleTimezone(ATS_TIMEZONE_LABEL);
+    setRescheduleDurationMinutes(60);
     setRescheduleMeetingMode(app.meet_link ? "Google Meet" : "Manual");
     setRescheduleMeetingLocation("");
     setRescheduleNotes(app.interview_status_note || "");
@@ -1899,6 +1904,20 @@ export default function InterviewsPage() {
                     onChange={(e) => setRescheduleTime(e.target.value)}
                     disabled={actionBusyId === selectedInterview.id}
                   />
+                </div>
+                <div>
+                  <label className="block mb-1 text-sm text-gray-600">Duration</label>
+                  <select
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    value={String(rescheduleDurationMinutes)}
+                    onChange={(e) => setRescheduleDurationMinutes(Number(e.target.value) as 15 | 30 | 45 | 60)}
+                    disabled={actionBusyId === selectedInterview.id}
+                  >
+                    <option value="15">15 minutes</option>
+                    <option value="30">30 minutes</option>
+                    <option value="45">45 minutes</option>
+                    <option value="60">1 hour</option>
+                  </select>
                 </div>
               </div>
 

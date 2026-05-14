@@ -59,6 +59,7 @@ const GOOGLE_AUTH_SCOPE = [
   "openid",
   "email",
   "profile",
+  "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/calendar.events",
 ].join(" ");
 
@@ -416,6 +417,7 @@ type SyncInterviewMeetingInput = {
   existingEventId?: string | null;
   existingMeetLink?: string | null;
   notes?: string | null;
+  durationMinutes?: number | null;
 };
 
 export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Promise<InterviewCalendarSyncResult> {
@@ -479,7 +481,14 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
     }
 
     const start = new Date(input.interviewDatetime);
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    const normalizedDuration =
+      input.durationMinutes === 15 ||
+      input.durationMinutes === 30 ||
+      input.durationMinutes === 45 ||
+      input.durationMinutes === 60
+        ? input.durationMinutes
+        : 60;
+    const end = new Date(start.getTime() + normalizedDuration * 60 * 1000);
     const descriptionLines = [
       `Candidate: ${input.candidateName}`,
       `Role: ${input.title}`,
@@ -585,4 +594,3 @@ export async function completeGoogleOAuth(input: { code: string; userId: number 
     name: profile.name ?? null,
   };
 }
-

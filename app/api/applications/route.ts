@@ -588,6 +588,7 @@ export async function PATCH(request: Request) {
       interview_decision_audience,
       stage_change_reason,
       disposition_reason_id,
+      interview_duration_minutes,
     } = body as {
       id?: number;
       stage?: Stage;
@@ -607,7 +608,16 @@ export async function PATCH(request: Request) {
       interview_decision_audience?: "client" | "internal";
       stage_change_reason?: string | null;
       disposition_reason_id?: number;
+      interview_duration_minutes?: number;
     };
+
+    const normalizedInterviewDurationMinutes =
+      interview_duration_minutes === 15 ||
+      interview_duration_minutes === 30 ||
+      interview_duration_minutes === 45 ||
+      interview_duration_minutes === 60
+        ? interview_duration_minutes
+        : 60;
 
     const decisionAudience: "client" | "internal" =
       interview_decision_audience === "internal" ? "internal" : "client";
@@ -1302,6 +1312,7 @@ export async function PATCH(request: Request) {
           existingEventId: prevExternalCalendarEventId,
           existingMeetLink: prevMeetLink,
           notes: normalizedInterviewStatusNote,
+          durationMinutes: normalizedInterviewDurationMinutes,
         });
 
         calendarSyncStatus = normalizeMeetingSyncStatus(syncResult.status);
