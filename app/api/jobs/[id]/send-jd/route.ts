@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 function parseEmails(input: string) {
   return String(input || "")
-    .split(",")
+    .split(/[,;\n]+/)
     .map((x) => x.trim())
     .filter(Boolean);
 }
@@ -49,7 +49,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
       `,
       [jobId]
     );
-    if (jobRes.rowCount === 0) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    if (jobRes.rowCount === 0) {
+      return NextResponse.json({ error: `Job not found (id=${jobId})` }, { status: 404 });
+    }
     const job = jobRes.rows[0] as any;
 
     const subject = String(body?.subject || `Job Opportunity - ${job.title}`);

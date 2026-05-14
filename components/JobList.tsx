@@ -269,7 +269,7 @@ export function JobList({
   }
 
   function buildJobRowActions(job: Job): RowActionItem[] {
-    return [
+    const items: RowActionItem[] = [
       { type: "link", label: "View detail", href: `/jobs/${job.id}` },
       {
         type: "button",
@@ -293,30 +293,35 @@ export function JobList({
           }
         },
       },
-      {
-        type: "button",
-        label: "Send JD",
-        onClick: () => {
-          setSendJdJob(job);
-          setSendJdOpen(true);
-          setSendJdEmails("");
-          setSendJdSubject(`Job Opportunity - ${job.title}`);
-          setSendJdMessage("");
-          setSendJdError(null);
-          setSendJdSuccess(null);
-          setSendJdConfirmed(false);
-        },
-      },
-      { type: "button", label: "Edit", onClick: () => onEdit(job) },
-      {
-        type: "button",
-        label: "Delete",
-        danger: true,
-        onClick: () => {
-          void onDelete(job);
-        },
-      },
     ];
+    if (canManageJobs) {
+      items.push(
+        {
+          type: "button",
+          label: "Send JD",
+          onClick: () => {
+            setSendJdJob(job);
+            setSendJdOpen(true);
+            setSendJdEmails("");
+            setSendJdSubject(`Job Opportunity - ${job.title}`);
+            setSendJdMessage("");
+            setSendJdError(null);
+            setSendJdSuccess(null);
+            setSendJdConfirmed(false);
+          },
+        },
+        { type: "button", label: "Edit", onClick: () => onEdit(job) },
+        {
+          type: "button",
+          label: "Delete",
+          danger: true,
+          onClick: () => {
+            void onDelete(job);
+          },
+        }
+      );
+    }
+    return items;
   }
 
   if (!jobs.length) {
