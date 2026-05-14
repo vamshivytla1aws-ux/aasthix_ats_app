@@ -1,18 +1,20 @@
 export const ATS_TIMEZONE = "Asia/Kolkata";
-export const ATS_TIMEZONE_LABEL = "Asia/Kolkata (Hyderabad, Telangana)";
+export const ATS_TIMEZONE_LABEL = "IST";
 
 export function formatInAtsTimezone(value: string | Date, options?: Intl.DateTimeFormatOptions) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("en-IN", {
+  const formatted = new Intl.DateTimeFormat("en-IN", {
     timeZone: ATS_TIMEZONE,
     year: "numeric",
     month: "short",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: true,
     ...options,
   }).format(date);
+  return formatted.replace(/\bam\b/gi, "AM").replace(/\bpm\b/gi, "PM");
 }
 
 export function kolkataLocalToUtcIso(datePart: string, timePart: string) {

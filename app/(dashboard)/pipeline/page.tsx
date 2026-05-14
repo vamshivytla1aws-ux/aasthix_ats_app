@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ChevronDown, ChevronUp, SlidersHorizontal, UserPlus } from "lucide-react";
 import AssignApplicationForm from "@/components/AssignApplicationForm";
@@ -60,12 +60,15 @@ type ApplicationRow = {
 type RecruiterOption = { id: number; full_name: string; email?: string | null };
 
 function PipelinePageContent() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const appFromUrl = useMemo(() => {
     const raw = searchParams.get("app") ?? searchParams.get("application"); 
     const n = raw ? Number(raw) : NaN;
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [searchParams]);
+  const companyFromUrl = useMemo(() => (searchParams.get("company") ?? "").trim(), [searchParams]);
 
   const { density, setDensity } = useDensity("ats:pipeline-density", "compact");
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +77,7 @@ function PipelinePageContent() {
   const [q, setQ] = useState("");
   const [stage, setStage] = useState<string>("");
   const [jobId, setJobId] = useState<string>("");
-  const [company, setCompany] = useState<string>("");
+  const [company, setCompany] = useState<string>(companyFromUrl);
   /** "" = all owners, "me" = my queue (assigned_recruiter = current user) */
   const [assignedTo, setAssignedTo] = useState<string>("");
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
@@ -109,6 +112,20 @@ function PipelinePageContent() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => {
+    setCompany(companyFromUrl);
+  }, [companyFromUrl]);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (company) nextParams.set("company", company);
+    else nextParams.delete("company");
+    const nextQs = nextParams.toString();
+    const currentQs = searchParams.toString();
+    if (nextQs === currentQs) return;
+    router.replace(`${pathname}${nextQs ? `?${nextQs}` : ""}`, { scroll: false });
+  }, [company, pathname, router, searchParams]);
 
   const applicationsKey = useMemo(() => {
     const params = new URLSearchParams();

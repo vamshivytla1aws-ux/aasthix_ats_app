@@ -38,13 +38,12 @@ export function buildCandidateEmailTemplate(opts: CandidateEmailTemplateOpts) {
   const hasInlineGreeting = paragraphs.length > 0 && startsWithGreeting(paragraphs[0]);
   const job = opts.job ?? {};
   const title = String(job.title || "").trim();
-  const company = String(job.company || "").trim();
   const location = String(job.location || "").trim();
   const employmentType = String(job.employmentType || "").trim();
   const openPositions =
     job.openPositions === null || job.openPositions === undefined ? "" : String(job.openPositions).trim();
   const description = String(job.description || "").trim();
-  const hasJobCard = [title, company, location, employmentType, openPositions, description].some(Boolean);
+  const hasJobCard = [title, location, employmentType, openPositions, description].some(Boolean);
   const cta = opts.cta && opts.cta.label && opts.cta.url ? opts.cta : null;
 
   const htmlParagraphs = paragraphs
@@ -55,7 +54,6 @@ export function buildCandidateEmailTemplate(opts: CandidateEmailTemplateOpts) {
     ? `
           <div style="background:#F8FAFC;border:1px solid #E5E7EB;border-radius:10px;padding:14px;">
             ${title ? `<div style="font-size:14px;font-weight:700;margin-bottom:8px;">${escapeHtml(title)}</div>` : ""}
-            ${company ? `<div style="font-size:13px;color:#334155;margin-bottom:6px;"><strong>Company:</strong> ${escapeHtml(company)}</div>` : ""}
             ${location ? `<div style="font-size:13px;color:#334155;margin-bottom:6px;"><strong>Location:</strong> ${escapeHtml(location)}</div>` : ""}
             ${employmentType ? `<div style="font-size:13px;color:#334155;margin-bottom:6px;"><strong>Employment Type:</strong> ${escapeHtml(employmentType)}</div>` : ""}
             ${openPositions ? `<div style="font-size:13px;color:#334155;margin-bottom:10px;"><strong>Open Positions:</strong> ${escapeHtml(openPositions)}</div>` : ""}
@@ -107,7 +105,6 @@ export function buildCandidateEmailTemplate(opts: CandidateEmailTemplateOpts) {
       ? [
           "",
           ...(title ? [`Job Title: ${title}`] : []),
-          ...(company ? [`Company: ${company}`] : []),
           ...(location ? [`Location: ${location}`] : []),
           ...(employmentType ? [`Employment Type: ${employmentType}`] : []),
           ...(openPositions ? [`Open Positions: ${openPositions}`] : []),
