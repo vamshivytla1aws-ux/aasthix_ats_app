@@ -395,6 +395,7 @@ export async function GET(request: Request) {
     const q = (url?.searchParams.get("q") ?? "").trim();
     const stageParam = (url?.searchParams.get("stage") ?? "").trim();
     const jobIdParam = (url?.searchParams.get("job_id") ?? "").trim();
+    const companyParam = (url?.searchParams.get("company") ?? "").trim();
     const assignedToParam = (url?.searchParams.get("assigned_to") ?? "").trim();
     const interviewOverview = ["1", "true", "yes"].includes(
       (url?.searchParams.get("interview_overview") ?? "").trim().toLowerCase()
@@ -430,6 +431,11 @@ export async function GET(request: Request) {
       }
       params.push(jobId);
       where.push(`a.job_id = $${params.length}`);
+    }
+
+    if (companyParam.length > 0) {
+      params.push(companyParam.toLowerCase());
+      where.push(`LOWER(TRIM(COALESCE(j.company, ''))) = $${params.length}`);
     }
 
     if (assignedToParam.length > 0 && assignedToParam !== "all") {

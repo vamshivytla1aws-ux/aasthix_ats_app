@@ -74,6 +74,7 @@ function PipelinePageContent() {
   const [q, setQ] = useState("");
   const [stage, setStage] = useState<string>("");
   const [jobId, setJobId] = useState<string>("");
+  const [company, setCompany] = useState<string>("");
   /** "" = all owners, "me" = my queue (assigned_recruiter = current user) */
   const [assignedTo, setAssignedTo] = useState<string>("");
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
@@ -114,6 +115,17 @@ function PipelinePageContent() {
     if (debouncedQ.trim().length > 0) params.set("q", debouncedQ.trim());
     if (stage) params.set("stage", stage);
     if (jobId) params.set("job_id", jobId);
+    if (company) params.set("company", company);
+    if (assignedTo === "me") params.set("assigned_to", "me");
+    const qs = params.toString();
+    return `/api/applications${qs ? `?${qs}` : ""}`;
+  }, [debouncedQ, stage, jobId, company, assignedTo]);
+
+  const companySummaryKey = useMemo(() => {
+    const params = new URLSearchParams();
+    if (debouncedQ.trim().length > 0) params.set("q", debouncedQ.trim());
+    if (stage) params.set("stage", stage);
+    if (jobId) params.set("job_id", jobId);
     if (assignedTo === "me") params.set("assigned_to", "me");
     const qs = params.toString();
     return `/api/applications${qs ? `?${qs}` : ""}`;
@@ -130,6 +142,14 @@ function PipelinePageContent() {
     onError: (err) => setError((err as Error)?.message || "Something went wrong"),
     onSuccess: () => setError(null),
   });
+
+  const { data: companySummaryApplications = [], mutate: mutateCompanySummary } = useSWR<ApplicationRow[]>(
+    companySummaryKey,
+    dashboardFetcher,
+    {
+      refreshInterval: 60_000,
+    }
+  );
 
   const { data: jobs = [], mutate: mutateJobs } = useSWR<Job[]>("/api/jobs", dashboardFetcher, {
     refreshInterval: 60_000,
@@ -225,6 +245,7 @@ function PipelinePageContent() {
     setQ(String(f.q ?? ""));
     setStage(String(f.stage ?? ""));
     setJobId(String(f.job_id ?? ""));
+    setCompany(String(f.company ?? ""));
     setAssignedTo(String(f.assigned_to ?? ""));
   }
 
@@ -237,7 +258,7 @@ function PipelinePageContent() {
         body: JSON.stringify({
           page: "pipeline",
           name,
-          filters: { q: debouncedQ, stage, job_id: jobId, assigned_to: assignedTo },
+          filters: { q: debouncedQ, stage, job_id: jobId, company, assigned_to: assignedTo },
         }),
       });
       setBulkToast(`Saved “${name}”.`);
@@ -312,6 +333,42 @@ function PipelinePageContent() {
     { Applied: 0, Screening: 0, "Screening Failed": 0, Interview: 0, Selected: 0, Rejected: 0 }
   );
 
+  const companyOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const values: string[] = [];
+    for (const job of jobs) {
+      const value = String(job.company ?? "").trim();
+      if (!value) continue;
+      const key = value.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      values.push(value);
+    }
+    return values.sort((a, b) => a.localeCompare(b));
+  }, [jobs]);
+
+  const companySummaryRows = useMemo(() => {
+    const byCompany = new Map<string, { total: number; applied: number; screening: number; interview: number }>();
+    for (const row of companySummaryApplications) {
+      const raw = String(row.job_company ?? "").trim();
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      const current = byCompany.get(key) ?? { total: 0, applied: 0, screening: 0, interview: 0 };
+      current.total += 1;
+      if (row.stage === "Applied") current.applied += 1;
+      if (row.stage === "Screening") current.screening += 1;
+      if (row.stage === "Interview") current.interview += 1;
+      byCompany.set(key, current);
+    }
+    return Array.from(byCompany.entries())
+      .map(([key, value]) => ({
+        key,
+        company: companyOptions.find((name) => name.toLowerCase() === key) ?? key,
+        ...value,
+      }))
+      .sort((a, b) => b.total - a.total || a.company.localeCompare(b.company));
+  }, [companySummaryApplications, companyOptions]);
+
   return (
     <AccessGate permissionKey="pipeline.view">
       <FilterDrawer
@@ -323,6 +380,7 @@ function PipelinePageContent() {
           setQ("");
           setStage("");
           setJobId("");
+          setCompany("");
           setAssignedTo("");
           setFilterDrawer(false);
         }}
@@ -350,6 +408,21 @@ function PipelinePageContent() {
                 <option key={j.id} value={String(j.id)}>
                   {j.title}
                   {j.company ? ` — ${j.company}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block font-medium text-slate-700 dark:text-slate-300">Company</label>
+            <select
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-800"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+            >
+              <option value="">All companies</option>
+              {companyOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
                 </option>
               ))}
             </select>
@@ -400,6 +473,10 @@ function PipelinePageContent() {
             <span className="flex flex-wrap gap-2">
               <span className="font-semibold text-slate-800 dark:text-slate-200">{applications.length}</span>
               <span className="text-slate-500 dark:text-slate-400">applications on board</span>
+              <span className="text-slate-400">·</span>
+              <span className="text-slate-600 dark:text-slate-300">
+                Scope: <span className="font-medium text-slate-800 dark:text-slate-100">{company || "All companies"}</span>
+              </span>
             </span>
           )
         }
@@ -417,6 +494,7 @@ function PipelinePageContent() {
               type="button"
               onClick={() => {
                 void mutateApplications();
+                void mutateCompanySummary();
                 void mutateJobs();
               }}
               className={UI.secondaryButton + " py-2 text-xs"}
@@ -608,11 +686,54 @@ function PipelinePageContent() {
               setQ("");
               setStage("");
               setJobId("");
+              setCompany("");
               setAssignedTo("");
             }}
           >
             Clear
           </button>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {companyOptions.length <= 8 ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setCompany("")}
+                className={[
+                  "rounded-lg px-2.5 py-1 text-xs font-semibold transition",
+                  company === "" ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                ].join(" ")}
+              >
+                All companies
+              </button>
+              {companyOptions.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => setCompany(name)}
+                  className={[
+                    "rounded-lg px-2.5 py-1 text-xs font-semibold transition",
+                    company === name ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                  ].join(" ")}
+                >
+                  {name}
+                </button>
+              ))}
+            </>
+          ) : (
+            <select
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+            >
+              <option value="">All companies</option>
+              {companyOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
@@ -640,6 +761,29 @@ function PipelinePageContent() {
           ))}
         </div>
       </div>
+
+      {companySummaryRows.length > 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Company summary</div>
+          <div className="flex flex-wrap gap-2">
+            {companySummaryRows.map((row) => (
+              <button
+                key={row.key}
+                type="button"
+                onClick={() => setCompany(row.company)}
+                className={[
+                  "rounded-lg border px-2.5 py-1 text-xs transition",
+                  company === row.company
+                    ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                    : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
+                ].join(" ")}
+              >
+                {row.company} · Applied {row.applied} · Screening {row.screening} · Interview {row.interview}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {(error || swrError) && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200">
@@ -677,7 +821,7 @@ function PipelinePageContent() {
               <span className="font-semibold text-slate-900 dark:text-slate-100">Board is empty.</span> Use{" "}
               <span className="font-semibold text-blue-800 dark:text-blue-300">Step 1</span> above to add your first application — cards will appear in{" "}
               <strong>Applied</strong>.
-              {debouncedQ || stage || jobId || assignedTo ? (
+              {debouncedQ || stage || jobId || company || assignedTo ? (
                 <span className="mt-2 block text-slate-600 dark:text-slate-400">Or clear filters — the current query may match nothing.</span>
               ) : null}
             </div>
