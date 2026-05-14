@@ -13,6 +13,7 @@ import DispositionReasonModal from "@/components/DispositionReasonModal";
 import ApplicationEmailModal from "@/components/pipeline/ApplicationEmailModal";
 import PipelineApplicationDrawer from "@/components/pipeline/PipelineApplicationDrawer";
 import { INTELLIGENCE_V3_ENABLED } from "@/lib/featureFlags";
+import { ATS_TIMEZONE, ATS_TIMEZONE_LABEL, kolkataLocalToUtcIso } from "@/lib/timezones";
 
 const STAGES = ["Applied", "Screening", "Screening Failed", "Interview", "Selected", "Rejected"] as const;
 type Stage = (typeof STAGES)[number];
@@ -127,17 +128,16 @@ const STAGE_EMPTY_COPY: Record<Stage, { title: string; hint: string }> = {
 
 function formatCardDateTime(iso?: string | null) {
   if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat("en-IN", {
+      timeZone: ATS_TIMEZONE,
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-    }).format(d);
+    }).format(new Date(iso));
   } catch {
-    return d.toLocaleString();
+    return null;
   }
 }
 
@@ -357,7 +357,7 @@ export default function PipelineBoard({
   const [scheduleSendEmail, setScheduleSendEmail] = useState(false);
   const [scheduleAttendees, setScheduleAttendees] = useState("");
   const [scheduleTimezone, setScheduleTimezone] = useState(
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata"
+    ATS_TIMEZONE_LABEL
   );
   const [scheduleMeetingMode, setScheduleMeetingMode] = useState("Google Meet");
   const [scheduleMeetingLocation, setScheduleMeetingLocation] = useState("");
@@ -377,7 +377,7 @@ export default function PipelineBoard({
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
   const [rescheduleAttendees, setRescheduleAttendees] = useState("");
   const [rescheduleTimezone, setRescheduleTimezone] = useState(
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata"
+    ATS_TIMEZONE_LABEL
   );
   const [rescheduleMeetingMode, setRescheduleMeetingMode] = useState("Google Meet");
   const [rescheduleMeetingLocation, setRescheduleMeetingLocation] = useState("");
@@ -702,7 +702,7 @@ export default function PipelineBoard({
     setConfirmScheduleOpen(false);
     setScheduleSendEmail(false);
     setScheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
-    setScheduleTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata");
+    setScheduleTimezone(ATS_TIMEZONE_LABEL);
     setScheduleMeetingMode(calendarStatus?.shared_google?.connected ? "Google Meet" : "Manual");
     setScheduleMeetingLocation("");
     setScheduleNotes("");
@@ -721,7 +721,11 @@ export default function PipelineBoard({
     setScheduleDraftBusy(true);
     setScheduleDraftError(null);
     try {
-      const iso = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
+      const iso = kolkataLocalToUtcIso(scheduleDate, scheduleTime);
+      if (!iso) {
+        setScheduleDraftError("Invalid interview date/time.");
+        return;
+      }
       const data = await apiFetchJson<{
         subject?: string;
         body?: string;
@@ -953,7 +957,11 @@ export default function PipelineBoard({
       setError("Generate the interview invite draft before sending.");
       return;
     }
-    const scheduleIso = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
+    const scheduleIso = kolkataLocalToUtcIso(scheduleDate, scheduleTime);
+    if (!scheduleIso) {
+      setError("Invalid interview date/time.");
+      return;
+    }
 
     setBusyId(scheduleApp.id);
     setError(null);
@@ -1040,12 +1048,19 @@ export default function PipelineBoard({
   function getLocalDateInputs(iso?: string | null) {
     if (!iso) return { date: "", time: "" };
     const d = new Date(iso);
-    // Use local time so the value matches the user's date/time inputs.
-    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(
-      2,
-      "0"
-    )}`;
-    const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    if (Number.isNaN(d.getTime())) return { date: "", time: "" };
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: ATS_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(d);
+    const map = new Map(parts.map((part) => [part.type, part.value]));
+    const date = `${map.get("year")}-${map.get("month")}-${map.get("day")}`;
+    const time = `${map.get("hour")}:${map.get("minute")}`;
     return { date, time };
   }
 
@@ -1056,7 +1071,7 @@ export default function PipelineBoard({
     setRescheduleTime(time);
     setRescheduleSendEmail(false);
     setRescheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
-    setRescheduleTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata");
+    setRescheduleTimezone(ATS_TIMEZONE_LABEL);
     setRescheduleMeetingMode(app.meet_link ? "Google Meet" : "Manual");
     setRescheduleMeetingLocation("");
     setRescheduleNotes(app.interview_status_note || "");
@@ -1076,7 +1091,11 @@ export default function PipelineBoard({
     setRescheduleDraftBusy(true);
     setRescheduleDraftError(null);
     try {
-      const iso = new Date(`${rescheduleDate}T${rescheduleTime}`).toISOString();
+      const iso = kolkataLocalToUtcIso(rescheduleDate, rescheduleTime);
+      if (!iso) {
+        setRescheduleDraftError("Invalid interview date/time.");
+        return;
+      }
       const data = await apiFetchJson<{
         subject?: string;
         body?: string;
@@ -1120,7 +1139,11 @@ export default function PipelineBoard({
       return;
     }
 
-    const iso = new Date(`${rescheduleDate}T${rescheduleTime}`).toISOString();
+    const iso = kolkataLocalToUtcIso(rescheduleDate, rescheduleTime);
+    if (!iso) {
+      setError("Invalid interview date/time.");
+      return;
+    }
     setBusyId(rescheduleApp.id);
     setError(null);
     try {
@@ -1685,9 +1708,8 @@ export default function PipelineBoard({
                     type="text"
                     className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={scheduleTimezone}
-                    onChange={(e) => setScheduleTimezone(e.target.value)}
-                    disabled={busyId === scheduleApp.id}
-                    placeholder="Asia/Kolkata"
+                    disabled
+                    placeholder={ATS_TIMEZONE_LABEL}
                   />
                 </div>
                 <div>
@@ -1948,9 +1970,8 @@ export default function PipelineBoard({
                     type="text"
                     className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={rescheduleTimezone}
-                    onChange={(e) => setRescheduleTimezone(e.target.value)}
-                    disabled={busyId === rescheduleApp.id}
-                    placeholder="Asia/Kolkata"
+                    disabled
+                    placeholder={ATS_TIMEZONE_LABEL}
                   />
                 </div>
                 <div>

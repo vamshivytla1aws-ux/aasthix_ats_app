@@ -3,10 +3,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { apiFetchJson } from "@/lib/apiClient";
 import { UI } from "@/lib/ui";
-import { useDashboardThemeOptional } from "@/components/DashboardThemeProvider";
-import type { DashboardThemeMode } from "@/lib/dashboardTheme";
 import {
-  Settings, User, Bell, Palette, Monitor, Sun, Moon, LayoutGrid,
+  Settings, User, Bell, Palette, LayoutGrid, Monitor,
   Shield, Save, CheckCircle2, Info, Clock, KeyRound, Calendar,
 } from "lucide-react";
 
@@ -216,7 +214,6 @@ function ProfileSection({ user }: { user: UserProfile | null }) {
 /* ================================================================== */
 
 function AppearanceSection() {
-  const themeCtx = useDashboardThemeOptional();
   const [density, setDensity] = useState<"comfortable" | "compact" | "ultra">("compact");
 
   useEffect(() => {
@@ -231,12 +228,6 @@ function AppearanceSection() {
     try { localStorage.setItem(DENSITY_STORAGE_KEY, d); } catch { /* ignore */ }
   }
 
-  const themes: Array<{ value: DashboardThemeMode; label: string; icon: React.ReactNode; desc: string }> = [
-    { value: "auto", label: "Auto", icon: <Monitor className="h-5 w-5" />, desc: "Follows time of day (light 6am–8pm)" },
-    { value: "light", label: "Light", icon: <Sun className="h-5 w-5" />, desc: "Always light mode" },
-    { value: "dark", label: "Dark", icon: <Moon className="h-5 w-5" />, desc: "Always dark mode" },
-  ];
-
   const densities: Array<{ value: "comfortable" | "compact" | "ultra"; label: string; desc: string }> = [
     { value: "comfortable", label: "Comfortable", desc: "More spacing, larger text" },
     { value: "compact", label: "Compact", desc: "Default, balanced density" },
@@ -249,30 +240,8 @@ function AppearanceSection() {
         {/* Theme */}
         <div>
           <h4 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">Theme</h4>
-          <div className="grid grid-cols-3 gap-3">
-            {themes.map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                onClick={() => {
-                  if (themeCtx) {
-                    while (themeCtx.mode !== t.value) themeCtx.cycleTheme();
-                  }
-                }}
-                className={[
-                  "flex flex-col items-center gap-2 rounded-xl border-2 p-4 transition",
-                  themeCtx?.mode === t.value
-                    ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30"
-                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-600",
-                ].join(" ")}
-              >
-                <span className={themeCtx?.mode === t.value ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500"}>
-                  {t.icon}
-                </span>
-                <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{t.label}</span>
-                <span className="text-center text-[10px] text-slate-500">{t.desc}</span>
-              </button>
-            ))}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+            Light mode is enforced across the ATS. Auto and dark themes are disabled.
           </div>
         </div>
 

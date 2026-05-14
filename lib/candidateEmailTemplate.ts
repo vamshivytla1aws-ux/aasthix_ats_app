@@ -28,9 +28,14 @@ function normalizeParagraphs(paragraphs: string[] | undefined) {
   return (paragraphs ?? []).map((line) => String(line || "").trim()).filter(Boolean);
 }
 
+function startsWithGreeting(line: string) {
+  return /^(hi|hello|dear)\b/i.test(String(line || "").trim());
+}
+
 export function buildCandidateEmailTemplate(opts: CandidateEmailTemplateOpts) {
   const greetingName = String(opts.candidateName || "Candidate").trim() || "Candidate";
   const paragraphs = normalizeParagraphs(opts.paragraphs);
+  const hasInlineGreeting = paragraphs.length > 0 && startsWithGreeting(paragraphs[0]);
   const job = opts.job ?? {};
   const title = String(job.title || "").trim();
   const company = String(job.company || "").trim();
@@ -81,7 +86,7 @@ export function buildCandidateEmailTemplate(opts: CandidateEmailTemplateOpts) {
           <div style="font-family:Arial,sans-serif;color:#ffffff;font-size:18px;font-weight:700;">Aasthix Talent</div>
         </div>
         <div style="padding:20px 22px;font-family:Arial,sans-serif;color:#0F172A;">
-          <p style="margin:0 0 10px;font-size:14px;">Hi ${escapeHtml(greetingName)},</p>
+          ${hasInlineGreeting ? "" : `<p style="margin:0 0 10px;font-size:14px;">Hi ${escapeHtml(greetingName)},</p>`}
           ${htmlParagraphs}
           ${htmlCta}
           ${htmlJobCard}
@@ -95,8 +100,7 @@ export function buildCandidateEmailTemplate(opts: CandidateEmailTemplateOpts) {
 </html>`;
 
   const textParts = [
-    `Hi ${greetingName},`,
-    "",
+    ...(hasInlineGreeting ? [] : [`Hi ${greetingName},`, ""]),
     ...paragraphs,
     ...(cta ? ["", `${cta.label}: ${cta.url}`] : []),
     ...(hasJobCard

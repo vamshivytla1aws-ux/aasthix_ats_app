@@ -9,6 +9,7 @@ import { recordDispositionEvent, validateDispositionReason } from "@/lib/disposi
 import { sendEmailMessage } from "@/lib/sendEmail";
 import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
 import { syncInterviewMeeting } from "@/lib/services/googleCalendar";
+import { ATS_TIMEZONE_LABEL, formatInAtsTimezone } from "@/lib/timezones";
 
 export const runtime = "nodejs";
 
@@ -58,18 +59,10 @@ function isInterviewSubstatus(value: unknown): value is InterviewSubstatus {
 
 function formatEmailDateTime(value: string | null | undefined) {
   if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
   try {
-    return new Intl.DateTimeFormat("en-IN", {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(d);
+    return `${formatInAtsTimezone(value)} (${ATS_TIMEZONE_LABEL})`;
   } catch {
-    return d.toLocaleString();
+    return String(value);
   }
 }
 

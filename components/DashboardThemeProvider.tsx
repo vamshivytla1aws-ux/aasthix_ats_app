@@ -2,12 +2,8 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
-  cycleThemeMode,
   DASHBOARD_THEME_STORAGE_KEY,
   DashboardThemeMode,
-  parseStoredTheme,
-  resolveEffectiveDark,
-  themeModeLabel,
 } from "@/lib/dashboardTheme";
 
 type Ctx = {
@@ -32,66 +28,30 @@ export function useDashboardThemeOptional(): Ctx | null {
 }
 
 export function DashboardThemeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setMode] = useState<DashboardThemeMode>("auto");
-  const [systemPrefersDark, setSystemPrefersDark] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      setMode(parseStoredTheme(window.localStorage.getItem(DASHBOARD_THEME_STORAGE_KEY)));
-    } catch {
-      setMode("auto");
-    }
-
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const applyMedia = () => setSystemPrefersDark(media.matches);
-    applyMedia();
-
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", applyMedia);
-      return () => media.removeEventListener("change", applyMedia);
-    }
-
-    media.addListener(applyMedia);
-    return () => media.removeListener(applyMedia);
-  }, []);
-
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      window.localStorage.setItem(DASHBOARD_THEME_STORAGE_KEY, mode);
-    } catch {
-      // ignore
-    }
-  }, [mode, hydrated]);
-
-  const effectiveDark = useMemo(
-    () => resolveEffectiveDark(mode, systemPrefersDark),
-    [mode, systemPrefersDark]
-  );
+  const [mode] = useState<DashboardThemeMode>("light");
+  const effectiveDark = useMemo(() => false, []);
 
   useEffect(() => {
     const root = document.documentElement;
     const body = document.body;
-    root.classList.toggle("dark", effectiveDark);
-    root.dataset.theme = effectiveDark ? "dark" : "light";
-    body.dataset.theme = effectiveDark ? "dark" : "light";
+    root.classList.remove("dark");
+    root.dataset.theme = "light";
+    body.dataset.theme = "light";
+    try {
+      window.localStorage.setItem(DASHBOARD_THEME_STORAGE_KEY, "light");
+    } catch {
+      // ignore
+    }
   }, [effectiveDark]);
 
-  const cycleTheme = useCallback(() => {
-    setMode((m) => cycleThemeMode(m));
-  }, []);
+  const cycleTheme = useCallback(() => {}, []);
 
   const value = useMemo(
     () => ({
       mode,
       effectiveDark,
       cycleTheme,
-      label: themeModeLabel(mode),
+      label: "Light mode",
     }),
     [mode, effectiveDark, cycleTheme]
   );

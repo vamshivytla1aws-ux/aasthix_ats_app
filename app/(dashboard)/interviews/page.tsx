@@ -12,6 +12,7 @@ import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import { normalizeResumeLink } from "@/lib/resumeLink";
+import { ATS_TIMEZONE, ATS_TIMEZONE_LABEL, kolkataLocalToUtcIso } from "@/lib/timezones";
 import { useDensity } from "@/lib/useDensity";
 import DensityToggle from "@/components/ui/DensityToggle";
 import AccessGate from "@/components/AccessGate";
@@ -116,6 +117,7 @@ function formatDateTime(value: string | null | undefined) {
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: ATS_TIMEZONE,
     }).format(d);
   } catch {
     return d.toLocaleString();
@@ -130,6 +132,7 @@ function formatTime(value: string | null | undefined) {
     return new Intl.DateTimeFormat("en-IN", {
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: ATS_TIMEZONE,
     }).format(d);
   } catch {
     return d.toLocaleTimeString();
@@ -229,7 +232,7 @@ export default function InterviewsPage() {
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
   const [rescheduleAttendees, setRescheduleAttendees] = useState("");
   const [rescheduleTimezone, setRescheduleTimezone] = useState(
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata"
+    ATS_TIMEZONE_LABEL
   );
   const [rescheduleMeetingMode, setRescheduleMeetingMode] = useState("Google Meet");
   const [rescheduleMeetingLocation, setRescheduleMeetingLocation] = useState("");
@@ -535,9 +538,20 @@ export default function InterviewsPage() {
     base.setSeconds(0);
     base.setMilliseconds(0);
 
-    const date = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")}`;
-    const time = `${String(base.getHours()).padStart(2, "0")}:${String(base.getMinutes()).padStart(2, "0")}`;
-    return { date, time };
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: ATS_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(base);
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+    return {
+      date: `${get("year")}-${get("month")}-${get("day")}`,
+      time: `${get("hour")}:${get("minute")}`,
+    };
   }
 
   async function generateRescheduleInviteDraft() {
@@ -545,7 +559,11 @@ export default function InterviewsPage() {
     setRescheduleDraftBusy(true);
     setRescheduleDraftError(null);
     try {
-      const iso = new Date(`${rescheduleDate}T${rescheduleTime}`).toISOString();
+      const iso = kolkataLocalToUtcIso(rescheduleDate, rescheduleTime);
+      if (!iso) {
+        setRescheduleDraftError("Invalid date/time.");
+        return;
+      }
       const data = await apiFetchJson<{
         subject?: string;
         body?: string;
@@ -557,7 +575,7 @@ export default function InterviewsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           interviewDatetime: iso,
-          timezoneLabel: rescheduleTimezone,
+          timezoneLabel: ATS_TIMEZONE_LABEL,
           meetingMode: rescheduleMeetingMode,
           meetingLocation: rescheduleMeetingLocation,
           panelEmails: rescheduleAttendees,
@@ -612,7 +630,22 @@ export default function InterviewsPage() {
     if (!appId) return;
     if (calendarBusy !== null) return;
 
-    const newIso = new Date(start as any).toISOString();
+    const moved = new Date(start as any);
+    const movedParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: ATS_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(moved);
+    const movedGet = (type: string) => movedParts.find((p) => p.type === type)?.value ?? "";
+    const newIso = kolkataLocalToUtcIso(
+      `${movedGet("year")}-${movedGet("month")}-${movedGet("day")}`,
+      `${movedGet("hour")}:${movedGet("minute")}`
+    );
+    if (!newIso) return;
     setCalendarBusy(appId);
     setError(null);
     try {
@@ -662,7 +695,11 @@ export default function InterviewsPage() {
     setError(null);
     setActionBusyId(selectedInterview.id);
     try {
-      const iso = new Date(`${rescheduleDate}T${rescheduleTime}`).toISOString();
+      const iso = kolkataLocalToUtcIso(rescheduleDate, rescheduleTime);
+      if (!iso) {
+        setError("Invalid date/time.");
+        return;
+      }
       const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -801,7 +838,7 @@ export default function InterviewsPage() {
     setRescheduleTime(time);
     setRescheduleSendEmail(false);
     setRescheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
-    setRescheduleTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata");
+    setRescheduleTimezone(ATS_TIMEZONE_LABEL);
     setRescheduleMeetingMode(app.meet_link ? "Google Meet" : "Manual");
     setRescheduleMeetingLocation("");
     setRescheduleNotes(app.interview_status_note || "");
@@ -1872,8 +1909,7 @@ export default function InterviewsPage() {
                     type="text"
                     className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                     value={rescheduleTimezone}
-                    onChange={(e) => setRescheduleTimezone(e.target.value)}
-                    disabled={actionBusyId === selectedInterview.id}
+                    disabled
                   />
                 </div>
                 <div>

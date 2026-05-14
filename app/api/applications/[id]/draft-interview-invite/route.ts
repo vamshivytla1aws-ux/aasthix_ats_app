@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { fetchApplicationCardRow } from "@/lib/applicationCard";
 import { requirePermission } from "@/lib/rbac";
 import { draftInterviewInviteWithAi } from "@/lib/interviewInviteDraft";
+import { ATS_TIMEZONE_LABEL, formatInAtsTimezone } from "@/lib/timezones";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,17 +22,8 @@ function parseEmails(raw: unknown) {
   );
 }
 
-function formatDateTimeLabel(value: string, timezoneLabel?: string | null) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  const label = new Intl.DateTimeFormat("en-IN", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-  return timezoneLabel?.trim() ? `${label} (${timezoneLabel.trim()})` : label;
+function formatDateTimeLabel(value: string) {
+  return `${formatInAtsTimezone(value)} (${ATS_TIMEZONE_LABEL})`;
 }
 
 export async function POST(request: Request, context: { params: { id: string } }) {
@@ -79,8 +71,8 @@ export async function POST(request: Request, context: { params: { id: string } }
       company: typeof row.job_company === "string" ? row.job_company : null,
       jobLocation: typeof row.job_location === "string" ? row.job_location : null,
       jdExcerpt,
-      interviewDateTimeLabel: formatDateTimeLabel(body.interviewDatetime, body.timezoneLabel),
-      timezoneLabel: body.timezoneLabel ?? null,
+      interviewDateTimeLabel: formatDateTimeLabel(body.interviewDatetime),
+      timezoneLabel: ATS_TIMEZONE_LABEL,
       meetingMode: body.meetingMode ?? null,
       meetingLocation: body.meetingLocation ?? null,
       meetLink: body.meetLink ?? null,
