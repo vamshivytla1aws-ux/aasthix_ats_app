@@ -82,7 +82,6 @@ function PipelinePageContent() {
   const [assignedTo, setAssignedTo] = useState<string>("");
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [selectedAppIds, setSelectedAppIds] = useState<Set<number>>(() => new Set());
-  const [viewNameDraft, setViewNameDraft] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkToast, setBulkToast] = useState<string | null>(null);
   const [bulkStage, setBulkStage] = useState<Stage | "">("");
@@ -90,7 +89,7 @@ function PipelinePageContent() {
   const [bulkAssignUserId, setBulkAssignUserId] = useState<string>("");
 
   const [debouncedQ, setDebouncedQ] = useState(q);
-  const [assignOpen, setAssignOpen] = useState(true);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [filterDrawer, setFilterDrawer] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -138,16 +137,6 @@ function PipelinePageContent() {
     return `/api/applications${qs ? `?${qs}` : ""}`;
   }, [debouncedQ, stage, jobId, company, assignedTo]);
 
-  const companySummaryKey = useMemo(() => {
-    const params = new URLSearchParams();
-    if (debouncedQ.trim().length > 0) params.set("q", debouncedQ.trim());
-    if (stage) params.set("stage", stage);
-    if (jobId) params.set("job_id", jobId);
-    if (assignedTo === "me") params.set("assigned_to", "me");
-    const qs = params.toString();
-    return `/api/applications${qs ? `?${qs}` : ""}`;
-  }, [debouncedQ, stage, jobId, assignedTo]);
-
   const {
     data: applications = [],
     error: swrError,
@@ -160,14 +149,6 @@ function PipelinePageContent() {
     onSuccess: () => setError(null),
   });
 
-  const { data: companySummaryApplications = [], mutate: mutateCompanySummary } = useSWR<ApplicationRow[]>(
-    companySummaryKey,
-    dashboardFetcher,
-    {
-      refreshInterval: 60_000,
-    }
-  );
-
   const { data: jobs = [], mutate: mutateJobs } = useSWR<Job[]>("/api/jobs", dashboardFetcher, {
     refreshInterval: 60_000,
   });
@@ -179,12 +160,6 @@ function PipelinePageContent() {
 
   const { data: recruiters = [] } = useSWR<RecruiterOption[]>(
     canManage ? "/api/pipeline/recruiters" : null,
-    dashboardFetcher,
-    { refreshInterval: 120_000 }
-  );
-
-  const { data: savedViewsData, mutate: mutateSavedViews } = useSWR<{ views: { id: number; name: string; filters: Record<string, unknown> }[] }>(
-    "/api/user/saved-views?page=pipeline",
     dashboardFetcher,
     { refreshInterval: 120_000 }
   );
@@ -258,33 +233,6 @@ function PipelinePageContent() {
     );
   }
 
-  function applySavedView(f: Record<string, unknown>) {
-    setQ(String(f.q ?? ""));
-    setStage(String(f.stage ?? ""));
-    setJobId(String(f.job_id ?? ""));
-    setCompany(String(f.company ?? ""));
-    setAssignedTo(String(f.assigned_to ?? ""));
-  }
-
-  async function savePipelineView() {
-    const name = viewNameDraft.trim() || "My filters";
-    try {
-      await apiFetchJson("/api/user/saved-views", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          page: "pipeline",
-          name,
-          filters: { q: debouncedQ, stage, job_id: jobId, company, assigned_to: assignedTo },
-        }),
-      });
-      setBulkToast(`Saved “${name}”.`);
-      void mutateSavedViews();
-    } catch (e: any) {
-      setBulkToast(e?.message || "Save failed");
-    }
-  }
-
   async function runBulkAssign() {
     const uid = bulkAssignUserId === "" ? null : Number(bulkAssignUserId);
     if (bulkAssignUserId !== "" && (!Number.isFinite(uid) || (uid as number) <= 0)) {
@@ -342,14 +290,6 @@ function PipelinePageContent() {
     }
   }
 
-  const stageCounts = STAGES.reduce<Record<Stage, number>>(
-    (acc, s) => {
-      acc[s] = applications.filter((a) => a.stage === s).length;
-      return acc;
-    },
-    { Applied: 0, Screening: 0, "Screening Failed": 0, Interview: 0, Selected: 0, Rejected: 0 }
-  );
-
   const companyOptions = useMemo(() => {
     const seen = new Set<string>();
     const values: string[] = [];
@@ -363,28 +303,6 @@ function PipelinePageContent() {
     }
     return values.sort((a, b) => a.localeCompare(b));
   }, [jobs]);
-
-  const companySummaryRows = useMemo(() => {
-    const byCompany = new Map<string, { total: number; applied: number; screening: number; interview: number }>();
-    for (const row of companySummaryApplications) {
-      const raw = String(row.job_company ?? "").trim();
-      if (!raw) continue;
-      const key = raw.toLowerCase();
-      const current = byCompany.get(key) ?? { total: 0, applied: 0, screening: 0, interview: 0 };
-      current.total += 1;
-      if (row.stage === "Applied") current.applied += 1;
-      if (row.stage === "Screening") current.screening += 1;
-      if (row.stage === "Interview") current.interview += 1;
-      byCompany.set(key, current);
-    }
-    return Array.from(byCompany.entries())
-      .map(([key, value]) => ({
-        key,
-        company: companyOptions.find((name) => name.toLowerCase() === key) ?? key,
-        ...value,
-      }))
-      .sort((a, b) => b.total - a.total || a.company.localeCompare(b.company));
-  }, [companySummaryApplications, companyOptions]);
 
   return (
     <AccessGate permissionKey="pipeline.view">
@@ -511,7 +429,6 @@ function PipelinePageContent() {
               type="button"
               onClick={() => {
                 void mutateApplications();
-                void mutateCompanySummary();
                 void mutateJobs();
               }}
               className={UI.secondaryButton + " py-2 text-xs"}
@@ -597,36 +514,6 @@ function PipelinePageContent() {
 
       <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/40">
         <div className="flex flex-wrap items-end gap-2">
-          <div>
-            <label className="block text-[10px] font-bold uppercase text-slate-400">Saved view</label>
-            <select
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900"
-              defaultValue=""
-              onChange={(e) => {
-                const id = Number(e.target.value);
-                if (!Number.isFinite(id) || id <= 0) return;
-                const v = savedViewsData?.views?.find((x) => x.id === id);
-                if (v?.filters) applySavedView(v.filters as Record<string, unknown>);
-                e.target.value = "";
-              }}
-            >
-              <option value="">Load…</option>
-              {savedViewsData?.views?.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <input
-            placeholder="Name this filter set"
-            value={viewNameDraft}
-            onChange={(e) => setViewNameDraft(e.target.value)}
-            className="min-w-[160px] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900"
-          />
-          <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => void savePipelineView()}>
-            Save view
-          </button>
           <button
             type="button"
             className={[
@@ -711,48 +598,6 @@ function PipelinePageContent() {
           </button>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          {companyOptions.length <= 8 ? (
-            <>
-              <button
-                type="button"
-                onClick={() => setCompany("")}
-                className={[
-                  "rounded-lg px-2.5 py-1 text-xs font-semibold transition",
-                  company === "" ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
-                ].join(" ")}
-              >
-                All companies
-              </button>
-              {companyOptions.map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => setCompany(name)}
-                  className={[
-                    "rounded-lg px-2.5 py-1 text-xs font-semibold transition",
-                    company === name ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
-                  ].join(" ")}
-                >
-                  {name}
-                </button>
-              ))}
-            </>
-          ) : (
-            <select
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-            >
-              <option value="">All companies</option>
-              {companyOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setStage("")}
@@ -778,29 +623,6 @@ function PipelinePageContent() {
           ))}
         </div>
       </div>
-
-      {companySummaryRows.length > 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Company summary</div>
-          <div className="flex flex-wrap gap-2">
-            {companySummaryRows.map((row) => (
-              <button
-                key={row.key}
-                type="button"
-                onClick={() => setCompany(row.company)}
-                className={[
-                  "rounded-lg border px-2.5 py-1 text-xs transition",
-                  company === row.company
-                    ? "border-indigo-300 bg-indigo-50 text-indigo-800"
-                    : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
-                ].join(" ")}
-              >
-                {row.company} · Applied {row.applied} · Screening {row.screening} · Interview {row.interview}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       {(error || swrError) && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200">
@@ -938,6 +760,40 @@ function PipelinePageContent() {
               staleDaysThreshold={7}
               isRefreshing={Boolean(isValidating && applications.length > 0)}
             />
+          ) : null}
+          {companyOptions.length > 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Company list</div>
+              <div className="flex flex-wrap gap-2">
+                {companyOptions.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => setCompany(name)}
+                    className={[
+                      "rounded-lg border px-2.5 py-1 text-xs font-semibold transition",
+                      company === name
+                        ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
+                    ].join(" ")}
+                  >
+                    {name}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setCompany("")}
+                  className={[
+                    "rounded-lg border px-2.5 py-1 text-xs font-semibold transition",
+                    company === ""
+                      ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                      : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
+                  ].join(" ")}
+                >
+                  All companies
+                </button>
+              </div>
+            </div>
           ) : null}
         </>
       )}
