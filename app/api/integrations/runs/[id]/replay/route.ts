@@ -8,12 +8,30 @@ export const runtime = "nodejs";
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!INTEGRATIONS_V4_ENABLED) return NextResponse.json({ enabled: false, run: null });
+  if (!INTEGRATIONS_V4_ENABLED) {
+    return NextResponse.json({
+      enabled: false,
+      run: null,
+      operation_status: "blocked",
+      health_status: "blocked",
+      user_message: "Integrations are disabled by flag.",
+      trace_id: `integrations-replay-${Date.now()}`,
+    });
+  }
   const runId = Number(params.id);
   if (!Number.isFinite(runId) || runId <= 0) return NextResponse.json({ error: "Invalid run id" }, { status: 400 });
   try {
     const run = await replayIntegrationRun(runId);
-    return NextResponse.json({ enabled: true, run });
+    return NextResponse.json({
+      enabled: true,
+      run,
+      operation_status: "success",
+      health_status: "healthy",
+      user_message: "Integration run replayed.",
+      last_evaluated_at: new Date().toISOString(),
+      owner: "integration-admin",
+      trace_id: `integrations-replay-${Date.now()}`,
+    });
   } catch (error) {
     console.error("POST /api/integrations/runs/:id/replay", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to replay integration run" }, { status: 500 });

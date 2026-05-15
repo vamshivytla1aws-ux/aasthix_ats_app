@@ -9,11 +9,25 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!COMPLIANCE_V4_ENABLED) return NextResponse.json({ enabled: false, report: null });
+  if (!COMPLIANCE_V4_ENABLED) {
+    return NextResponse.json({
+      enabled: false,
+      report: null,
+      operation_status: "blocked",
+      health_status: "blocked",
+      user_message: "Compliance reporting is disabled by flag.",
+      trace_id: `compliance-report-${Date.now()}`,
+    });
+  }
   try {
     const retention = await listRetentionPolicies();
     return NextResponse.json({
       enabled: true,
+      operation_status: "success",
+      health_status: retention.length > 0 ? "healthy" : "warning",
+      last_evaluated_at: new Date().toISOString(),
+      owner: "compliance-admin",
+      trace_id: `compliance-report-${Date.now()}`,
       report: {
         generated_at: new Date().toISOString(),
         retention_policies: retention,

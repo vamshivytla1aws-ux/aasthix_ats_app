@@ -8,14 +8,38 @@ export const runtime = "nodejs";
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!INTEGRATIONS_V4_ENABLED) return NextResponse.json({ enabled: false, connector: null });
-  return NextResponse.json({ enabled: true, id: Number(params.id) });
+  if (!INTEGRATIONS_V4_ENABLED) {
+    return NextResponse.json({
+      enabled: false,
+      connector: null,
+      operation_status: "blocked",
+      health_status: "blocked",
+      user_message: "Integrations are disabled by flag.",
+      trace_id: `integrations-connector-${Date.now()}`,
+    });
+  }
+  return NextResponse.json({
+    enabled: true,
+    id: Number(params.id),
+    operation_status: "success",
+    health_status: "healthy",
+    trace_id: `integrations-connector-${Date.now()}`,
+  });
 }
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!INTEGRATIONS_V4_ENABLED) return NextResponse.json({ enabled: false, connector: null });
+  if (!INTEGRATIONS_V4_ENABLED) {
+    return NextResponse.json({
+      enabled: false,
+      connector: null,
+      operation_status: "blocked",
+      health_status: "blocked",
+      user_message: "Integrations are disabled by flag.",
+      trace_id: `integrations-connector-update-${Date.now()}`,
+    });
+  }
   const id = Number(params.id);
   if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "Invalid connector id" }, { status: 400 });
   try {
@@ -26,7 +50,16 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       vault_ref: typeof body?.vault_ref === "string" ? body.vault_ref : undefined,
       health: body?.health && typeof body.health === "object" ? body.health : undefined,
     });
-    return NextResponse.json({ enabled: true, connector });
+    return NextResponse.json({
+      enabled: true,
+      connector,
+      operation_status: "success",
+      health_status: connector.status === "failed" ? "warning" : "healthy",
+      user_message: "Connector updated.",
+      last_evaluated_at: new Date().toISOString(),
+      owner: "integration-admin",
+      trace_id: `integrations-connector-update-${Date.now()}`,
+    });
   } catch (error) {
     console.error("PUT /api/integrations/connectors/:id", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to update connector" }, { status: 500 });

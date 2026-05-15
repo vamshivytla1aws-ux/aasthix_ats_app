@@ -9,10 +9,27 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!AI_GOVERNANCE_V4_ENABLED) return NextResponse.json({ enabled: false, policies: [] });
+  if (!AI_GOVERNANCE_V4_ENABLED) {
+    return NextResponse.json({
+      enabled: false,
+      policies: [],
+      operation_status: "blocked",
+      health_status: "blocked",
+      user_message: "AI governance is disabled by flag.",
+      trace_id: `ai-gov-policies-${Date.now()}`,
+    });
+  }
   try {
     const policies = await listAiPolicies();
-    return NextResponse.json({ enabled: true, policies });
+    return NextResponse.json({
+      enabled: true,
+      policies,
+      operation_status: "success",
+      health_status: policies.length > 0 ? "healthy" : "warning",
+      last_evaluated_at: new Date().toISOString(),
+      owner: "ai-governance-admin",
+      trace_id: `ai-gov-policies-${Date.now()}`,
+    });
   } catch (error) {
     console.error("GET /api/ai-governance/policies", error);
     return NextResponse.json({ error: "Failed to load AI governance policies" }, { status: 500 });
@@ -22,7 +39,16 @@ export async function GET() {
 export async function PUT(request: Request) {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!AI_GOVERNANCE_V4_ENABLED) return NextResponse.json({ enabled: false, policy: null });
+  if (!AI_GOVERNANCE_V4_ENABLED) {
+    return NextResponse.json({
+      enabled: false,
+      policy: null,
+      operation_status: "blocked",
+      health_status: "blocked",
+      user_message: "AI governance is disabled by flag.",
+      trace_id: `ai-gov-policies-update-${Date.now()}`,
+    });
+  }
   try {
     const body = await request.json().catch(() => ({}));
     const policy = await upsertAiPolicy({
@@ -31,7 +57,16 @@ export async function PUT(request: Request) {
       pinned_model: typeof body?.pinned_model === "string" ? body.pinned_model : null,
       risk_tier: typeof body?.risk_tier === "string" ? body.risk_tier : "standard",
     });
-    return NextResponse.json({ enabled: true, policy });
+    return NextResponse.json({
+      enabled: true,
+      policy,
+      operation_status: "success",
+      health_status: "healthy",
+      user_message: "AI governance policy updated.",
+      last_evaluated_at: new Date().toISOString(),
+      owner: "ai-governance-admin",
+      trace_id: `ai-gov-policies-update-${Date.now()}`,
+    });
   } catch (error) {
     console.error("PUT /api/ai-governance/policies", error);
     return NextResponse.json({ error: "Failed to update AI governance policy" }, { status: 500 });

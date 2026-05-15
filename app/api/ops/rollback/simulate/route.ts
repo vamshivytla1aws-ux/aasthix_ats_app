@@ -8,10 +8,28 @@ export const runtime = "nodejs";
 export async function POST() {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!SRE_HARDENING_V4_ENABLED) return NextResponse.json({ enabled: false, simulation: null });
+  if (!SRE_HARDENING_V4_ENABLED) {
+    return NextResponse.json({
+      enabled: false,
+      simulation: null,
+      operation_status: "blocked",
+      health_status: "blocked",
+      user_message: "SRE hardening is disabled by flag.",
+      trace_id: `ops-rollback-${Date.now()}`,
+    });
+  }
   try {
     const simulation = await simulateRollback();
-    return NextResponse.json({ enabled: true, simulation });
+    return NextResponse.json({
+      enabled: true,
+      simulation,
+      operation_status: "success",
+      health_status: "healthy",
+      user_message: "Rollback drill simulated.",
+      last_evaluated_at: new Date().toISOString(),
+      owner: "sre-admin",
+      trace_id: `ops-rollback-${Date.now()}`,
+    });
   } catch (error) {
     console.error("POST /api/ops/rollback/simulate", error);
     return NextResponse.json({ error: "Failed to simulate rollback" }, { status: 500 });
