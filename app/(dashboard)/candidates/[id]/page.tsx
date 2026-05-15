@@ -10,6 +10,7 @@ import NotesSection from "@/components/candidate/NotesSection";
 import JobInfo from "@/components/candidate/JobInfo";
 import { apiFetchJson } from "@/lib/apiClient";
 import EnterpriseTabs from "@/components/enterprise/EnterpriseTabs";
+import NextBestActionStrip from "@/components/enterprise/NextBestActionStrip";
 import ContextualCopilotPanel from "@/components/enterprise/ContextualCopilotPanel";
 import { UI } from "@/lib/ui";
 import { normalizeResumeLink } from "@/lib/resumeLink";
@@ -620,6 +621,14 @@ function CandidateProfilePageContent() {
       </div>
 
       <ContextualCopilotPanel scope="candidate" entityId={c.id} subtitle={c.name} />
+      <NextBestActionStrip
+        title="Next best actions"
+        actions={[
+          { label: "Open pipeline for this candidate", href: c.latest_application_id ? `/pipeline?application=${c.latest_application_id}` : "/pipeline" },
+          { label: "Open interviews desk", href: "/interviews" },
+          { label: "Review activity timeline", href: "#candidate-activity" },
+        ]}
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
         {/* Left summary — sticky on large screens */}
@@ -730,7 +739,11 @@ function CandidateProfilePageContent() {
               {tab === "details" ? detailsPanel : null}
               {tab === "screening" ? screeningPanel : null}
               {tab === "messages" ? <NotesSection candidateId={c.id} initialNotes={data.notes} density={density} /> : null}
-              {tab === "activity" ? <Timeline items={data.timeline} density={density} /> : null}
+              {tab === "activity" ? (
+                <div id="candidate-activity">
+                  <Timeline items={data.timeline} density={density} />
+                </div>
+              ) : null}
               {tab === "interviews" ? (
                 <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 text-sm dark:border-slate-600 dark:bg-slate-950/30">
                   <p className="text-slate-600 dark:text-slate-400">Schedule and manage interviews from the Interviews workspace.</p>

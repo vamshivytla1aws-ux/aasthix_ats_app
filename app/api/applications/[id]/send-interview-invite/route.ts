@@ -94,7 +94,16 @@ export async function POST(request: Request, context: { params: { id: string } }
     const candidateEmail = String(card.candidate_email || "").trim().toLowerCase();
     const candidateId = Number(card.candidate_id);
     if (!candidateEmail || !EMAIL_RE.test(candidateEmail)) {
-      return NextResponse.json({ error: "Candidate email is missing or invalid for calendar invite." }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: "Candidate email is missing or invalid for calendar invite.",
+          operation_status: "blocked",
+          calendar_sync_status: "blocked_missing_candidate_email",
+          email_send_status: "blocked",
+          next_action_hint: "Update candidate email and retry invite send.",
+        },
+        { status: 400 }
+      );
     }
 
     const existingAttendees = Array.isArray(card.interview_attendee_emails)
@@ -153,7 +162,10 @@ export async function POST(request: Request, context: { params: { id: string } }
           error:
             syncResult.error ||
             "Calendar invite failed; reconnect shared Google account or fix scopes.",
+          operation_status: "blocked",
           calendar_sync_status: syncStatus,
+          email_send_status: "blocked",
+          next_action_hint: "Reconnect Google Calendar or fix OAuth scopes before sending the invite.",
         },
         { status: 409 }
       );
@@ -183,11 +195,26 @@ export async function POST(request: Request, context: { params: { id: string } }
     if (!sendResult.sent) {
       if (sendResult.reason === "smtp_not_configured") {
         return NextResponse.json(
-          { error: "Email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL, or configure SMTP variables on the server." },
+          {
+            error: "Email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL, or configure SMTP variables on the server.",
+            operation_status: "blocked",
+            calendar_sync_status: syncStatus || "invite_synced",
+            email_send_status: "smtp_not_configured",
+            next_action_hint: "Configure email provider settings and retry send.",
+          },
           { status: 503 }
         );
       }
-      return NextResponse.json({ error: sendResult.detail || "Failed to send interview invite." }, { status: 502 });
+      return NextResponse.json(
+        {
+          error: sendResult.detail || "Failed to send interview invite.",
+          operation_status: "partial",
+          calendar_sync_status: syncStatus || "invite_synced",
+          email_send_status: "failed",
+          next_action_hint: "Calendar event is synced; retry email send after checking email provider status.",
+        },
+        { status: 502 }
+      );
     }
 
     await writeAuditLog({
@@ -229,12 +256,24 @@ export async function POST(request: Request, context: { params: { id: string } }
     return NextResponse.json({
       ok: true,
       sent: true,
+      operation_status: "success",
       calendar_sync_status: syncStatus || "invite_sent",
+      email_send_status: "sent",
       meet_link: syncResult.meet_link,
       external_calendar_event_id: syncResult.external_calendar_event_id,
+      next_action_hint: "Track interview progress from Pipeline or Interviews desk.",
     });
   } catch (error) {
     console.error("POST /api/applications/[id]/send-interview-invite", error);
-    return NextResponse.json({ error: "Failed to send interview invite." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Failed to send interview invite.",
+        operation_status: "error",
+        calendar_sync_status: "unknown",
+        email_send_status: "unknown",
+        next_action_hint: "Retry after checking server logs.",
+      },
+      { status: 500 }
+    );
   }
 }

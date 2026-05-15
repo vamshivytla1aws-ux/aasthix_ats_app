@@ -1748,7 +1748,25 @@ export async function PATCH(request: Request) {
     }
 
     const card = await safeFetchApplicationCardRow(updated.id, user.user_id);
-    return NextResponse.json(card ?? updated);
+    const payload = (card ?? updated) as Record<string, unknown>;
+    const opStatus =
+      calendarSyncStatus === "calendar_sync_failed"
+        ? "partial"
+        : calendarSyncStatus === "google_not_connected"
+          ? "blocked"
+          : "success";
+    return NextResponse.json({
+      ...payload,
+      operation_status: opStatus,
+      calendar_sync_status: calendarSyncStatus ?? null,
+      email_send_status: send_email === true ? "requested" : "not_requested",
+      next_action_hint:
+        updated.interview_substatus === "completed_followup"
+          ? "Review candidate outcome and move to next round decision."
+          : updated.interview_substatus === "no_show"
+            ? "Mark candidate follow-up plan or keep in interview queue."
+            : "Continue workflow from Pipeline or Interviews desk.",
+    });
   } catch (error) {
     console.error("Error updating application stage", error);
     return NextResponse.json({ error: "Failed to update application" }, { status: 500 });

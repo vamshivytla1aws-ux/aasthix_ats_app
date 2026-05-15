@@ -17,6 +17,7 @@ import { useDensity } from "@/lib/useDensity";
 import DensityToggle from "@/components/ui/DensityToggle";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import NextBestActionStrip from "@/components/enterprise/NextBestActionStrip";
 import RowActionsMenu from "@/components/enterprise/RowActionsMenu";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import FilterDrawer from "@/components/enterprise/FilterDrawer";
@@ -1131,6 +1132,14 @@ export default function InterviewsPage() {
         }
       >
       <div className="space-y-4">
+      <NextBestActionStrip
+        title="Next best actions"
+        actions={[
+          { label: "Open interview stage board", href: "/pipeline?stage=Interview" },
+          { label: "Review candidate profile", href: "/candidates" },
+          { label: "Mark outcomes from alerts", href: "/alerts?type=interview_complete" },
+        ]}
+      />
       {ongoingAlerts.length > 0 && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900">
           <div className="font-semibold">Interview in progress: {ongoingAlerts[0].candidate_full_name}</div>

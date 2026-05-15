@@ -15,6 +15,8 @@ import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import ContextualCopilotPanel from "@/components/enterprise/ContextualCopilotPanel";
 import FilterDrawer from "@/components/enterprise/FilterDrawer";
+import OperationResultBanner from "@/components/enterprise/OperationResultBanner";
+import NextBestActionStrip from "@/components/enterprise/NextBestActionStrip";
 
 type Stage = "Applied" | "Screening" | "Screening Failed" | "Interview" | "Selected" | "Rejected";
 const STAGES: Stage[] = ["Applied", "Screening", "Screening Failed", "Interview", "Selected", "Rejected"];
@@ -84,6 +86,7 @@ function PipelinePageContent() {
   const [selectedAppIds, setSelectedAppIds] = useState<Set<number>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkToast, setBulkToast] = useState<string | null>(null);
+  const [bulkToastTone, setBulkToastTone] = useState<"success" | "partial" | "blocked" | "error" | "info">("info");
   const [bulkStage, setBulkStage] = useState<Stage | "">("");
   const [bulkDispositionId, setBulkDispositionId] = useState<string>("");
   const [bulkAssignUserId, setBulkAssignUserId] = useState<string>("");
@@ -237,6 +240,7 @@ function PipelinePageContent() {
     const uid = bulkAssignUserId === "" ? null : Number(bulkAssignUserId);
     if (bulkAssignUserId !== "" && (!Number.isFinite(uid) || (uid as number) <= 0)) {
       setBulkToast("Pick a valid owner or leave empty to clear.");
+      setBulkToastTone("blocked");
       return;
     }
     setBulkBusy(true);
@@ -251,11 +255,13 @@ function PipelinePageContent() {
         }),
       });
       setBulkToast(`Updated owner on ${selectedAppIds.size} card(s).`);
+      setBulkToastTone("success");
       setSelectedAppIds(new Set());
       void mutateApplications();
     } catch (e: any) {
       const msg = e instanceof ApiError && e.status === 403 ? `${e.message} — pipeline.manage required.` : e?.message || "Failed";
       setBulkToast(msg);
+      setBulkToastTone(e instanceof ApiError && e.status === 403 ? "blocked" : "error");
     } finally {
       setBulkBusy(false);
     }
@@ -264,6 +270,7 @@ function PipelinePageContent() {
   async function runBulkStage() {
     if (!bulkStage) {
       setBulkToast("Choose a target stage.");
+      setBulkToastTone("blocked");
       return;
     }
     setBulkBusy(true);
@@ -279,12 +286,14 @@ function PipelinePageContent() {
         }),
       });
       setBulkToast(`Moved ${selectedAppIds.size} application(s).`);
+      setBulkToastTone("success");
       setSelectedAppIds(new Set());
       setBulkStage("");
       setBulkDispositionId("");
       void mutateApplications();
     } catch (e: any) {
       setBulkToast(e?.message || "Bulk stage failed");
+      setBulkToastTone("error");
     } finally {
       setBulkBusy(false);
     }
@@ -466,11 +475,18 @@ function PipelinePageContent() {
         }
       >
       <div className="space-y-4">
+      <NextBestActionStrip
+        actions={[
+          { label: "Add candidate to board", href: "#assign-application" },
+          { label: "Open interviews desk", href: "/interviews" },
+          { label: "Review candidate trail", href: "/candidates" },
+        ]}
+      />
       {appFromUrl ? (
         <ContextualCopilotPanel scope="application" entityId={appFromUrl} subtitle={`Application #${appFromUrl}`} />
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md shadow-slate-200/40 ring-1 ring-slate-100">
+      <div id="assign-application" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md shadow-slate-200/40 ring-1 ring-slate-100">
         <button
           type="button"
           onClick={() => setAssignOpen((p) => !p)}
@@ -593,7 +609,29 @@ function PipelinePageContent() {
             Clear
           </button>
         </div>
-        {bulkToast ? <div className="mt-2 text-xs text-amber-900 dark:text-amber-200">{bulkToast}</div> : null}
+        {company || stage || assignedTo === "me" ? (
+          <div className="mt-2 inline-flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-700">
+            <span className="font-semibold text-slate-800">Working set:</span>
+            {company ? <span className="rounded bg-white px-1.5 py-0.5">Company: {company}</span> : null}
+            {stage ? <span className="rounded bg-white px-1.5 py-0.5">Stage: {stage}</span> : null}
+            {assignedTo === "me" ? <span className="rounded bg-white px-1.5 py-0.5">Owner: My queue</span> : null}
+          </div>
+        ) : null}
+        {bulkToast ? (
+          <div className="mt-2">
+            <OperationResultBanner
+              tone={bulkToastTone}
+              message={bulkToast}
+              hint={
+                bulkToastTone === "success"
+                  ? "Next action: open candidate profile summary and validate the latest timeline event."
+                  : bulkToastTone === "blocked"
+                    ? "Action blocked. Fix required input or permissions and retry."
+                    : null
+              }
+            />
+          </div>
+        ) : null}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"

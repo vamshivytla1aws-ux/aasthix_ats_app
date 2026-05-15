@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import JobMatchHubModal from "@/components/JobMatchHubModal";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import NextBestActionStrip from "@/components/enterprise/NextBestActionStrip";
 import ContextualCopilotPanel from "@/components/enterprise/ContextualCopilotPanel";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import ApprovalPanel from "@/components/enterprise/ApprovalPanel";
@@ -328,6 +329,14 @@ export default function JobDetailPage() {
       }
     >
       <div className="space-y-4">
+        <NextBestActionStrip
+          title="Next best actions"
+          actions={[
+            { label: "Review AI match history", href: "#ai-match-history" },
+            { label: "Open pipeline for this job", href: `/pipeline?job_id=${jobId}` },
+            { label: "Open interviews desk", href: "/interviews" },
+          ]}
+        />
         <div className={`${UI.enterprise.elevatedCard} p-6`}>
           <dl className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
@@ -376,13 +385,15 @@ export default function JobDetailPage() {
 
         <JobPipelineStats jobId={jobId} />
 
-        <AiCandidateHistorySummaryCard
-          jobId={jobId}
-          onReviewQuestions={() => {
-            if (typeof document === "undefined") return;
-            document.getElementById("ai-interview-questions")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-        />
+        <div id="ai-match-history">
+          <AiCandidateHistorySummaryCard
+            jobId={jobId}
+            onReviewQuestions={() => {
+              if (typeof document === "undefined") return;
+              document.getElementById("ai-interview-questions")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
+        </div>
 
         <ContextualCopilotPanel scope="job" entityId={jobId} subtitle={`${job.title} · ${job.company}`} />
 

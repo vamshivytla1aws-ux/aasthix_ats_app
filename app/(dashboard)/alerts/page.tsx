@@ -31,10 +31,14 @@ function buildAlertActions(
   const items: RowActionItem[] = [];
 
   if (row.candidate_id != null && row.candidate_id > 0) {
+    const candidateHref =
+      row.application_id != null && row.application_id > 0
+        ? `/candidates/${row.candidate_id}?application=${row.application_id}`
+        : `/candidates/${row.candidate_id}`;
     items.push({
       type: "link",
       label: "Candidate profile",
-      href: `/candidates/${row.candidate_id}`,
+      href: candidateHref,
     });
   }
 
@@ -270,7 +274,11 @@ export default function AlertsPage() {
                           <>
                             {" "}
                             <Link
-                              href={`/candidates/${r.candidate_id}`}
+                              href={
+                                r.application_id != null && r.application_id > 0
+                                  ? `/candidates/${r.candidate_id}?application=${r.application_id}`
+                                  : `/candidates/${r.candidate_id}`
+                              }
                               className="text-xs font-semibold text-blue-700 hover:underline dark:text-blue-400"
                             >
                               Profile
