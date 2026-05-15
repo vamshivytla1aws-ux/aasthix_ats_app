@@ -10,6 +10,18 @@ const DEFAULT_TEMPLATE = {
   rubric_scale: [1, 2, 3, 4, 5],
 };
 
+function getCompleteness(scorecard: Record<string, unknown>) {
+  const competencies = Array.isArray((scorecard as any)?.competencies) ? ((scorecard as any).competencies as unknown[]) : [];
+  if (!competencies.length) return { rubric_completeness: 0, evidence_gaps: ["No competencies scored"] };
+  const scored = competencies.filter((item) => {
+    const v = Number((item as any)?.score ?? (item as any)?.rating ?? NaN);
+    return Number.isFinite(v) && v > 0;
+  }).length;
+  const completeness = Math.round((scored / competencies.length) * 100);
+  const gaps = completeness < 70 ? ["Rubric coverage below 70%"] : [];
+  return { rubric_completeness: completeness, evidence_gaps: gaps };
+}
+
 export async function getScorecardTemplate(jobId: number) {
   const res = await query(`SELECT id, job_id, template, updated_at FROM interview_scorecard_templates WHERE job_id = $1 LIMIT 1`, [jobId]);
   if (res.rowCount === 0) {
@@ -68,6 +80,14 @@ export async function createInterviewScorecard(input: {
     ]
   );
   const row = res.rows[0] as any;
+  const quality = getCompleteness((row.scorecard ?? {}) as Record<string, unknown>);
+  const recommendation = String(row.overall_recommendation || "").toLowerCase();
+  const calibrationBucket =
+    recommendation === "strong_hire" || recommendation === "hire"
+      ? "positive"
+      : recommendation === "reject"
+        ? "negative"
+        : "neutral";
   return {
     id: Number(row.id),
     application_id: Number(row.application_id),
@@ -76,6 +96,9 @@ export async function createInterviewScorecard(input: {
     scorecard: row.scorecard ?? {},
     overall_recommendation: row.overall_recommendation ?? null,
     created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+    rubric_completeness: quality.rubric_completeness,
+    evidence_gaps: quality.evidence_gaps,
+    calibration_bucket: calibrationBucket,
   };
 }
 
@@ -99,5 +122,15 @@ export async function getCalibrationSummary() {
     interviewer_user_id: row.interviewer_user_id != null ? Number(row.interviewer_user_id) : null,
     scorecard_count: Number(row.scorecard_count || 0),
     recommendation_index: Number(row.recommendation_index || 0),
+    calibration_bucket:
+      Number(row.recommendation_index || 0) >= 4
+        ? "positive"
+        : Number(row.recommendation_index || 0) <= 2.5
+          ? "negative"
+          : "neutral",
+    variance:
+      Number(row.recommendation_index || 0) >= 4.5 || Number(row.recommendation_index || 0) <= 2
+        ? "high"
+        : "normal",
   }));
 }

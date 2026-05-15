@@ -9,6 +9,13 @@ export type RiskInsight = {
   reason_codes: string[];
   model_version: string;
   generated_at: string;
+  verification?: {
+    verified: boolean;
+    definition_used: string;
+    timezone_used: string;
+    sample_ids: number[];
+    generated_at: string;
+  };
 };
 
 export type AutomationRule = {
@@ -40,6 +47,11 @@ export type AutomationRun = {
   replay_metadata: Record<string, unknown>;
   triggered_by: number | null;
   created_at: string;
+  mode?: AutomationRule["mode"];
+  rule_version?: string;
+  trigger_source?: "simulate_api" | "execute_api" | "system";
+  affected_entities?: number[];
+  execution_trace_id?: string;
 };
 
 export type ForecastSeriesPoint = {
@@ -51,5 +63,12 @@ export type ForecastSeries = {
   key: string;
   confidence_band: RiskConfidence;
   generated_at: string;
+  as_of?: string;
+  data_latency_minutes?: number;
+  scenario_inputs?: {
+    sourcing_uplift?: number;
+    recruiter_capacity_delta?: number;
+    sla_strictness_multiplier?: number;
+  };
   points: ForecastSeriesPoint[];
 };

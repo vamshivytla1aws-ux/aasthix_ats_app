@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import useSWR from "swr";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import OperationResultBanner from "@/components/enterprise/OperationResultBanner";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import { AUTOMATION_V3_ENABLED, CALIBRATION_V3_ENABLED, FORECAST_V3_ENABLED, INTELLIGENCE_V3_ENABLED } from "@/lib/featureFlags";
@@ -18,6 +19,10 @@ import { apiFetchJson } from "@/lib/apiClient";
 
 export default function GovernancePage() {
   const [running, setRunning] = useState(false);
+  const [globalPause, setGlobalPause] = useState(false);
+  const [result, setResult] = useState<{ tone: "success" | "partial" | "blocked" | "error" | "info"; message: string; hint?: string } | null>(null);
+  const [runFilter, setRunFilter] = useState("");
+  const [rulesFilter, setRulesFilter] = useState("");
   const { data: intel } = useSWR<{ enabled?: boolean; resolved_from?: string; summary?: unknown; message?: string }>(
     "/api/intelligence/summary",
     dashboardFetcher
@@ -34,13 +39,62 @@ export default function GovernancePage() {
     setRunning(true);
     try {
       await apiFetchJson("/api/intelligence/recompute", { method: "POST" });
+      setResult({ tone: "success", message: "Intelligence recompute completed.", hint: "Risk scores were refreshed from latest board data." });
       await mutateRuns();
-    } catch {
-      // noop
+    } catch (error) {
+      setResult({ tone: "error", message: "Recompute failed.", hint: error instanceof Error ? error.message : "Unknown failure" });
     } finally {
       setRunning(false);
     }
   }
+
+  async function simulateAutomation() {
+    try {
+      await apiFetchJson("/api/automation/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: { stale_days: 7 } }),
+      });
+      setResult({ tone: "success", message: "Automation simulation completed.", hint: "Recommend-only run logs were generated." });
+      await mutateRuns();
+    } catch (error) {
+      setResult({ tone: "error", message: "Simulation failed.", hint: error instanceof Error ? error.message : "Unknown failure" });
+    }
+  }
+
+  async function executeAutomation() {
+    try {
+      const payload = await apiFetchJson<{ runs?: unknown[]; operation_status?: string; error?: string }>("/api/automation/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allow_execute: true, global_pause: globalPause }),
+      });
+      if (payload.operation_status === "blocked") {
+        setResult({ tone: "blocked", message: payload.error || "Automation execution blocked by policy." });
+      } else {
+        setResult({ tone: "partial", message: "Automation execute request completed.", hint: "Rules not in auto-execute mode were safely skipped." });
+      }
+      await mutateRuns();
+    } catch (error) {
+      setResult({ tone: "error", message: "Execution failed.", hint: error instanceof Error ? error.message : "Unknown failure" });
+    }
+  }
+
+  const filteredRuns = Array.isArray((runs as any)?.runs)
+    ? ((runs as any).runs as Array<Record<string, unknown>>).filter((run) => {
+        const token = runFilter.trim().toLowerCase();
+        if (!token) return true;
+        return JSON.stringify(run).toLowerCase().includes(token);
+      })
+    : [];
+
+  const filteredRules = Array.isArray((rules as any)?.rules)
+    ? ((rules as any).rules as Array<Record<string, unknown>>).filter((rule) => {
+        const token = rulesFilter.trim().toLowerCase();
+        if (!token) return true;
+        return JSON.stringify(rule).toLowerCase().includes(token);
+      })
+    : [];
 
   return (
     <AccessGate permissionKey="jobs.view">
@@ -77,9 +131,38 @@ export default function GovernancePage() {
             >
               {running ? "Recomputing..." : "Recompute insights"}
             </button>
+            <button type="button" className={UI.secondaryButton + " py-2 text-xs"} onClick={() => void simulateAutomation()}>
+              Simulate automation
+            </button>
+            <button type="button" className={UI.secondaryButton + " py-2 text-xs"} onClick={() => void executeAutomation()}>
+              Execute automation
+            </button>
+            <label className="inline-flex items-center gap-2 rounded-lg border border-[var(--ats-border)] px-2 py-1.5 text-xs text-[var(--ats-text-muted)]">
+              <input type="checkbox" checked={globalPause} onChange={(event) => setGlobalPause(event.target.checked)} />
+              Global automation pause
+            </label>
           </div>
         }
       >
+        {result ? (
+          <OperationResultBanner
+            tone={result.tone}
+            message={result.message}
+            hint={result.hint}
+            action={
+              <button type="button" className="text-xs font-semibold underline underline-offset-2" onClick={() => setResult(null)}>
+                Dismiss
+              </button>
+            }
+          />
+        ) : null}
+        <section className={UI.enterprise.elevatedCard + " mb-4 p-4"}>
+          <div className="text-sm font-semibold text-[var(--ats-text)]">Phase 3 runbook</div>
+          <div className="mt-2 text-xs text-[var(--ats-text-muted)]">
+            Enable sequence: Intelligence → Automation (recommend-only) → Forecast → Calibration. Rollback sequence: disable in reverse order.
+            Common failures: Google scopes, sparse data windows, permission mismatch.
+          </div>
+        </section>
         <div className="grid gap-4 md:grid-cols-2">
           <section className={UI.enterprise.elevatedCard + " p-4"}>
             <div className="text-sm font-semibold text-[var(--ats-text)]">Intelligence summary</div>
@@ -89,14 +172,26 @@ export default function GovernancePage() {
           </section>
           <section className={UI.enterprise.elevatedCard + " p-4"}>
             <div className="text-sm font-semibold text-[var(--ats-text)]">Automation rules</div>
+            <input
+              value={rulesFilter}
+              onChange={(event) => setRulesFilter(event.target.value)}
+              placeholder="Filter rules"
+              className="mt-2 w-full rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-3 py-2 text-xs text-[var(--ats-text)]"
+            />
             <pre className="mt-3 max-h-80 overflow-auto rounded-lg bg-[var(--ats-bg-panel)] p-3 text-xs text-[var(--ats-text-muted)]">
-              {JSON.stringify(rules ?? { message: "No rules found" }, null, 2)}
+              {JSON.stringify({ ...(rules as Record<string, unknown>), rules: filteredRules }, null, 2)}
             </pre>
           </section>
           <section className={UI.enterprise.elevatedCard + " p-4 md:col-span-2"}>
             <div className="text-sm font-semibold text-[var(--ats-text)]">Recent automation runs</div>
+            <input
+              value={runFilter}
+              onChange={(event) => setRunFilter(event.target.value)}
+              placeholder="Filter runs"
+              className="mt-2 w-full rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-3 py-2 text-xs text-[var(--ats-text)]"
+            />
             <pre className="mt-3 max-h-80 overflow-auto rounded-lg bg-[var(--ats-bg-panel)] p-3 text-xs text-[var(--ats-text-muted)]">
-              {JSON.stringify(runs ?? { message: "No runs yet" }, null, 2)}
+              {JSON.stringify({ ...(runs as Record<string, unknown>), runs: filteredRuns }, null, 2)}
             </pre>
           </section>
           <section className={UI.enterprise.elevatedCard + " p-4"}>

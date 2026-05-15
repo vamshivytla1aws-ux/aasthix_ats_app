@@ -8,7 +8,13 @@ export const runtime = "nodejs";
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!AUTOMATION_V3_ENABLED) return NextResponse.json({ enabled: false, message: "AUTOMATION_V3_ENABLED is disabled" });
+  if (!AUTOMATION_V3_ENABLED) {
+    return NextResponse.json({
+      enabled: false,
+      message: "AUTOMATION_V3_ENABLED is disabled",
+      operation_status: "blocked",
+    });
+  }
   const id = Number(params.id);
   if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "Invalid rule id" }, { status: 400 });
   try {
@@ -21,7 +27,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       paused: typeof body?.paused === "boolean" ? body.paused : undefined,
       config: body?.config && typeof body.config === "object" ? body.config : undefined,
     });
-    return NextResponse.json({ rule });
+    return NextResponse.json({
+      operation_status: "success",
+      rule,
+    });
   } catch (error) {
     console.error("PUT /api/automation/rules/:id", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to update rule" }, { status: 500 });

@@ -10,10 +10,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await requirePermission("interviews.view");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!CALIBRATION_V3_ENABLED) return NextResponse.json({ enabled: false, calibration: [] });
+  if (!CALIBRATION_V3_ENABLED) return NextResponse.json({ enabled: false, operation_status: "blocked", calibration: [] });
   try {
     const calibration = await getCalibrationSummary();
-    return NextResponse.json({ enabled: true, calibration, generated_at: new Date().toISOString() });
+    return NextResponse.json({ enabled: true, operation_status: "success", calibration, generated_at: new Date().toISOString() });
   } catch (error) {
     console.error("GET /api/interviews/scorecard", error);
     return NextResponse.json({ error: "Failed to load calibration summary" }, { status: 500 });
@@ -23,7 +23,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const auth = await requirePermission("interviews.manage");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!CALIBRATION_V3_ENABLED) return NextResponse.json({ enabled: false, scorecard: null });
+  if (!CALIBRATION_V3_ENABLED) return NextResponse.json({ enabled: false, operation_status: "blocked", scorecard: null });
   try {
     const body = await request.json();
     const applicationId = Number(body?.application_id);
@@ -43,7 +43,16 @@ export async function POST(request: Request) {
       action: "phase3.scorecard.created",
       metadata: { application_id: applicationId, scorecard_id: created.id },
     });
-    return NextResponse.json({ enabled: true, scorecard: created });
+    const warnings = created.rubric_completeness < 70 ? ["Decision-quality warning: rubric coverage is below 70%."] : [];
+    return NextResponse.json({
+      enabled: true,
+      operation_status: warnings.length ? "partial" : "success",
+      scorecard: created,
+      rubric_completeness: created.rubric_completeness,
+      evidence_gaps: created.evidence_gaps,
+      calibration_bucket: created.calibration_bucket,
+      warnings,
+    });
   } catch (error) {
     console.error("POST /api/interviews/scorecard", error);
     return NextResponse.json({ error: "Failed to save scorecard" }, { status: 500 });

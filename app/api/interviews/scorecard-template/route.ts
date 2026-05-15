@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const auth = await requirePermission("interviews.view");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!CALIBRATION_V3_ENABLED) return NextResponse.json({ enabled: false, template: null });
+  if (!CALIBRATION_V3_ENABLED) return NextResponse.json({ enabled: false, operation_status: "blocked", template: null });
   const url = new URL(request.url);
   const jobId = Number(url.searchParams.get("job_id"));
   if (!Number.isFinite(jobId) || jobId <= 0) {
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   }
   try {
     const template = await getScorecardTemplate(jobId);
-    return NextResponse.json({ enabled: true, template });
+    return NextResponse.json({ enabled: true, operation_status: "success", template });
   } catch (error) {
     console.error("GET /api/interviews/scorecard-template", error);
     return NextResponse.json({ error: "Failed to load scorecard template" }, { status: 500 });
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   const auth = await requirePermission("interviews.manage");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!CALIBRATION_V3_ENABLED) return NextResponse.json({ enabled: false, template: null });
+  if (!CALIBRATION_V3_ENABLED) return NextResponse.json({ enabled: false, operation_status: "blocked", template: null });
   try {
     const body = await request.json();
     const jobId = Number(body?.job_id);
@@ -42,7 +42,7 @@ export async function PUT(request: Request) {
       action: "phase3.scorecard.template_updated",
       metadata: { job_id: jobId },
     });
-    return NextResponse.json({ enabled: true, template: saved });
+    return NextResponse.json({ enabled: true, operation_status: "success", template: saved });
   } catch (error) {
     console.error("PUT /api/interviews/scorecard-template", error);
     return NextResponse.json({ error: "Failed to update scorecard template" }, { status: 500 });

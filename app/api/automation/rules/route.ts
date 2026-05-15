@@ -9,10 +9,15 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await requirePermission("jobs.view");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!AUTOMATION_V3_ENABLED) return NextResponse.json({ enabled: false, rules: [] });
+  if (!AUTOMATION_V3_ENABLED) return NextResponse.json({ enabled: false, rules: [], operation_status: "blocked" });
   try {
     const rules = await listAutomationRules();
-    return NextResponse.json({ enabled: true, rules });
+    return NextResponse.json({
+      enabled: true,
+      operation_status: "success",
+      mode: "recommend_only",
+      rules,
+    });
   } catch (error) {
     console.error("GET /api/automation/rules", error);
     return NextResponse.json({ error: "Failed to load automation rules" }, { status: 500 });

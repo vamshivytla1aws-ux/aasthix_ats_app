@@ -9,12 +9,12 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const auth = await requirePermission("jobs.view");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!AUTOMATION_V3_ENABLED) return NextResponse.json({ enabled: false, runs: [] });
+  if (!AUTOMATION_V3_ENABLED) return NextResponse.json({ enabled: false, runs: [], operation_status: "blocked" });
   try {
     const url = new URL(request.url);
     const limit = Number(url.searchParams.get("limit") ?? 100);
     const runs = await listAutomationRuns(limit);
-    return NextResponse.json({ enabled: true, runs });
+    return NextResponse.json({ enabled: true, operation_status: "success", runs });
   } catch (error) {
     console.error("GET /api/automation/runs", error);
     return NextResponse.json({ error: "Failed to load automation runs" }, { status: 500 });

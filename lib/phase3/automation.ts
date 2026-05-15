@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import type { AutomationActionResult, AutomationRule, AutomationRun } from "@/lib/phase3/types";
 import { recordPhase3AuditEvent } from "@/lib/phase3/audit";
+import { randomUUID } from "crypto";
 
 function normalizeMode(value: unknown): AutomationRule["mode"] {
   const mode = String(value || "").trim().toLowerCase();
@@ -107,15 +108,27 @@ export async function runAutomation(input: {
 
   const runResults: AutomationRun[] = [];
   for (const rule of rules.rows as any[]) {
+    const normalizedRuleMode = normalizeMode(rule.mode);
+    const policy = input.mode === "simulate"
+      ? "recommend_only"
+      : normalizedRuleMode === "auto-execute"
+        ? "auto_execute"
+        : normalizedRuleMode === "approval-required"
+          ? "approval_required"
+          : "recommend_only";
     const suggested = await buildSuggestedActions(String(rule.key), scope);
     const actions =
-      input.mode === "execute" && normalizeMode(rule.mode) === "auto-execute"
+      input.mode === "execute" && normalizedRuleMode === "auto-execute"
         ? suggested.map((item) => ({ ...item, status: "executed" as const }))
         : suggested;
     const status =
-      input.mode === "execute" && normalizeMode(rule.mode) !== "auto-execute"
+      input.mode === "execute" && normalizedRuleMode !== "auto-execute"
         ? "skipped_requires_approval"
         : "completed";
+    const affectedEntities = actions
+      .map((item) => (typeof item.entity_id === "number" ? item.entity_id : null))
+      .filter((id): id is number => Number.isFinite(id));
+    const executionTraceId = randomUUID();
     const inserted = await query(
       `INSERT INTO automation_runs (rule_id, run_mode, status, scope, actions, replay_metadata, triggered_by)
        VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7)
@@ -126,7 +139,15 @@ export async function runAutomation(input: {
         status,
         JSON.stringify(scope),
         JSON.stringify(actions),
-        JSON.stringify({ rule_key: rule.key, rule_mode: rule.mode }),
+        JSON.stringify({
+          rule_key: rule.key,
+          rule_mode: rule.mode,
+          rule_version: "v1",
+          trigger_source: input.mode === "simulate" ? "simulate_api" : "execute_api",
+          execution_policy: policy,
+          execution_trace_id: executionTraceId,
+          affected_entities: affectedEntities,
+        }),
         input.actorUserId,
       ]
     );
@@ -141,13 +162,25 @@ export async function runAutomation(input: {
       replay_metadata: normalizeRecord(created.replay_metadata),
       triggered_by: created.triggered_by != null ? Number(created.triggered_by) : null,
       created_at: created.created_at ? new Date(created.created_at).toISOString() : new Date().toISOString(),
+      mode: normalizedRuleMode,
+      rule_version: "v1",
+      trigger_source: input.mode === "simulate" ? "simulate_api" : "execute_api",
+      affected_entities: affectedEntities,
+      execution_trace_id: executionTraceId,
     };
     runResults.push(run);
 
     await recordPhase3AuditEvent({
       actorUserId: input.actorUserId,
       action: `phase3.automation.${input.mode === "simulate" ? "simulated" : "executed"}`,
-      metadata: { run_id: run.id, rule_id: run.rule_id, status: run.status, actions: run.actions.length },
+      metadata: {
+        run_id: run.id,
+        rule_id: run.rule_id,
+        status: run.status,
+        actions: run.actions.length,
+        execution_policy: policy,
+        execution_trace_id: executionTraceId,
+      },
     });
   }
   return runResults;
@@ -171,5 +204,17 @@ export async function listAutomationRuns(limit = 100): Promise<AutomationRun[]> 
     replay_metadata: normalizeRecord(row.replay_metadata),
     triggered_by: row.triggered_by != null ? Number(row.triggered_by) : null,
     created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+    mode: normalizeMode((row.replay_metadata as Record<string, unknown> | undefined)?.["rule_mode"]),
+    rule_version: String((row.replay_metadata as Record<string, unknown> | undefined)?.["rule_version"] || "v1"),
+    trigger_source: String((row.replay_metadata as Record<string, unknown> | undefined)?.["trigger_source"] || "system") as
+      | "simulate_api"
+      | "execute_api"
+      | "system",
+    affected_entities: Array.isArray((row.replay_metadata as Record<string, unknown> | undefined)?.["affected_entities"])
+      ? ((row.replay_metadata as Record<string, unknown>)["affected_entities"] as unknown[])
+          .map((v) => Number(v))
+          .filter((n) => Number.isFinite(n))
+      : [],
+    execution_trace_id: String((row.replay_metadata as Record<string, unknown> | undefined)?.["execution_trace_id"] || ""),
   }));
 }

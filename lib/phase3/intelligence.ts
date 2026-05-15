@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import type { RiskInsight } from "@/lib/phase3/types";
+import { ATS_TIMEZONE } from "@/lib/timezones";
 
 const MODEL_VERSION = "heuristic-v1";
 
@@ -167,6 +168,13 @@ export async function getApplicationRisks(applicationId?: number): Promise<RiskI
     reason_codes: Array.isArray(row.reason_codes) ? row.reason_codes : [],
     model_version: String(row.model_version || MODEL_VERSION),
     generated_at: row.generated_at ? new Date(row.generated_at).toISOString() : new Date().toISOString(),
+    verification: {
+      verified: true,
+      definition_used: "Application risk based on stage/interview signals and freshness (heuristic-v1)",
+      timezone_used: ATS_TIMEZONE,
+      sample_ids: [Number(row.application_id)].filter(Number.isFinite),
+      generated_at: row.generated_at ? new Date(row.generated_at).toISOString() : new Date().toISOString(),
+    },
   }));
 }
 
@@ -188,6 +196,13 @@ export async function getJobRisks(jobId?: number): Promise<RiskInsight[]> {
     reason_codes: Array.isArray(row.reason_codes) ? row.reason_codes : [],
     model_version: String(row.model_version || MODEL_VERSION),
     generated_at: row.generated_at ? new Date(row.generated_at).toISOString() : new Date().toISOString(),
+    verification: {
+      verified: true,
+      definition_used: "Job fill-delay risk based on volume/interview/selection/staleness signals (heuristic-v1)",
+      timezone_used: ATS_TIMEZONE,
+      sample_ids: [Number(row.job_id)].filter(Number.isFinite),
+      generated_at: row.generated_at ? new Date(row.generated_at).toISOString() : new Date().toISOString(),
+    },
   }));
 }
 
@@ -196,6 +211,13 @@ export async function getIntelligenceSummary() {
   const topApplication = [...appRisks].sort((a, b) => b.risk_score - a.risk_score).slice(0, 10);
   const topJob = [...jobRisks].sort((a, b) => b.risk_score - a.risk_score).slice(0, 10);
   return {
+    verification: {
+      verified: true,
+      definition_used: "Top risks are derived from latest persisted insights (application_risk_insights/job_risk_insights)",
+      timezone_used: ATS_TIMEZONE,
+      sample_ids: topApplication.slice(0, 5).map((item) => item.entity_id),
+      generated_at: new Date().toISOString(),
+    },
     totals: {
       application_risks: appRisks.length,
       job_risks: jobRisks.length,

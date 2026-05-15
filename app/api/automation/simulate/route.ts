@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const auth = await requirePermission("jobs.manage");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!AUTOMATION_V3_ENABLED) return NextResponse.json({ enabled: false, runs: [] });
+  if (!AUTOMATION_V3_ENABLED) return NextResponse.json({ enabled: false, runs: [], operation_status: "blocked" });
   try {
     const body = await request.json().catch(() => ({}));
     const scope = body?.scope && typeof body.scope === "object" ? body.scope : {};
@@ -19,7 +19,13 @@ export async function POST(request: Request) {
       ruleId: Number.isFinite(ruleId) ? ruleId : undefined,
       scope,
     });
-    return NextResponse.json({ enabled: true, runs });
+    return NextResponse.json({
+      enabled: true,
+      operation_status: "success",
+      mode: "recommend_only",
+      trigger_source: "simulate_api",
+      runs,
+    });
   } catch (error) {
     console.error("POST /api/automation/simulate", error);
     return NextResponse.json({ error: "Failed to simulate automation" }, { status: 500 });
