@@ -512,25 +512,6 @@ function PipelinePageContent() {
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/40">
-        <div className="flex flex-wrap items-end gap-2">
-          <button
-            type="button"
-            className={[
-              UI.secondaryButton + " py-1.5 text-xs",
-              bulkSelectMode ? " ring-2 ring-blue-500 ring-offset-1" : "",
-            ].join(" ")}
-            onClick={() => {
-              setBulkSelectMode((v) => !v);
-              setSelectedAppIds(new Set());
-            }}
-          >
-            {bulkSelectMode ? "Exit bulk select" : "Bulk select"}
-          </button>
-        </div>
-        {bulkToast ? <div className="mt-2 text-xs text-amber-900 dark:text-amber-200">{bulkToast}</div> : null}
-      </div>
-
       <p className="text-sm text-slate-600 dark:text-slate-400">
         <span className="font-semibold text-slate-800 dark:text-slate-200">Step 2:</span> Drag cards between columns or reorder within a column; use the
         row ⋮ menu for interview scheduling and stage moves.
@@ -585,6 +566,21 @@ function PipelinePageContent() {
           </button>
           <button
             type="button"
+            className={[
+              "rounded-xl border px-3 py-2 text-sm font-medium transition",
+              bulkSelectMode
+                ? "border-blue-500 bg-blue-50 text-blue-800"
+                : "border-gray-200 bg-white text-slate-700 hover:bg-gray-50",
+            ].join(" ")}
+            onClick={() => {
+              setBulkSelectMode((v) => !v);
+              setSelectedAppIds(new Set());
+            }}
+          >
+            {bulkSelectMode ? "Exit bulk select" : "Bulk select"}
+          </button>
+          <button
+            type="button"
             className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-gray-50"
             onClick={() => {
               setQ("");
@@ -597,6 +593,7 @@ function PipelinePageContent() {
             Clear
           </button>
         </div>
+        {bulkToast ? <div className="mt-2 text-xs text-amber-900 dark:text-amber-200">{bulkToast}</div> : null}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -629,6 +626,41 @@ function PipelinePageContent() {
           {(error || (swrError as Error)?.message || "Request failed") as string}
         </div>
       )}
+
+      {companyOptions.length > 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Company list</div>
+          <div className="flex flex-wrap gap-2">
+            {companyOptions.map((name) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => setCompany(name)}
+                className={[
+                  "rounded-lg border px-2.5 py-1 text-xs font-semibold transition",
+                  company === name
+                    ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                    : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
+                ].join(" ")}
+              >
+                {name}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setCompany("")}
+              className={[
+                "rounded-lg border px-2.5 py-1 text-xs font-semibold transition",
+                company === ""
+                  ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
+              ].join(" ")}
+            >
+              All companies
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/50">
@@ -760,40 +792,6 @@ function PipelinePageContent() {
               staleDaysThreshold={7}
               isRefreshing={Boolean(isValidating && applications.length > 0)}
             />
-          ) : null}
-          {companyOptions.length > 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Company list</div>
-              <div className="flex flex-wrap gap-2">
-                {companyOptions.map((name) => (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => setCompany(name)}
-                    className={[
-                      "rounded-lg border px-2.5 py-1 text-xs font-semibold transition",
-                      company === name
-                        ? "border-indigo-300 bg-indigo-50 text-indigo-800"
-                        : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
-                    ].join(" ")}
-                  >
-                    {name}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setCompany("")}
-                  className={[
-                    "rounded-lg border px-2.5 py-1 text-xs font-semibold transition",
-                    company === ""
-                      ? "border-indigo-300 bg-indigo-50 text-indigo-800"
-                      : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
-                  ].join(" ")}
-                >
-                  All companies
-                </button>
-              </div>
-            </div>
           ) : null}
         </>
       )}
