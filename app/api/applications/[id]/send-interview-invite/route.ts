@@ -121,14 +121,14 @@ export async function POST(request: Request, context: { params: { id: string } }
       `
       UPDATE applications
       SET
-        calendar_provider = $3,
-        external_calendar_event_id = $4,
-        meet_link = $5,
-        calendar_organizer_email = $6,
-        calendar_last_synced_at = $7::timestamptz,
-        calendar_sync_status = $8,
-        calendar_sync_error = $9,
-        interview_attendee_emails = $10::jsonb,
+        calendar_provider = $2,
+        external_calendar_event_id = $3,
+        meet_link = $4,
+        calendar_organizer_email = $5,
+        calendar_last_synced_at = $6::timestamptz,
+        calendar_sync_status = $7,
+        calendar_sync_error = $8,
+        interview_attendee_emails = $9::jsonb,
         updated_at = NOW()
       WHERE id = $1
       `,
