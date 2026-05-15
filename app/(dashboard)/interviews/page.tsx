@@ -721,8 +721,21 @@ export default function InterviewsPage() {
           interview_status_note: rescheduleNotes,
         }),
       });
+      if (
+        (updated.calendar_sync_status === "calendar_sync_failed" ||
+          updated.calendar_sync_status === "google_not_connected") &&
+        !sendInvite
+      ) {
+        throw new Error(
+          updated.calendar_sync_error ||
+            "Calendar invite failed; reconnect shared Google account or fix scopes."
+        );
+      }
+      let inviteResult:
+        | { calendar_sync_status?: string; meet_link?: string | null; external_calendar_event_id?: string | null }
+        | null = null;
       if (sendInvite) {
-        await apiFetchJson(`/api/applications/${selectedInterview.id}/send-interview-invite`, {
+        inviteResult = await apiFetchJson(`/api/applications/${selectedInterview.id}/send-interview-invite`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -751,9 +764,9 @@ export default function InterviewsPage() {
       setRescheduleSendEmail(false);
       showSuccessToast(
         sendInvite
-          ? updated.meet_link
-            ? "Interview rescheduled, Google Meet updated, and invite email sent."
-            : "Interview rescheduled and invite email sent."
+          ? inviteResult?.meet_link || updated.meet_link
+            ? "Interview rescheduled, calendar invite synced, and email sent."
+            : "Interview rescheduled and email sent."
           : updated.meet_link
             ? "Interview rescheduled and Google Meet invite updated."
             : updated.calendar_sync_status === "google_not_connected"

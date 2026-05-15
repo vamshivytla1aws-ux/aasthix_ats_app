@@ -998,8 +998,22 @@ export default function PipelineBoard({
         }),
       });
 
+      if (
+        (updated.calendar_sync_status === "calendar_sync_failed" ||
+          updated.calendar_sync_status === "google_not_connected") &&
+        !sendInvite
+      ) {
+        throw new Error(
+          updated.calendar_sync_error ||
+            "Calendar invite failed; reconnect shared Google account or fix scopes."
+        );
+      }
+
+      let inviteResult:
+        | { calendar_sync_status?: string; meet_link?: string | null; external_calendar_event_id?: string | null }
+        | null = null;
       if (sendInvite) {
-        await apiFetchJson(`/api/applications/${scheduleApp.id}/send-interview-invite`, {
+        inviteResult = await apiFetchJson(`/api/applications/${scheduleApp.id}/send-interview-invite`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1034,9 +1048,9 @@ export default function PipelineBoard({
       setScheduleDraftBody("");
       setSuccess(
         sendInvite
-          ? updated.meet_link
-            ? "Interview scheduled, Google Meet created, and invite email sent."
-            : "Interview scheduled and invite email sent."
+          ? inviteResult?.meet_link || updated.meet_link
+            ? "Interview scheduled, calendar invite synced, and email sent."
+            : "Interview scheduled and email sent."
           : updated.meet_link
             ? "Interview scheduled and Google Meet invite created."
             : updated.calendar_sync_status === "google_not_connected"
@@ -1170,8 +1184,22 @@ export default function PipelineBoard({
         }),
       });
 
+      if (
+        (updated.calendar_sync_status === "calendar_sync_failed" ||
+          updated.calendar_sync_status === "google_not_connected") &&
+        !sendInvite
+      ) {
+        throw new Error(
+          updated.calendar_sync_error ||
+            "Calendar invite failed; reconnect shared Google account or fix scopes."
+        );
+      }
+
+      let inviteResult:
+        | { calendar_sync_status?: string; meet_link?: string | null; external_calendar_event_id?: string | null }
+        | null = null;
       if (sendInvite) {
-        await apiFetchJson(`/api/applications/${rescheduleApp.id}/send-interview-invite`, {
+        inviteResult = await apiFetchJson(`/api/applications/${rescheduleApp.id}/send-interview-invite`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1205,9 +1233,9 @@ export default function PipelineBoard({
       setRescheduleDraftBody("");
       setSuccess(
         sendInvite
-          ? updated.meet_link
-            ? "Interview rescheduled, Google Meet updated, and invite email sent."
-            : "Interview rescheduled and invite email sent."
+          ? inviteResult?.meet_link || updated.meet_link
+            ? "Interview rescheduled, calendar invite synced, and email sent."
+            : "Interview rescheduled and email sent."
           : updated.meet_link
             ? "Interview rescheduled and Google Meet invite updated."
             : updated.calendar_sync_status === "google_not_connected"

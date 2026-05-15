@@ -4,6 +4,8 @@ import { fetchApplicationCardRow } from "@/lib/applicationCard";
 import { sendTransactionalEmail } from "@/lib/sendTransactionalEmail";
 import { writeAuditLog } from "@/lib/auditLog";
 import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
+import { query } from "@/lib/db";
+import { syncInterviewMeeting } from "@/lib/services/googleCalendar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,11 +77,86 @@ export async function POST(request: Request, context: { params: { id: string } }
     }
 
     const card = row as {
+      id?: number;
+      stage?: string | null;
+      interview_datetime?: string | null;
+      interview_status_note?: string | null;
+      interview_attendee_emails?: unknown;
+      external_calendar_event_id?: string | null;
+      meet_link?: string | null;
       candidate_full_name?: string | null;
+      candidate_email?: string | null;
       job_title?: string | null;
-      job_company?: string | null;
       job_location?: string | null;
     };
+
+    const candidateEmail = String(card.candidate_email || "").trim().toLowerCase();
+    if (!candidateEmail || !EMAIL_RE.test(candidateEmail)) {
+      return NextResponse.json({ error: "Candidate email is missing or invalid for calendar invite." }, { status: 400 });
+    }
+
+    const existingAttendees = Array.isArray(card.interview_attendee_emails)
+      ? card.interview_attendee_emails.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+    const ccAttendees = parsedCc.emails;
+    const internalAttendees = Array.from(new Set([...existingAttendees, ...ccAttendees])).slice(0, MAX_RECIPIENTS);
+
+    const syncResult = await syncInterviewMeeting({
+      action: "upsert",
+      applicationId,
+      title: String(card.job_title || "Interview"),
+      candidateName: String(card.candidate_full_name || "Candidate"),
+      candidateEmail,
+      interviewDatetime: card.interview_datetime || null,
+      internalAttendeeEmails: internalAttendees,
+      existingEventId: card.external_calendar_event_id || null,
+      existingMeetLink: card.meet_link || null,
+      notes: card.interview_status_note || null,
+    });
+
+    const syncStatus = String(syncResult.status || "");
+    const syncFailed = syncStatus === "calendar_sync_failed" || syncStatus === "google_not_connected";
+
+    await query(
+      `
+      UPDATE applications
+      SET
+        calendar_provider = $3,
+        external_calendar_event_id = $4,
+        meet_link = $5,
+        calendar_organizer_email = $6,
+        calendar_last_synced_at = $7::timestamptz,
+        calendar_sync_status = $8,
+        calendar_sync_error = $9,
+        interview_attendee_emails = $10::jsonb,
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [
+        applicationId,
+        syncResult.source === "google_calendar" || syncStatus !== "google_not_connected" ? "google" : null,
+        syncResult.external_calendar_event_id,
+        syncResult.meet_link,
+        syncResult.organizer_email,
+        syncResult.synced_at,
+        syncStatus || null,
+        syncResult.error || null,
+        JSON.stringify(syncResult.attendee_emails || []),
+      ]
+    );
+
+    if (syncFailed) {
+      return NextResponse.json(
+        {
+          error:
+            syncResult.error ||
+            "Calendar invite failed; reconnect shared Google account or fix scopes.",
+          calendar_sync_status: syncStatus,
+        },
+        { status: 409 }
+      );
+    }
+
     const messageParagraphs = text
       .split(/\n\s*\n/)
       .map((part) => part.trim())
@@ -89,7 +166,6 @@ export async function POST(request: Request, context: { params: { id: string } }
       paragraphs: messageParagraphs.length > 0 ? messageParagraphs : [text.trim()],
       job: {
         title: card.job_title,
-        company: card.job_company,
         location: card.job_location,
       },
     });
@@ -123,7 +199,13 @@ export async function POST(request: Request, context: { params: { id: string } }
       },
     });
 
-    return NextResponse.json({ ok: true, sent: true });
+    return NextResponse.json({
+      ok: true,
+      sent: true,
+      calendar_sync_status: syncStatus || "invite_sent",
+      meet_link: syncResult.meet_link,
+      external_calendar_event_id: syncResult.external_calendar_event_id,
+    });
   } catch (error) {
     console.error("POST /api/applications/[id]/send-interview-invite", error);
     return NextResponse.json({ error: "Failed to send interview invite." }, { status: 500 });

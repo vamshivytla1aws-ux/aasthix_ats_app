@@ -25,13 +25,50 @@ function normalizeParagraphs(lines: string[]) {
   return lines.map((line) => line.trim()).filter(Boolean);
 }
 
+function stripCompanyMentions(text: string, company?: string | null) {
+  const value = String(text || "");
+  const c = clean(company);
+  if (!c) return value;
+  const escaped = c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`\\s+at\\s+${escaped}\\b`, "gi"),
+    new RegExp(`\\s*\\(${escaped}\\)`, "gi"),
+    new RegExp(`\\b${escaped}\\b`, "gi"),
+  ];
+  let next = value;
+  for (const pattern of patterns) {
+    next = next.replace(pattern, "");
+  }
+  return next.replace(/\s{2,}/g, " ").replace(/\s+([.,!?;:])/g, "$1").trim();
+}
+
+function sanitizeDraftBody(body: string) {
+  const lines = String(body || "").split(/\r?\n/);
+  const blocked = /^(best regards|regards|thanks|thank you|sincerely|warm regards|kind regards)\b/i;
+  const placeholder = /\[(your\s*name|name)\]/i;
+  const greeting = /^(hi|hello|dear)\b/i;
+  const out: string[] = [];
+  let greetingSeen = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (greeting.test(trimmed)) {
+      if (greetingSeen) continue;
+      greetingSeen = true;
+    }
+    if (blocked.test(trimmed)) continue;
+    if (placeholder.test(trimmed)) continue;
+    if (/^aasthix talent$/i.test(trimmed)) continue;
+    if (/recruitment team$/i.test(trimmed)) continue;
+    out.push(line);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function buildFallbackDraft(input: InterviewInviteDraftInput) {
   const candidateName = clean(input.candidateName) || "Candidate";
   const jobTitle = clean(input.jobTitle) || "the role";
-  const company = clean(input.company) || "Aasthix";
   const meetingMode = clean(input.meetingMode) || (input.meetLink ? "Google Meet" : "Interview");
   const meetingLocation = clean(input.meetingLocation);
-  const recruiterName = clean(input.recruiterName) || "Aasthix Talent";
   const notes = clean(input.notes);
   const durationLabel = clean(input.durationLabel);
 
@@ -42,8 +79,8 @@ function buildFallbackDraft(input: InterviewInviteDraftInput) {
   const paragraphs = normalizeParagraphs([
     `Hi ${candidateName},`,
     input.isReschedule
-      ? `Your interview for the ${jobTitle} role at ${company} has been rescheduled.`
-      : `You have been shortlisted for the ${jobTitle} role at ${company}.`,
+      ? `Your interview for the ${jobTitle} role has been rescheduled.`
+      : `You have been shortlisted for the ${jobTitle} role.`,
     `Your interview is scheduled on ${input.interviewDateTimeLabel}${input.timezoneLabel ? ` (${input.timezoneLabel})` : ""}.`,
     durationLabel ? `Duration: ${durationLabel}.` : "",
     input.meetLink
@@ -53,14 +90,14 @@ function buildFallbackDraft(input: InterviewInviteDraftInput) {
         : `Interview mode: ${meetingMode}.`,
     "Please join a few minutes before the scheduled time.",
     notes ? `Additional details: ${notes}` : "",
-    `Please let me know if you have any questions.`,
-    `Regards,\n${recruiterName}`,
+    "Please let me know if you have any questions.",
   ]);
 
+  const fallbackBody = sanitizeDraftBody(paragraphs.join("\n\n"));
   return {
     source: "fallback" as const,
-    subject,
-    body: paragraphs.join("\n\n"),
+    subject: stripCompanyMentions(subject, input.company),
+    body: stripCompanyMentions(fallbackBody, input.company),
   };
 }
 
@@ -76,7 +113,6 @@ export async function draftInterviewInviteWithAi(
     `Candidate: ${clean(input.candidateName) || "Unknown"}`,
     `Candidate email: ${clean(input.candidateEmail) || "(not on file)"}`,
     `Job title: ${clean(input.jobTitle) || ""}`,
-    `Company: ${clean(input.company) || ""}`,
     `Job location: ${clean(input.jobLocation) || ""}`,
     `Interview datetime: ${input.interviewDateTimeLabel}`,
     `Timezone: ${clean(input.timezoneLabel) || ""}`,
@@ -108,6 +144,8 @@ export async function draftInterviewInviteWithAi(
     "Keep the email short and realistic.",
     "Write only the subject and email body.",
     "The body should invite the candidate to join the interview through Google Meet when a Meet link is available, mention the date and time clearly, and ask them to join a few minutes before the scheduled time.",
+    "Do not mention the company name anywhere in subject or body.",
+    "Do not add sign-off lines like Best regards / Thanks / recruiter name.",
     "If this is a reschedule, make that clear naturally.",
     "Use the JD context to make the message feel tailored to the role, but do not invent facts.",
     'Return JSON only with keys "subject" and "body".',
@@ -148,8 +186,8 @@ export async function draftInterviewInviteWithAi(
     if (!raw || typeof raw !== "string") return fallback;
 
     const parsed = JSON.parse(raw) as { subject?: unknown; body?: unknown };
-    const subject = clean(parsed.subject).slice(0, 500);
-    const body = clean(parsed.body).slice(0, 100_000);
+    const subject = stripCompanyMentions(clean(parsed.subject).slice(0, 500), input.company);
+    const body = sanitizeDraftBody(stripCompanyMentions(clean(parsed.body).slice(0, 100_000), input.company));
     if (!subject || !body) return fallback;
 
     return { source: "ai", subject, body };
