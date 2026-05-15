@@ -12,6 +12,7 @@ import Toast from "@/components/Toast";
 import DispositionReasonModal from "@/components/DispositionReasonModal";
 import ApplicationEmailModal from "@/components/pipeline/ApplicationEmailModal";
 import PipelineApplicationDrawer from "@/components/pipeline/PipelineApplicationDrawer";
+import OnboardingLinkModal from "@/components/pipeline/OnboardingLinkModal";
 import { INTELLIGENCE_V3_ENABLED } from "@/lib/featureFlags";
 import { ATS_TIMEZONE, ATS_TIMEZONE_LABEL, kolkataLocalToUtcIso } from "@/lib/timezones";
 
@@ -51,6 +52,7 @@ type ApplicationRow = {
   rejected_in_round_order?: number | null;
   selected_after_rounds?: number | null;
   interview_round_history?: InterviewRoundHistoryEntry[] | null;
+  onboarding_status?: "not_sent" | "sent" | "in_progress" | "submitted" | "exported" | "revoked" | "expired" | null;
 };
 
 type InterviewRoundHistoryEntry = {
@@ -415,6 +417,7 @@ export default function PipelineBoard({
   const [decisionSendEmail, setDecisionSendEmail] = useState(false);
   const [undoStage, setUndoStage] = useState<{ applicationId: number; stage: Stage } | null>(null);
   const [drawerApp, setDrawerApp] = useState<ApplicationRow | null>(null);
+  const [onboardingApp, setOnboardingApp] = useState<ApplicationRow | null>(null);
   const [riskByApplicationId, setRiskByApplicationId] = useState<Record<number, number>>({});
 
   /** True from drag start until drag end — blocks prop sync that would break @hello-pangea/dnd mid-drag */
@@ -1524,6 +1527,13 @@ export default function PipelineBoard({
           onClick: () => resendScreeningTest(a.id),
         });
       }
+      if (stage === "Selected") {
+        items.push({
+          type: "button",
+          label: a.onboarding_status ? "Resend onboarding link…" : "Send onboarding link…",
+          onClick: () => setOnboardingApp(a),
+        });
+      }
     }
     if (canManage) {
       items.push({
@@ -1549,6 +1559,16 @@ export default function PipelineBoard({
     <div className="space-y-3">
       {emailModalApp ? (
         <ApplicationEmailModal application={emailModalApp} onClose={() => setEmailModalApp(null)} />
+      ) : null}
+      {onboardingApp ? (
+        <OnboardingLinkModal
+          application={onboardingApp}
+          onClose={() => setOnboardingApp(null)}
+          onSent={() => {
+            setSuccess("Onboarding link sent.");
+            setOnboardingApp(null);
+          }}
+        />
       ) : null}
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={4500} /> : null}
       <PipelineApplicationDrawer
@@ -2477,6 +2497,11 @@ export default function PipelineBoard({
                                     </div>
                                   ) : null}
 
+                                  {a.stage === "Selected" && a.onboarding_status ? (
+                                    <div className="mt-1 text-[11px] font-medium text-indigo-700 dark:text-indigo-300">
+                                      Onboarding: {a.onboarding_status.replace(/_/g, " ")}
+                                    </div>
+                                  ) : null}
                                   {a.stage === "Interview" && Array.isArray(a.interview_round_history) && a.interview_round_history.length > 0 ? (
                                     <div
                                       className="mt-1.5 flex flex-wrap items-center gap-0.5 text-[10px] text-slate-500 dark:text-slate-400"

@@ -12,7 +12,11 @@ type TimelineItem = {
     | "interview_reschedule"
     | "invite_sent"
     | "interview_outcome"
-    | "record_updated";
+    | "record_updated"
+    | "onboarding_link_sent"
+    | "onboarding_started"
+    | "onboarding_submitted"
+    | "onboarding_exported";
   description: string;
   created_at: string;
 };
@@ -28,6 +32,10 @@ function tone(type: TimelineItem["type"]) {
   if (type === "interview_reschedule") return "bg-indigo-500";
   if (type === "invite_sent") return "bg-cyan-500";
   if (type === "interview_outcome") return "bg-amber-500";
+  if (type === "onboarding_link_sent") return "bg-violet-500";
+  if (type === "onboarding_started") return "bg-purple-500";
+  if (type === "onboarding_submitted") return "bg-emerald-500";
+  if (type === "onboarding_exported") return "bg-sky-600";
   return "bg-slate-500";
 }
 
@@ -45,6 +53,10 @@ function label(type: TimelineItem["type"]) {
     invite_sent: "Invite sent",
     interview_outcome: "Interview outcome",
     record_updated: "Record updated",
+    onboarding_link_sent: "Onboarding link sent",
+    onboarding_started: "Onboarding started",
+    onboarding_submitted: "Onboarding submitted",
+    onboarding_exported: "Onboarding exported",
   };
   return map[type] || "Activity";
 }

@@ -46,11 +46,28 @@ type Candidate = {
   calendar_sync_status?: string | null;
   calendar_sync_error?: string | null;
   calendar_organizer_email?: string | null;
+  onboarding_status?: string | null;
 };
 
 type TimelineItem = {
   id: number;
-  type: "Applied" | "Interview" | "Selected" | "Rejected" | "Screening" | "Screening Failed";
+  type:
+    | "Applied"
+    | "Interview"
+    | "Selected"
+    | "Rejected"
+    | "Screening"
+    | "Screening Failed"
+    | "stage_move"
+    | "interview_schedule"
+    | "interview_reschedule"
+    | "invite_sent"
+    | "interview_outcome"
+    | "record_updated"
+    | "onboarding_link_sent"
+    | "onboarding_started"
+    | "onboarding_submitted"
+    | "onboarding_exported";
   description: string;
   created_at: string;
 };
@@ -66,6 +83,15 @@ type CandidateProfileResponse = {
   candidate: Candidate;
   timeline: TimelineItem[];
   notes: NoteItem[];
+  onboarding_packets?: Array<{
+    id: number;
+    application_id: number;
+    status: string;
+    created_at: string;
+    submitted_at: string | null;
+    exported_at: string | null;
+    job_title: string | null;
+  }>;
   screeningEvaluation?: {
     test_id: number;
     application_id: number;
@@ -121,6 +147,7 @@ const TABS = [
   { id: "interviews", label: "Interviews" },
   { id: "feedback", label: "Feedback" },
   { id: "similar", label: "Similar" },
+  { id: "onboarding", label: "Onboarding" },
 ] as const;
 
 function CandidateProfilePageContent() {
@@ -567,6 +594,7 @@ function CandidateProfilePageContent() {
   );
 
   const similar = data.similarJobMatches ?? [];
+  const onboardingPackets = data.onboarding_packets ?? [];
   const similarPanel =
     similar.length > 0 ? (
       <ul className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -754,6 +782,41 @@ function CandidateProfilePageContent() {
               ) : null}
               {tab === "feedback" ? feedbackPanel : null}
               {tab === "similar" ? similarPanel : null}
+              {tab === "onboarding" ? (
+                <div className="space-y-3">
+                  {onboardingPackets.length === 0 ? (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-950/30 dark:text-slate-400">
+                      No onboarding packet sent yet. Use Selected stage card action “Send onboarding link”.
+                    </div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {onboardingPackets.map((p) => (
+                        <li key={p.id} className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-600 dark:bg-slate-900/40">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              Packet #{p.id} · {p.job_title || "Role"}
+                            </div>
+                            <span className={chipClass}>{p.status}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Sent: {new Date(p.created_at).toLocaleString("en-IN")}
+                            {p.submitted_at ? ` · Submitted: ${new Date(p.submitted_at).toLocaleString("en-IN")}` : ""}
+                          </div>
+                          <div className="mt-2">
+                            <a
+                              href={`/api/onboarding/${p.id}/export-pdf`}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              Export onboarding PDF
+                            </a>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
             </div>
           </div>
         </section>

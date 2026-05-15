@@ -39,11 +39,28 @@ type CandidateProfile = {
   calendar_organizer_email: string | null;
   /** Latest application by updated_at — compare with pipeline row for same candidate */
   latest_application_id: number | null;
+  onboarding_status?: string | null;
 };
 
 type TimelineItem = {
   id: number;
-  type: "Applied" | "Interview" | "Selected" | "Rejected" | "Screening" | "Screening Failed";
+  type:
+    | "Applied"
+    | "Interview"
+    | "Selected"
+    | "Rejected"
+    | "Screening"
+    | "Screening Failed"
+    | "stage_move"
+    | "interview_schedule"
+    | "interview_reschedule"
+    | "invite_sent"
+    | "interview_outcome"
+    | "record_updated"
+    | "onboarding_link_sent"
+    | "onboarding_started"
+    | "onboarding_submitted"
+    | "onboarding_exported";
   description: string;
   created_at: string;
 };
@@ -246,6 +263,49 @@ export async function GET(
       candidate.calendar_sync_status = null;
       candidate.calendar_sync_error = null;
       candidate.calendar_organizer_email = null;
+    }
+
+    let onboardingPackets: Array<{
+      id: number;
+      application_id: number;
+      status: string;
+      created_at: string;
+      submitted_at: string | null;
+      exported_at: string | null;
+      job_title: string | null;
+    }> = [];
+    try {
+      const onboardingRes = await query(
+        `
+        SELECT
+          p.id,
+          p.application_id,
+          p.status,
+          p.created_at,
+          p.submitted_at,
+          p.exported_at,
+          j.title AS job_title
+        FROM application_onboarding_packets p
+        JOIN applications a ON a.id = p.application_id
+        LEFT JOIN jobs j ON j.id = a.job_id
+        WHERE p.candidate_id = $1
+        ORDER BY p.created_at DESC, p.id DESC
+        `,
+        [candidateId]
+      );
+      onboardingPackets = onboardingRes.rows.map((row: any) => ({
+        id: Number(row.id),
+        application_id: Number(row.application_id),
+        status: String(row.status || "not_sent"),
+        created_at: String(row.created_at),
+        submitted_at: row.submitted_at ? String(row.submitted_at) : null,
+        exported_at: row.exported_at ? String(row.exported_at) : null,
+        job_title: row.job_title ? String(row.job_title) : null,
+      }));
+      candidate.onboarding_status = onboardingPackets[0]?.status ?? null;
+    } catch {
+      onboardingPackets = [];
+      candidate.onboarding_status = null;
     }
 
     const timelineRes = await query(
@@ -483,6 +543,7 @@ export async function GET(
       candidate,
       timeline: (timelineRes.rows.length > 0 ? timelineRes.rows : fallbackTimelineRes.rows) as TimelineItem[],
       notes: notesRes.rows as NoteItem[],
+      onboarding_packets: onboardingPackets,
       screeningEvaluation,
       interviewRubricFeedback,
       dispositionFeedback,

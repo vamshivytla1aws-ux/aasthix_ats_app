@@ -54,6 +54,7 @@ async function fetchApplicationRowsInternal(whereClause: string, params: unknown
         j.title AS job_title,
         j.company AS job_company,
         j.location AS job_location,
+        ob.status AS onboarding_status,
         hist.interview_round_history
       FROM applications a
       JOIN candidates c ON c.id = a.candidate_id
@@ -65,6 +66,13 @@ async function fetchApplicationRowsInternal(whereClause: string, params: unknown
         FROM job_interview_rounds jr
         WHERE jr.job_id = a.job_id
       ) jrc ON true
+      LEFT JOIN LATERAL (
+        SELECT p.status
+        FROM application_onboarding_packets p
+        WHERE p.application_id = a.id
+        ORDER BY p.created_at DESC, p.id DESC
+        LIMIT 1
+      ) ob ON true
       LEFT JOIN LATERAL (
         SELECT COALESCE(
           json_agg(
@@ -138,10 +146,18 @@ async function fetchApplicationRowsInternal(whereClause: string, params: unknown
         j.title AS job_title,
         j.company AS job_company,
         j.location AS job_location,
+        ob.status AS onboarding_status,
         '[]'::json AS interview_round_history
       FROM applications a
       JOIN candidates c ON c.id = a.candidate_id
       JOIN jobs j ON j.id = a.job_id
+      LEFT JOIN LATERAL (
+        SELECT p.status
+        FROM application_onboarding_packets p
+        WHERE p.application_id = a.id
+        ORDER BY p.created_at DESC, p.id DESC
+        LIMIT 1
+      ) ob ON true
       ${whereClause}
       `,
     params,
@@ -190,10 +206,18 @@ async function fetchApplicationRowsInternal(whereClause: string, params: unknown
       j.title AS job_title,
       j.company AS job_company,
       j.location AS job_location,
+      ob.status AS onboarding_status,
       '[]'::json AS interview_round_history
     FROM applications a
     JOIN candidates c ON c.id = a.candidate_id
     JOIN jobs j ON j.id = a.job_id
+    LEFT JOIN LATERAL (
+      SELECT p.status
+      FROM application_onboarding_packets p
+      WHERE p.application_id = a.id
+      ORDER BY p.created_at DESC, p.id DESC
+      LIMIT 1
+    ) ob ON true
     ${whereClause.replaceAll("a.stage", "COALESCE(NULLIF(a.status, ''), 'Applied')")}
     `,
     params
