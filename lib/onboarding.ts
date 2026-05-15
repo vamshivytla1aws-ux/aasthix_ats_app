@@ -86,7 +86,7 @@ export async function listPacketsByCandidate(candidateId: number) {
 
 export async function saveOnboardingFiles(input: {
   packetId: number;
-  filesByDoc: Array<{ docType: string; file: File }>;
+  filesByDoc: Array<{ docType: string; files: File[] }>;
 }) {
   const uploadDir = path.join(process.cwd(), "public", "uploads", "onboarding", String(input.packetId));
   await mkdir(uploadDir, { recursive: true });
@@ -99,18 +99,20 @@ export async function saveOnboardingFiles(input: {
   }> = [];
 
   for (const row of input.filesByDoc) {
-    const ext = path.extname(row.file.name) || ".bin";
-    const safeName = `${Date.now()}-${randomBytes(6).toString("hex")}${ext}`;
-    const filePath = path.join(uploadDir, safeName);
-    const bytes = Buffer.from(await row.file.arrayBuffer());
-    await writeFile(filePath, bytes);
-    accepted.push({
-      doc_type: row.docType,
-      file_name: row.file.name,
-      file_url: `/uploads/onboarding/${input.packetId}/${safeName}`,
-      mime: row.file.type || null,
-      size_bytes: row.file.size,
-    });
+    for (const file of row.files) {
+      const ext = path.extname(file.name) || ".bin";
+      const safeName = `${Date.now()}-${randomBytes(6).toString("hex")}${ext}`;
+      const filePath = path.join(uploadDir, safeName);
+      const bytes = Buffer.from(await file.arrayBuffer());
+      await writeFile(filePath, bytes);
+      accepted.push({
+        doc_type: row.docType,
+        file_name: file.name,
+        file_url: `/uploads/onboarding/${input.packetId}/${safeName}`,
+        mime: file.type || null,
+        size_bytes: file.size,
+      });
+    }
   }
 
   for (const doc of accepted) {

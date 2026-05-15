@@ -803,13 +803,22 @@ function CandidateProfilePageContent() {
                             {p.submitted_at ? ` · Submitted: ${new Date(p.submitted_at).toLocaleString("en-IN")}` : ""}
                           </div>
                           <div className="mt-2">
-                            <a
-                              href={`/api/onboarding/${p.id}/export-pdf`}
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                              Export onboarding PDF
-                            </a>
+                            <div className="flex flex-wrap gap-2">
+                              <a
+                                href={`/api/onboarding/${p.id}/export-pdf`}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                Export onboarding PDF
+                              </a>
+                              <a
+                                href={`/api/onboarding/${p.id}/documents-zip`}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                Download docs ZIP
+                              </a>
+                            </div>
                           </div>
                         </li>
                       ))}

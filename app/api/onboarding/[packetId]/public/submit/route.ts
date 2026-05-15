@@ -41,13 +41,13 @@ export async function POST(request: Request, { params }: { params: { packetId: s
     return NextResponse.json({ error: "Invalid payload JSON." }, { status: 400 });
   }
 
-  const filesByDoc: Array<{ docType: string; file: File }> = [];
+  const filesByDoc: Array<{ docType: string; files: File[] }> = [];
   for (const doc of ONBOARDING_DOC_FIELDS) {
-    const f = formData.get(`doc_${doc.key}`);
-    if (!(f instanceof File) || !f.name) {
+    const selected = formData.getAll(`doc_${doc.key}`).filter((value): value is File => value instanceof File && Boolean(value.name));
+    if (selected.length === 0) {
       return NextResponse.json({ error: `Missing required document: ${doc.label}` }, { status: 400 });
     }
-    filesByDoc.push({ docType: doc.key, file: f });
+    filesByDoc.push({ docType: doc.key, files: selected });
   }
 
   await query(

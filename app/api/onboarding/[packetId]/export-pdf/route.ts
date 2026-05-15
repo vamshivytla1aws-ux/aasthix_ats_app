@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { appendCandidateActivity } from "@/lib/onboarding";
-import { makeSimplePdf } from "@/lib/pdf/simplePdf";
+import { buildOnboardingPdf } from "@/lib/pdf/onboardingExport";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,39 +38,27 @@ export async function GET(_request: Request, { params }: { params: { packetId: s
   const payload = (payloadRes.rows?.[0]?.payload ?? {}) as Record<string, unknown>;
 
   const docsRes = await query(
-    `SELECT doc_type, file_name, file_url, uploaded_at FROM application_onboarding_documents WHERE packet_id = $1 ORDER BY uploaded_at ASC`,
+    `SELECT doc_type, file_name, file_url, mime, uploaded_at FROM application_onboarding_documents WHERE packet_id = $1 ORDER BY uploaded_at ASC`,
     [packetId]
   );
   const docs = docsRes.rows as Array<any>;
-
-  const lines: string[] = [];
-  lines.push("AASTHIX TALENT");
-  lines.push("Employee Onboarding Summary");
-  lines.push("----------------------------------------");
-  lines.push(`Candidate: ${String(packet.candidate_name || "")}`);
-  lines.push(`Job Title: ${String(packet.job_title || "")}`);
-  lines.push(`Status: ${String(packet.status || "")}`);
-  lines.push(`Submitted At: ${packet.submitted_at ? new Date(packet.submitted_at).toLocaleString("en-IN") : "-"}`);
-  lines.push("");
-  lines.push("Form Data");
-  lines.push("----------------------------------------");
-  const flat = Object.entries(payload);
-  for (const [k, v] of flat) {
-    const val = typeof v === "string" ? v : JSON.stringify(v);
-    lines.push(`${k}: ${String(val || "").slice(0, 140)}`);
-  }
-  lines.push("");
-  lines.push("Document Manifest");
-  lines.push("----------------------------------------");
-  if (docs.length === 0) {
-    lines.push("No uploaded documents.");
-  } else {
-    for (const d of docs) {
-      lines.push(`${d.doc_type}: ${d.file_name} (${d.file_url})`);
-    }
-  }
-
-  const pdf = makeSimplePdf(lines);
+  const pdf = await buildOnboardingPdf({
+    packet: {
+      packetId,
+      candidateName: String(packet.candidate_name || ""),
+      jobTitle: String(packet.job_title || ""),
+      status: String(packet.status || ""),
+      submittedAt: packet.submitted_at ? String(packet.submitted_at) : null,
+    },
+    payload,
+    docs: docs.map((d) => ({
+      doc_type: String(d.doc_type || ""),
+      file_name: String(d.file_name || ""),
+      file_url: String(d.file_url || ""),
+      uploaded_at: String(d.uploaded_at || ""),
+      mime: d.mime ? String(d.mime) : null,
+    })),
+  });
   await query(
     `UPDATE application_onboarding_packets SET status = 'exported', exported_at = NOW(), updated_at = NOW() WHERE id = $1`,
     [packetId]
