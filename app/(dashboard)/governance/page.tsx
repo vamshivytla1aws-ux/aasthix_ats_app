@@ -10,9 +10,14 @@ import { UI } from "@/lib/ui";
 import { AUTOMATION_V3_ENABLED, CALIBRATION_V3_ENABLED, FORECAST_V3_ENABLED, INTELLIGENCE_V3_ENABLED } from "@/lib/featureFlags";
 import {
   AI_GOVERNANCE_V4_ENABLED,
+  AI_GOVERNANCE_V4_FLAG_SOURCE,
   COMPLIANCE_V4_ENABLED,
+  COMPLIANCE_V4_FLAG_SOURCE,
   INTEGRATIONS_V4_ENABLED,
+  INTEGRATIONS_V4_FLAG_SOURCE,
+  ORG_GOVERNANCE_V4_FLAG_SOURCE,
   ORG_GOVERNANCE_V4_ENABLED,
+  SRE_HARDENING_V4_FLAG_SOURCE,
   SRE_HARDENING_V4_ENABLED,
 } from "@/lib/featureFlags";
 import { apiFetchJson } from "@/lib/apiClient";
@@ -161,6 +166,13 @@ export default function GovernancePage() {
           <div className="mt-2 text-xs text-[var(--ats-text-muted)]">
             Enable sequence: Intelligence → Automation (recommend-only) → Forecast → Calibration. Rollback sequence: disable in reverse order.
             Common failures: Google scopes, sparse data windows, permission mismatch.
+          </div>
+        </section>
+        <section className={UI.enterprise.elevatedCard + " mb-4 p-4"}>
+          <div className="text-sm font-semibold text-[var(--ats-text)]">Phase 4 flag sources</div>
+          <div className="mt-2 text-xs text-[var(--ats-text-muted)]">
+            Org governance: {ORG_GOVERNANCE_V4_FLAG_SOURCE} · Compliance: {COMPLIANCE_V4_FLAG_SOURCE} · Integrations:{" "}
+            {INTEGRATIONS_V4_FLAG_SOURCE} · SRE: {SRE_HARDENING_V4_FLAG_SOURCE} · AI governance: {AI_GOVERNANCE_V4_FLAG_SOURCE}
           </div>
         </section>
         <div className="grid gap-4 md:grid-cols-2">
