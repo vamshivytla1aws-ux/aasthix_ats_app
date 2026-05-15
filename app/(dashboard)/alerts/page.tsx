@@ -8,10 +8,10 @@ import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { UI } from "@/lib/ui";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import OperationResultBanner from "@/components/enterprise/OperationResultBanner";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import RowActionsMenu, { type RowActionItem } from "@/components/enterprise/RowActionsMenu";
 import FilterDrawer from "@/components/enterprise/FilterDrawer";
-import Toast from "@/components/Toast";
 
 type AlertRow = {
   id: number;
@@ -92,7 +92,7 @@ export default function AlertsPage() {
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [filterDrawer, setFilterDrawer] = useState(false);
-  const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
+  const [result, setResult] = useState<{ tone: "success" | "partial" | "blocked" | "error" | "info"; message: string; hint?: string } | null>(null);
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQ(q.trim()), 320);
@@ -130,12 +130,12 @@ export default function AlertsPage() {
         body: JSON.stringify({ id }),
       });
       void mutate();
-      setToast({ message: "Alert marked as read.", variant: "success" });
+      setResult({ tone: "success", message: "Alert marked as read." });
     } catch (e) {
       const msg = e instanceof ApiError && e.status === 403
         ? `${e.message} — alerts.manage is required.`
         : (e as Error)?.message || "Update failed";
-      setToast({ message: msg, variant: "error" });
+      setResult({ tone: "error", message: msg });
     }
   }
 
@@ -148,18 +148,17 @@ export default function AlertsPage() {
         body: JSON.stringify({ ids: unreadIds }),
       });
       void mutate();
-      setToast({ message: `${unreadIds.length} alert(s) marked as read.`, variant: "success" });
+      setResult({ tone: "success", message: `${unreadIds.length} alert(s) marked as read.` });
     } catch (e) {
       const msg = e instanceof ApiError && e.status === 403
         ? `${e.message} — alerts.manage is required.`
         : (e as Error)?.message || "Bulk update failed";
-      setToast({ message: msg, variant: "error" });
+      setResult({ tone: "error", message: msg });
     }
   }
 
   return (
     <AccessGate permissionKey="alerts.view">
-      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={3500} /> : null}
       <FilterDrawer open={filterDrawer} onClose={() => setFilterDrawer(false)} title="Alert filters" onApply={() => setFilterDrawer(false)}>
         <p className="text-sm text-slate-600 dark:text-slate-400">Saved views and routing rules can live here next.</p>
       </FilterDrawer>
@@ -230,6 +229,18 @@ export default function AlertsPage() {
           </div>
         }
       >
+        {result ? (
+          <OperationResultBanner
+            tone={result.tone}
+            message={result.message}
+            hint={result.hint}
+            action={
+              <button type="button" className="text-xs font-semibold underline underline-offset-2" onClick={() => setResult(null)}>
+                Dismiss
+              </button>
+            }
+          />
+        ) : null}
         {error && rows.length === 0 ? (
           <div className="rounded-xl border border-rose-200 bg-rose-50/80 p-6 text-center shadow-sm dark:border-rose-900 dark:bg-rose-950/40">
             <div className="text-base font-semibold text-rose-900 dark:text-rose-100">Unable to load alerts</div>

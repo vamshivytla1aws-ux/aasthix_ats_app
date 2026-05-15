@@ -87,6 +87,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [role, setRole] = useState<string>("user");
   const [widgetOrder, setWidgetOrder] = useState<string[]>([]);
+  const [activePreset, setActivePreset] = useState<"admin" | "recruiter" | "employee" | "custom">("custom");
   const [intelligenceSummary, setIntelligenceSummary] = useState<any>(null);
 
   async function load() {
@@ -183,12 +184,20 @@ export default function DashboardPage() {
       .catch(() => {});
   }, []);
 
+  const presetLayouts = useMemo(
+    () => ({
+      admin: ["kpi", "risk", "pipeline", "actions", "assistant", "attendance"],
+      recruiter: ["kpi", "pipeline", "actions", "risk", "assistant", "attendance"],
+      employee: ["attendance", "actions", "assistant", "kpi"],
+    }),
+    []
+  );
   const rolePresetWidgets = useMemo(() => {
-    if (role === "admin") return ["kpi", "risk", "pipeline", "actions", "assistant", "attendance"];
-    if (role === "recruiter") return ["kpi", "pipeline", "actions", "risk", "assistant", "attendance"];
-    if (role === "employee") return ["attendance", "actions", "assistant", "kpi"];
-    return ["kpi", "pipeline", "actions", "risk", "assistant", "attendance"];
-  }, [role]);
+    if (role === "admin") return presetLayouts.admin;
+    if (role === "recruiter") return presetLayouts.recruiter;
+    if (role === "employee") return presetLayouts.employee;
+    return presetLayouts.recruiter;
+  }, [presetLayouts, role]);
 
   const activeWidgets = widgetOrder.length > 0 ? widgetOrder : rolePresetWidgets;
 
@@ -206,16 +215,34 @@ export default function DashboardPage() {
     }
   }
 
-  function moveWidget(id: string, direction: -1 | 1) {
-    const current = [...activeWidgets];
-    const idx = current.indexOf(id);
-    if (idx < 0) return;
-    const nextIdx = idx + direction;
-    if (nextIdx < 0 || nextIdx >= current.length) return;
-    const [item] = current.splice(idx, 1);
-    current.splice(nextIdx, 0, item);
-    void persistWidgetOrder(current);
+  function arraysEqual(a: string[], b: string[]) {
+    return a.length === b.length && a.every((item, index) => item === b[index]);
   }
+
+  function syncActivePreset(order: string[]) {
+    if (arraysEqual(order, presetLayouts.admin)) {
+      setActivePreset("admin");
+      return;
+    }
+    if (arraysEqual(order, presetLayouts.recruiter)) {
+      setActivePreset("recruiter");
+      return;
+    }
+    if (arraysEqual(order, presetLayouts.employee)) {
+      setActivePreset("employee");
+      return;
+    }
+    setActivePreset("custom");
+  }
+
+  async function applyPreset(preset: "admin" | "recruiter" | "employee") {
+    setActivePreset(preset);
+    await persistWidgetOrder(presetLayouts[preset]);
+  }
+
+  useEffect(() => {
+    syncActivePreset(activeWidgets);
+  }, [role, widgetOrder]);
 
   const sections: Record<string, React.ReactNode> = {
     kpi: (
@@ -322,6 +349,29 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-1 rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-1">
+                <button
+                  type="button"
+                  onClick={() => void applyPreset("admin")}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${activePreset === "admin" ? "bg-[var(--ats-primary)] text-white" : "text-[var(--ats-text-muted)]"}`}
+                >
+                  Admin preset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void applyPreset("recruiter")}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${activePreset === "recruiter" ? "bg-[var(--ats-primary)] text-white" : "text-[var(--ats-text-muted)]"}`}
+                >
+                  Recruiter preset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void applyPreset("employee")}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${activePreset === "employee" ? "bg-[var(--ats-primary)] text-white" : "text-[var(--ats-text-muted)]"}`}
+                >
+                  Employee preset
+                </button>
+              </div>
               <button onClick={() => void load()} className={UI.primaryButton + " py-2 text-sm"}>
                 Refresh workspace
               </button>
@@ -342,22 +392,6 @@ export default function DashboardPage() {
             {activeWidgets.map((widgetId) =>
               sections[widgetId] ? (
                 <section key={widgetId} className="space-y-2">
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => moveWidget(widgetId, -1)}
-                      className="rounded-lg border border-[var(--ats-border)] px-2 py-1 text-xs text-[var(--ats-text-muted)]"
-                    >
-                      Move up
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveWidget(widgetId, 1)}
-                      className="rounded-lg border border-[var(--ats-border)] px-2 py-1 text-xs text-[var(--ats-text-muted)]"
-                    >
-                      Move down
-                    </button>
-                  </div>
                   {sections[widgetId]}
                 </section>
               ) : null

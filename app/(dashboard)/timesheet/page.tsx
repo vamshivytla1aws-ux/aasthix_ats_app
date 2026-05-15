@@ -5,9 +5,9 @@ import useSWR from "swr";
 import { Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import OperationResultBanner from "@/components/enterprise/OperationResultBanner";
 import RowActionsMenu from "@/components/enterprise/RowActionsMenu";
 import StatusBadge from "@/components/enterprise/StatusBadge";
-import Toast from "@/components/Toast";
 import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
@@ -98,7 +98,7 @@ function emptyEntry() {
 
 export default function TimesheetPage() {
   const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
+  const [result, setResult] = useState<{ tone: "success" | "partial" | "blocked" | "error" | "info"; message: string; hint?: string } | null>(null);
   const [auth, setAuth] = useState<AuthPayload | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -176,10 +176,10 @@ export default function TimesheetPage() {
           status,
         }),
       });
-      setToast({ message: "Timesheet header saved.", variant: "success" });
+      setResult({ tone: "success", message: "Timesheet header saved." });
       await refreshAll();
     } catch (error) {
-      setToast({ message: error instanceof Error ? error.message : "Failed to save timesheet header.", variant: "error" });
+      setResult({ tone: "error", message: error instanceof Error ? error.message : "Failed to save timesheet header." });
     } finally {
       setBusy(null);
     }
@@ -198,10 +198,10 @@ export default function TimesheetPage() {
         }),
       });
       setNewEntry(emptyEntry());
-      setToast({ message: "Task entry added.", variant: "success" });
+      setResult({ tone: "success", message: "Task entry added." });
       await refreshAll();
     } catch (error) {
-      setToast({ message: error instanceof Error ? error.message : "Failed to add task entry.", variant: "error" });
+      setResult({ tone: "error", message: error instanceof Error ? error.message : "Failed to add task entry." });
     } finally {
       setBusy(null);
     }
@@ -211,10 +211,10 @@ export default function TimesheetPage() {
     setBusy(`delete-${entry.id}`);
     try {
       await apiFetchJson(`/api/timesheet/entries?header_id=${entry.header_id}&entry_id=${entry.id}`, { method: "DELETE" });
-      setToast({ message: "Task entry removed.", variant: "success" });
+      setResult({ tone: "success", message: "Task entry removed." });
       await refreshAll();
     } catch (error) {
-      setToast({ message: error instanceof Error ? error.message : "Failed to delete task entry.", variant: "error" });
+      setResult({ tone: "error", message: error instanceof Error ? error.message : "Failed to delete task entry." });
     } finally {
       setBusy(null);
     }
@@ -228,7 +228,7 @@ export default function TimesheetPage() {
       );
       setSelectedHeaderDetails(payload);
     } catch (error) {
-      setToast({ message: error instanceof Error ? error.message : "Failed to load sheet details.", variant: "error" });
+      setResult({ tone: "error", message: error instanceof Error ? error.message : "Failed to load sheet details." });
       setSelectedHeaderDetails(null);
     }
   }
@@ -237,7 +237,6 @@ export default function TimesheetPage() {
 
   return (
     <AccessGate permissionKey="timesheet.view_self">
-      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={3500} /> : null}
       <ModulePageFrame
         title="Timesheet"
         subtitle="Track daily work by ticket and task details. Admin can review all employee timesheets."
@@ -260,6 +259,18 @@ export default function TimesheetPage() {
           </div>
         }
       >
+        {result ? (
+          <OperationResultBanner
+            tone={result.tone}
+            message={result.message}
+            hint={result.hint}
+            action={
+              <button type="button" className="text-xs font-semibold underline underline-offset-2" onClick={() => setResult(null)}>
+                Dismiss
+              </button>
+            }
+          />
+        ) : null}
         <div className="space-y-5">
           <section className={UI.enterprise.elevatedCard + " p-5"}>
             <div className="grid gap-3 md:grid-cols-4">
@@ -467,11 +478,11 @@ export default function TimesheetPage() {
                                           }),
                                         })
                                           .then(async () => {
-                                            setToast({ message: "Timesheet status updated.", variant: "success" });
+                                            setResult({ tone: "success", message: "Timesheet status updated." });
                                             await refreshAll();
                                           })
                                           .catch((error) => {
-                                            setToast({ message: error instanceof Error ? error.message : "Failed to update timesheet status.", variant: "error" });
+                                            setResult({ tone: "error", message: error instanceof Error ? error.message : "Failed to update timesheet status." });
                                           });
                                       },
                                     },

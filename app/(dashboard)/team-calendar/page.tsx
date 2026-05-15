@@ -5,9 +5,9 @@ import useSWR from "swr";
 import { CalendarDays, RefreshCw, Save, Trash2 } from "lucide-react";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import OperationResultBanner from "@/components/enterprise/OperationResultBanner";
 import RowActionsMenu from "@/components/enterprise/RowActionsMenu";
 import StatusBadge from "@/components/enterprise/StatusBadge";
-import Toast from "@/components/Toast";
 import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
@@ -57,7 +57,7 @@ function toTimeInput(value: string) {
 
 export default function TeamCalendarPage() {
   const [query, setQuery] = React.useState("");
-  const [toast, setToast] = React.useState<{ message: string; variant: "success" | "error" } | null>(null);
+  const [result, setResult] = React.useState<{ tone: "success" | "partial" | "blocked" | "error" | "info"; message: string; hint?: string } | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [editingEventId, setEditingEventId] = React.useState<number | null>(null);
 
@@ -106,7 +106,7 @@ export default function TeamCalendarPage() {
   async function saveEvent() {
     const startIso = kolkataLocalToUtcIso(meetingDate, meetingTime);
     if (!startIso) {
-      setToast({ message: "Please enter a valid date and time.", variant: "error" });
+      setResult({ tone: "blocked", message: "Please enter a valid date and time.", hint: "Set date/time in IST and retry." });
       return;
     }
     const endIso = new Date(new Date(startIso).getTime() + Math.max(15, Number(durationMinutes || 30)) * 60 * 1000).toISOString();
@@ -128,19 +128,23 @@ export default function TeamCalendarPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        setToast({ message: "Team meeting updated and calendar invite re-synced.", variant: "success" });
+        setResult({ tone: "success", message: "Team meeting updated and calendar invite re-synced." });
       } else {
         await apiFetchJson("/api/team-calendar/events", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        setToast({ message: "Team meeting scheduled with Google Calendar invite.", variant: "success" });
+        setResult({ tone: "success", message: "Team meeting scheduled with Google Calendar invite." });
       }
       await eventsSwr.mutate();
       resetForm();
     } catch (error) {
-      setToast({ message: error instanceof Error ? error.message : "Failed to save meeting.", variant: "error" });
+      setResult({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Failed to save meeting.",
+        hint: "Check Google Calendar connection/scopes and try again.",
+      });
     } finally {
       setBusy(null);
     }
@@ -151,11 +155,11 @@ export default function TeamCalendarPage() {
     setBusy(`cancel-${event.id}`);
     try {
       await apiFetchJson(`/api/team-calendar/events/${event.id}`, { method: "DELETE" });
-      setToast({ message: "Meeting cancelled and attendees notified.", variant: "success" });
+      setResult({ tone: "success", message: "Meeting cancelled and attendees notified." });
       await eventsSwr.mutate();
       if (editingEventId === event.id) resetForm();
     } catch (error) {
-      setToast({ message: error instanceof Error ? error.message : "Failed to cancel meeting.", variant: "error" });
+      setResult({ tone: "error", message: error instanceof Error ? error.message : "Failed to cancel meeting." });
     } finally {
       setBusy(null);
     }
@@ -163,7 +167,6 @@ export default function TeamCalendarPage() {
 
   return (
     <AccessGate permissionKey="team_calendar.view">
-      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={3500} /> : null}
       <ModulePageFrame
         title="Team Calendar"
         subtitle="Schedule internal one-time or recurring meetings with Google Meet and attendee invites."
@@ -175,6 +178,18 @@ export default function TeamCalendarPage() {
           </button>
         }
       >
+        {result ? (
+          <OperationResultBanner
+            tone={result.tone}
+            message={result.message}
+            hint={result.hint}
+            action={
+              <button type="button" className="text-xs font-semibold underline underline-offset-2" onClick={() => setResult(null)}>
+                Dismiss
+              </button>
+            }
+          />
+        ) : null}
         <section className={UI.card + " p-4 sm:p-5"}>
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="text-base font-semibold text-[var(--ats-text)]">{editingEventId ? "Edit meeting" : "Create meeting"}</h2>
