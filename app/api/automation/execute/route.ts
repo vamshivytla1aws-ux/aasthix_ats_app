@@ -8,7 +8,18 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!AUTOMATION_V3_ENABLED) return NextResponse.json({ enabled: false, runs: [], operation_status: "blocked" });
+  if (!AUTOMATION_V3_ENABLED) {
+    return NextResponse.json({
+      enabled: false,
+      runs: [],
+      operation_status: "blocked",
+      mode: "recommend_only",
+      trigger_source: "execute_api",
+      rule_version: null,
+      affected_entities: [],
+      execution_trace_id: `automation-execute-${Date.now()}`,
+    });
+  }
   try {
     const body = await request.json().catch(() => ({}));
     if (body?.global_pause === true) {
@@ -17,6 +28,9 @@ export async function POST(request: Request) {
         operation_status: "blocked",
         mode: "recommend_only",
         trigger_source: "execute_api",
+        rule_version: "v3",
+        affected_entities: [],
+        execution_trace_id: `automation-execute-${Date.now()}`,
         error: "Global automation pause is active.",
         runs: [],
       });
@@ -30,6 +44,9 @@ export async function POST(request: Request) {
         operation_status: "blocked",
         mode: "recommend_only",
         trigger_source: "execute_api",
+        rule_version: "v3",
+        affected_entities: [],
+        execution_trace_id: `automation-execute-${Date.now()}`,
         error: "Execution blocked by policy. Set allow_execute=true for controlled execution.",
         runs: [],
       });
@@ -45,6 +62,9 @@ export async function POST(request: Request) {
       operation_status: "success",
       mode: "approval_required",
       trigger_source: "execute_api",
+      rule_version: "v3",
+      affected_entities: runs.map((run: any) => Number(run.entity_id)).filter((id: number) => Number.isFinite(id)),
+      execution_trace_id: `automation-execute-${Date.now()}`,
       runs,
     });
   } catch (error) {

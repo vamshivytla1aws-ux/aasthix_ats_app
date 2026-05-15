@@ -13,6 +13,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       enabled: false,
       message: "AUTOMATION_V3_ENABLED is disabled",
       operation_status: "blocked",
+      mode: "recommend_only",
+      trigger_source: "rules_api",
+      rule_version: null,
+      affected_entities: [],
+      execution_trace_id: `automation-rule-update-${Date.now()}`,
     });
   }
   const id = Number(params.id);
@@ -29,6 +34,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     });
     return NextResponse.json({
       operation_status: "success",
+      mode: "recommend_only",
+      trigger_source: "rules_api",
+      rule_version: "v3",
+      affected_entities: [],
+      execution_trace_id: `automation-rule-update-${Date.now()}`,
       rule,
     });
   } catch (error) {

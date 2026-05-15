@@ -9,7 +9,17 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const auth = await requirePermission("jobs.view");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!FORECAST_V3_ENABLED) return NextResponse.json({ enabled: false, operation_status: "blocked", rows: [] });
+  if (!FORECAST_V3_ENABLED) {
+    return NextResponse.json({
+      enabled: false,
+      operation_status: "blocked",
+      rows: [],
+      confidence_band: "unavailable",
+      as_of: null,
+      data_latency_minutes: null,
+      scenario_inputs: null,
+    });
+  }
   try {
     const url = new URL(request.url);
     const scenario = {

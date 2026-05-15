@@ -167,7 +167,11 @@ export default function TimesheetPage() {
   async function saveHeader() {
     setBusy("save-header");
     try {
-      await apiFetchJson("/api/timesheet/header", {
+      const response = await apiFetchJson<{
+        operation_status?: "success" | "partial" | "blocked" | "error";
+        user_message?: string;
+        hint?: string;
+      }>("/api/timesheet/header", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -176,7 +180,11 @@ export default function TimesheetPage() {
           status,
         }),
       });
-      setResult({ tone: "success", message: "Timesheet header saved." });
+      setResult({
+        tone: response.operation_status || "success",
+        message: response.user_message || "Timesheet header saved.",
+        hint: response.hint,
+      });
       await refreshAll();
     } catch (error) {
       setResult({ tone: "error", message: error instanceof Error ? error.message : "Failed to save timesheet header." });
@@ -188,7 +196,11 @@ export default function TimesheetPage() {
   async function addEntry() {
     setBusy("add-entry");
     try {
-      await apiFetchJson("/api/timesheet/entries", {
+      const response = await apiFetchJson<{
+        operation_status?: "success" | "partial" | "blocked" | "error";
+        user_message?: string;
+        hint?: string;
+      }>("/api/timesheet/entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -198,7 +210,11 @@ export default function TimesheetPage() {
         }),
       });
       setNewEntry(emptyEntry());
-      setResult({ tone: "success", message: "Task entry added." });
+      setResult({
+        tone: response.operation_status || "success",
+        message: response.user_message || "Task entry added.",
+        hint: response.hint,
+      });
       await refreshAll();
     } catch (error) {
       setResult({ tone: "error", message: error instanceof Error ? error.message : "Failed to add task entry." });
@@ -210,8 +226,16 @@ export default function TimesheetPage() {
   async function removeEntry(entry: TimesheetEntry) {
     setBusy(`delete-${entry.id}`);
     try {
-      await apiFetchJson(`/api/timesheet/entries?header_id=${entry.header_id}&entry_id=${entry.id}`, { method: "DELETE" });
-      setResult({ tone: "success", message: "Task entry removed." });
+      const response = await apiFetchJson<{
+        operation_status?: "success" | "partial" | "blocked" | "error";
+        user_message?: string;
+        hint?: string;
+      }>(`/api/timesheet/entries?header_id=${entry.header_id}&entry_id=${entry.id}`, { method: "DELETE" });
+      setResult({
+        tone: response.operation_status || "success",
+        message: response.user_message || "Task entry removed.",
+        hint: response.hint,
+      });
       await refreshAll();
     } catch (error) {
       setResult({ tone: "error", message: error instanceof Error ? error.message : "Failed to delete task entry." });
