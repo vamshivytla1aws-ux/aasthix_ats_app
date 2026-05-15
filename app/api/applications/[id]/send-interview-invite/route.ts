@@ -78,6 +78,7 @@ export async function POST(request: Request, context: { params: { id: string } }
 
     const card = row as {
       id?: number;
+      candidate_id?: number;
       stage?: string | null;
       interview_datetime?: string | null;
       interview_status_note?: string | null;
@@ -91,6 +92,7 @@ export async function POST(request: Request, context: { params: { id: string } }
     };
 
     const candidateEmail = String(card.candidate_email || "").trim().toLowerCase();
+    const candidateId = Number(card.candidate_id);
     if (!candidateEmail || !EMAIL_RE.test(candidateEmail)) {
       return NextResponse.json({ error: "Candidate email is missing or invalid for calendar invite." }, { status: 400 });
     }
@@ -198,6 +200,31 @@ export async function POST(request: Request, context: { params: { id: string } }
         subject_preview: subject.slice(0, 120),
       },
     });
+
+    if (Number.isFinite(candidateId) && candidateId > 0) {
+      try {
+        await query(
+          `
+          INSERT INTO candidate_activity (candidate_id, type, description, created_at)
+          VALUES ($1, 'Interview', $2, NOW())
+          `,
+          [candidateId, "Interview invite sent from ATS board"]
+        );
+      } catch {
+        // legacy optional table
+      }
+      try {
+        await query(
+          `
+          INSERT INTO activity_timeline (user_id, candidate_id, application_id, event_type, message, metadata)
+          VALUES ($1, $2, $3, 'Interview', $4, '{}'::jsonb)
+          `,
+          [user.user_id, candidateId, applicationId, "Interview invite sent from ATS board"]
+        );
+      } catch {
+        // optional table guard
+      }
+    }
 
     return NextResponse.json({
       ok: true,

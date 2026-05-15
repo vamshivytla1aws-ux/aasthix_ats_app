@@ -38,6 +38,7 @@ export const DASHBOARD_PRIMARY_NAV: DashboardNavItem[] = [
 
 export const DASHBOARD_MORE_NAV: DashboardNavItem[] = [
   { id: "analytics", label: "Analytics", href: "/analytics", permissionKey: "jobs.view" },
+  { id: "team-calendar", label: "Team Calendar", href: "/team-calendar", permissionKey: "team_calendar.view" },
   { id: "attendance", label: "Attendance", href: "/attendance", permissionKey: "attendance.view_self" },
   { id: "timesheet", label: "Timesheet", href: "/timesheet", permissionKey: "timesheet.view_self" },
   { id: "alerts", label: "Alerts", href: "/alerts", permissionKey: "alerts.view" },
@@ -83,6 +84,7 @@ export const DASHBOARD_DOMAIN_ITEMS: Record<DashboardDomain, DashboardNavItem[]>
     { id: "audit", label: "Audit trail", href: "/audit", permissionKey: "jobs.view" },
   ],
   workforce: [
+    { id: "team-calendar", label: "Team Calendar", href: "/team-calendar", permissionKey: "team_calendar.view" },
     { id: "attendance", label: "Attendance", href: "/attendance", permissionKey: "attendance.view_self" },
     { id: "timesheet", label: "Timesheet", href: "/timesheet", permissionKey: "timesheet.view_self" },
   ],
@@ -138,6 +140,9 @@ export function getDomainForPath(pathname: string): DashboardDomain {
     return "reporting";
   }
   if (pathname.startsWith("/attendance") || pathname.startsWith("/timesheet")) {
+    return "workforce";
+  }
+  if (pathname.startsWith("/team-calendar")) {
     return "workforce";
   }
   if (pathname.startsWith("/admin") || pathname.startsWith("/settings")) {

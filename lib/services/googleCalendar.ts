@@ -44,6 +44,19 @@ export type InterviewCalendarSyncResult = {
   attendee_emails: string[];
 };
 
+export type TeamCalendarRecurrence = "none" | "daily" | "weekly" | "monthly";
+
+export type TeamCalendarSyncResult = {
+  status: "scheduled" | "updated" | "cancelled" | "sync_failed" | "google_not_connected";
+  source: "google_calendar" | "ats_only";
+  meet_link: string | null;
+  external_calendar_event_id: string | null;
+  organizer_email: string | null;
+  synced_at: string | null;
+  error: string | null;
+  attendee_emails: string[];
+};
+
 type GoogleTokenResponse = {
   access_token?: string;
   refresh_token?: string;
@@ -420,6 +433,32 @@ type SyncInterviewMeetingInput = {
   durationMinutes?: number | null;
 };
 
+type SyncTeamCalendarMeetingInput = {
+  action: "upsert" | "cancel";
+  title: string;
+  description?: string | null;
+  startAt: string;
+  endAt: string;
+  attendeeEmails: string[];
+  existingEventId?: string | null;
+  existingMeetLink?: string | null;
+  recurrence?: TeamCalendarRecurrence;
+  recurrenceUntil?: string | null;
+};
+
+function toRruleUntil(recurringUntil: string) {
+  const d = new Date(`${recurringUntil}T23:59:59+05:30`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function buildRecurrenceRule(freq: TeamCalendarRecurrence, recurringUntil?: string | null) {
+  if (!freq || freq === "none") return undefined;
+  const until = recurringUntil ? toRruleUntil(recurringUntil) : null;
+  const rule = `RRULE:FREQ=${freq.toUpperCase()}${until ? `;UNTIL=${until}` : ""}`;
+  return [rule];
+}
+
 export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Promise<InterviewCalendarSyncResult> {
   const status = await getSharedGoogleCalendarStatus();
   const attendees = uniqueEmails([input.candidateEmail, ...input.internalAttendeeEmails]);
@@ -561,6 +600,134 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
     }
     return {
       status: "calendar_sync_failed",
+      source: "google_calendar",
+      meet_link: input.existingMeetLink ?? null,
+      external_calendar_event_id: input.existingEventId ?? null,
+      organizer_email: connection.account_email ?? null,
+      synced_at: new Date().toISOString(),
+      error: message,
+      attendee_emails: attendees,
+    };
+  }
+}
+
+export async function syncTeamCalendarMeeting(input: SyncTeamCalendarMeetingInput): Promise<TeamCalendarSyncResult> {
+  const status = await getSharedGoogleCalendarStatus();
+  const attendees = uniqueEmails(input.attendeeEmails);
+  if (!status.configured || !status.connected) {
+    return {
+      status: "google_not_connected",
+      source: "ats_only",
+      meet_link: input.existingMeetLink ?? null,
+      external_calendar_event_id: input.existingEventId ?? null,
+      organizer_email: status.account_email,
+      synced_at: null,
+      error: !status.configured
+        ? "Google Calendar OAuth environment is not configured"
+        : "Shared Google Calendar account is not connected",
+      attendee_emails: attendees,
+    };
+  }
+
+  const connection = await requireSharedGoogleConnection();
+  if (!connection) {
+    return {
+      status: "google_not_connected",
+      source: "ats_only",
+      meet_link: input.existingMeetLink ?? null,
+      external_calendar_event_id: input.existingEventId ?? null,
+      organizer_email: status.account_email,
+      synced_at: null,
+      error: "Shared Google Calendar account is not connected",
+      attendee_emails: attendees,
+    };
+  }
+
+  try {
+    const accessToken = await ensureUsableGoogleAccessToken(connection);
+    const calendarId = encodeURIComponent(connection.calendar_id || process.env.GOOGLE_CALENDAR_ID || "primary");
+
+    if (input.action === "cancel") {
+      if (input.existingEventId) {
+        await googleApi<null>(
+          `/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.existingEventId)}?sendUpdates=all`,
+          accessToken,
+          { method: "DELETE" }
+        );
+      }
+      return {
+        status: "cancelled",
+        source: "google_calendar",
+        meet_link: null,
+        external_calendar_event_id: null,
+        organizer_email: connection.account_email ?? null,
+        synced_at: new Date().toISOString(),
+        error: null,
+        attendee_emails: attendees,
+      };
+    }
+
+    const payload = {
+      summary: String(input.title || "Internal meeting").trim(),
+      description: String(input.description || "").trim(),
+      start: { dateTime: new Date(input.startAt).toISOString() },
+      end: { dateTime: new Date(input.endAt).toISOString() },
+      attendees: attendees.map((email) => ({ email })),
+      recurrence: buildRecurrenceRule(input.recurrence || "none", input.recurrenceUntil),
+      conferenceData: input.existingEventId
+        ? undefined
+        : {
+            createRequest: {
+              requestId: crypto.randomUUID(),
+              conferenceSolutionKey: { type: "hangoutsMeet" },
+            },
+          },
+    };
+
+    const method = input.existingEventId ? "PATCH" : "POST";
+    const path = input.existingEventId
+      ? `/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.existingEventId)}?conferenceDataVersion=1&sendUpdates=all`
+      : `/calendar/v3/calendars/${calendarId}/events?conferenceDataVersion=1&sendUpdates=all`;
+
+    const event = await googleApi<{
+      id?: string;
+      hangoutLink?: string;
+      conferenceData?: { entryPoints?: Array<{ entryPointType?: string; uri?: string }> };
+    }>(path, accessToken, {
+      method,
+      body: JSON.stringify(payload),
+    });
+
+    const meetLink =
+      event.hangoutLink ||
+      event.conferenceData?.entryPoints?.find((entry) => entry.entryPointType === "video")?.uri ||
+      input.existingMeetLink ||
+      null;
+
+    return {
+      status: input.existingEventId ? "updated" : "scheduled",
+      source: "google_calendar",
+      meet_link: meetLink,
+      external_calendar_event_id: event.id ?? input.existingEventId ?? null,
+      organizer_email: connection.account_email ?? null,
+      synced_at: new Date().toISOString(),
+      error: null,
+      attendee_emails: attendees,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to sync Google Calendar event";
+    if (connection.id) {
+      await query(
+        `
+        UPDATE user_calendar_connections
+        SET sync_error = $2, updated_at = NOW()
+        WHERE id = $1
+        `,
+        [connection.id, message.slice(0, 4000)]
+      );
+    }
+    return {
+      status: "sync_failed",
       source: "google_calendar",
       meet_link: input.existingMeetLink ?? null,
       external_calendar_event_id: input.existingEventId ?? null,

@@ -75,6 +75,41 @@ async function safeFetchApplicationCardRow(applicationId: number, userId: number
   }
 }
 
+async function appendCandidateTrackingEvent(input: {
+  userId: number;
+  candidateId: number;
+  applicationId: number;
+  type: string;
+  message: string;
+}) {
+  const { userId, candidateId, applicationId, type, message } = input;
+  const safeType = String(type || "Interview").slice(0, 64);
+  const safeMessage = String(message || "").trim().slice(0, 2000);
+  if (!safeMessage) return;
+  try {
+    await query(
+      `
+      INSERT INTO candidate_activity (candidate_id, type, description, created_at)
+      VALUES ($1, $2, $3, NOW())
+      `,
+      [candidateId, safeType, safeMessage]
+    );
+  } catch {
+    // optional legacy table
+  }
+  try {
+    await query(
+      `
+      INSERT INTO activity_timeline (user_id, candidate_id, application_id, event_type, message, metadata)
+      VALUES ($1, $2, $3, $4, $5, '{}'::jsonb)
+      `,
+      [userId, candidateId, applicationId, safeType, safeMessage]
+    );
+  } catch (error) {
+    if (!isSchemaCompatibilityError(error)) throw error;
+  }
+}
+
 function isSchemaCompatibilityError(error: unknown) {
   const code = (error as { code?: string } | null)?.code;
   return code === "42703" || code === "42P01";
@@ -104,7 +139,8 @@ async function loadPreviousApplicationState(
         a.job_id AS prev_job_id,
         a.current_interview_round_id AS prev_round_id,
         a.current_interview_round_order AS prev_round_order,
-        jir.round_label AS prev_round_label
+        jir.round_label AS prev_round_label,
+        a.interview_round_status AS prev_round_status
       FROM applications a
       LEFT JOIN job_interview_rounds jir ON jir.id = a.current_interview_round_id
       WHERE a.id = $1 AND (${accessWhere2})
@@ -132,7 +168,8 @@ async function loadPreviousApplicationState(
         a.job_id AS prev_job_id,
         NULL::bigint AS prev_round_id,
         NULL::int AS prev_round_order,
-        NULL::text AS prev_round_label
+        NULL::text AS prev_round_label,
+        NULL::text AS prev_round_status
       FROM applications a
       WHERE a.id = $1 AND (${accessWhere2})
       `,
@@ -819,6 +856,7 @@ export async function PATCH(request: Request) {
       prev_round_id: number | null;
       prev_round_order: number | null;
       prev_round_label: string | null;
+      prev_round_status: string | null;
     };
     const prevInterviewScheduled = Boolean(prevRow0.interview_scheduled);
     const prevInterviewDatetime = (prevRow0.interview_datetime ?? null) as string | null;
@@ -832,6 +870,7 @@ export async function PATCH(request: Request) {
     const prevCalendarSyncStatus = normalizeMeetingSyncStatus(prevRow0.prev_calendar_sync_status);
     const prevCalendarSyncError = prevRow0.prev_calendar_sync_error ?? null;
     const prevCalendarOrganizerEmail = prevRow0.prev_calendar_organizer_email ?? null;
+    const prevRoundStatus = prevRow0.prev_round_status ?? null;
 
     const normalizedInterviewAttendeeEmails =
       interview_attendee_emails === undefined
@@ -1646,6 +1685,66 @@ export async function PATCH(request: Request) {
       } catch (e) {
         if (!isSchemaCompatibilityError(e)) throw e;
       }
+    }
+
+    const trackingEvents: Array<{ type: string; message: string }> = [];
+    if (prevStage !== null && prevStage !== updated.stage) {
+      trackingEvents.push({
+        type: updated.stage || "Applied",
+        message: `Pipeline moved from ${prevStage} to ${updated.stage}`,
+      });
+    }
+    if (
+      updated.stage === "Interview" &&
+      updated.interview_scheduled === true &&
+      !!updated.interview_datetime &&
+      interviewDatetimeChanged &&
+      send_email === true
+    ) {
+      trackingEvents.push({
+        type: "Interview",
+        message: `${isReschedule ? "Interview rescheduled" : "Interview scheduled"} for ${formatEmailDateTime(updated.interview_datetime)}`,
+      });
+    }
+    if (prevInterviewSubstatus !== updated.interview_substatus && updated.interview_substatus) {
+      const labelMap: Record<string, string> = {
+        scheduled: "Interview marked scheduled",
+        completed_followup: "Interview completed (follow-up pending)",
+        no_show: "Interview marked no-show",
+        cancelled: "Interview cancelled",
+      };
+      trackingEvents.push({
+        type: "Interview",
+        message: labelMap[updated.interview_substatus] || `Interview status updated to ${updated.interview_substatus}`,
+      });
+    }
+    if (prevRoundStatus !== updated.interview_round_status && updated.interview_round_status) {
+      trackingEvents.push({
+        type: "Interview",
+        message: `Interview round status updated to ${updated.interview_round_status.replace(/_/g, " ")}`,
+      });
+    }
+    if (calendarSyncStatus && calendarSyncStatus !== prevCalendarSyncStatus) {
+      trackingEvents.push({
+        type: "Interview",
+        message:
+          calendarSyncStatus === "invite_sent" || calendarSyncStatus === "meet_created"
+            ? "Calendar invite synced and sent"
+            : calendarSyncStatus === "calendar_event_cancelled"
+              ? "Calendar invite cancelled"
+              : calendarSyncStatus === "calendar_sync_failed"
+                ? `Calendar sync failed${calendarSyncError ? `: ${calendarSyncError}` : ""}`
+                : "Calendar connection unavailable",
+      });
+    }
+    for (const event of trackingEvents) {
+      await appendCandidateTrackingEvent({
+        userId: user.user_id,
+        candidateId: updated.candidate_id,
+        applicationId: updated.id,
+        type: event.type,
+        message: event.message,
+      });
     }
 
     const card = await safeFetchApplicationCardRow(updated.id, user.user_id);
