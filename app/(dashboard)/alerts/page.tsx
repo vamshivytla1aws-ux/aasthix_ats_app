@@ -124,13 +124,21 @@ export default function AlertsPage() {
 
   async function markRead(id: number) {
     try {
-      await apiFetchJson("/api/alerts", {
+      const response = await apiFetchJson<{
+        operation_status?: "success" | "partial" | "blocked" | "error";
+        user_message?: string;
+        hint?: string;
+      }>("/api/alerts", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
       });
       void mutate();
-      setResult({ tone: "success", message: "Alert marked as read." });
+      setResult({
+        tone: response.operation_status || "success",
+        message: response.user_message || "Alert marked as read.",
+        hint: response.hint,
+      });
     } catch (e) {
       const msg = e instanceof ApiError && e.status === 403
         ? `${e.message} — alerts.manage is required.`
@@ -142,13 +150,21 @@ export default function AlertsPage() {
   async function markVisibleRead() {
     if (unreadIds.length === 0) return;
     try {
-      await apiFetchJson("/api/alerts", {
+      const response = await apiFetchJson<{
+        operation_status?: "success" | "partial" | "blocked" | "error";
+        user_message?: string;
+        hint?: string;
+      }>("/api/alerts", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: unreadIds }),
       });
       void mutate();
-      setResult({ tone: "success", message: `${unreadIds.length} alert(s) marked as read.` });
+      setResult({
+        tone: response.operation_status || "success",
+        message: response.user_message || `${unreadIds.length} alert(s) marked as read.`,
+        hint: response.hint,
+      });
     } catch (e) {
       const msg = e instanceof ApiError && e.status === 403
         ? `${e.message} — alerts.manage is required.`
@@ -170,7 +186,7 @@ export default function AlertsPage() {
           error ? (
             <span className="text-red-600">{(error as Error).message}</span>
           ) : isLoading ? (
-            <span>Loading…</span>
+            <span>Loading...</span>
           ) : (
             <span>
               <span className="font-semibold text-slate-800 dark:text-slate-200">{data?.unreadCount ?? 0}</span> unread
@@ -193,7 +209,7 @@ export default function AlertsPage() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search alerts…"
+              placeholder="Search alerts..."
               className="w-full min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:min-w-[220px] dark:border-slate-600 dark:bg-slate-950/50 dark:text-slate-100"
             />
             <select

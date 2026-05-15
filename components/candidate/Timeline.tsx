@@ -1,6 +1,18 @@
 type TimelineItem = {
   id: number;
-  type: "Applied" | "Interview" | "Selected" | "Rejected" | "Screening" | "Screening Failed";
+  type:
+    | "Applied"
+    | "Interview"
+    | "Selected"
+    | "Rejected"
+    | "Screening"
+    | "Screening Failed"
+    | "stage_move"
+    | "interview_schedule"
+    | "interview_reschedule"
+    | "invite_sent"
+    | "interview_outcome"
+    | "record_updated";
   description: string;
   created_at: string;
 };
@@ -11,7 +23,30 @@ function tone(type: TimelineItem["type"]) {
   if (type === "Selected") return "bg-emerald-500";
   if (type === "Rejected") return "bg-rose-500";
   if (type === "Screening Failed") return "bg-orange-500";
+  if (type === "stage_move") return "bg-blue-500";
+  if (type === "interview_schedule") return "bg-sky-500";
+  if (type === "interview_reschedule") return "bg-indigo-500";
+  if (type === "invite_sent") return "bg-cyan-500";
+  if (type === "interview_outcome") return "bg-amber-500";
   return "bg-slate-500";
+}
+
+function label(type: TimelineItem["type"]) {
+  const map: Record<TimelineItem["type"], string> = {
+    Applied: "Applied",
+    Interview: "Interview",
+    Selected: "Selected",
+    Rejected: "Rejected",
+    Screening: "Screening",
+    "Screening Failed": "Screening Failed",
+    stage_move: "Stage move",
+    interview_schedule: "Interview scheduled",
+    interview_reschedule: "Interview rescheduled",
+    invite_sent: "Invite sent",
+    interview_outcome: "Interview outcome",
+    record_updated: "Record updated",
+  };
+  return map[type] || "Activity";
 }
 
 function formatDateTime(value: string) {
@@ -50,9 +85,7 @@ export default function Timeline({
       <div className={["mb-0.5 font-medium text-gray-700", titleClass].join(" ")}>Timeline</div>
 
       {items.length === 0 ? (
-        <div className="py-0.5 text-xs text-gray-500">
-          No timeline activity yet.
-        </div>
+        <div className="py-0.5 text-xs text-gray-500">No timeline activity yet.</div>
       ) : (
         <ol className="space-y-0.5">
           {items.map((item) => (
@@ -60,7 +93,7 @@ export default function Timeline({
               <span className={["mt-1 h-1.5 w-1.5 rounded-full", tone(item.type)].join(" ")} />
               <div>
                 <div>
-                  {item.type} — {formatDateTime(item.created_at)}
+                  {label(item.type)} - {formatDateTime(item.created_at)}
                 </div>
                 <div className={[descClass, "text-gray-500"].join(" ")}>{item.description}</div>
               </div>
@@ -71,4 +104,3 @@ export default function Timeline({
     </div>
   );
 }
-

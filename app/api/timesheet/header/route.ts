@@ -39,10 +39,24 @@ export async function POST(request: Request) {
       metadata: { entry_date: entryDate, status: header?.status },
     });
 
-    return NextResponse.json({ header });
+    return NextResponse.json({
+      header,
+      operation_status: "success",
+      user_message: "Timesheet header saved.",
+      trace_id: `timesheet-header-${Date.now()}`,
+    });
   } catch (error) {
     console.error("POST /api/timesheet/header", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to update timesheet header." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Failed to update timesheet header.",
+        operation_status: "error",
+        user_message: "Timesheet header save failed.",
+        hint: "Review date/status and retry.",
+        trace_id: `timesheet-header-${Date.now()}`,
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -72,10 +86,24 @@ export async function PATCH(request: Request) {
       metadata: { user_id: userId, entry_date: entryDate, status: header?.status },
     });
 
-    return NextResponse.json({ header });
+    return NextResponse.json({
+      header,
+      operation_status: "success",
+      user_message: "Timesheet header updated by admin.",
+      trace_id: `timesheet-header-admin-${Date.now()}`,
+    });
   } catch (error) {
     console.error("PATCH /api/timesheet/header", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to update timesheet header." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Failed to update timesheet header.",
+        operation_status: "error",
+        user_message: "Admin timesheet header update failed.",
+        hint: "Retry after refreshing the register.",
+        trace_id: `timesheet-header-admin-${Date.now()}`,
+      },
+      { status: 500 }
+    );
   }
 }
 

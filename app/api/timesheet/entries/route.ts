@@ -104,10 +104,25 @@ export async function POST(request: Request) {
       metadata: { header_id: headerId, ticket_number: entry?.ticket_number },
     });
 
-    return NextResponse.json({ entry, entries });
+    return NextResponse.json({
+      entry,
+      entries,
+      operation_status: "success",
+      user_message: "Timesheet entry added.",
+      trace_id: `timesheet-entry-create-${Date.now()}`,
+    });
   } catch (error) {
     console.error("POST /api/timesheet/entries", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to create timesheet entry." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Failed to create timesheet entry.",
+        operation_status: "error",
+        user_message: "Could not add timesheet entry.",
+        hint: "Ticket number, task title, and minutes are required.",
+        trace_id: `timesheet-entry-create-${Date.now()}`,
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -144,10 +159,25 @@ export async function PATCH(request: Request) {
       action: "timesheet.entry_updated",
       metadata: { header_id: headerId, entry_id: entryId },
     });
-    return NextResponse.json({ entry, entries });
+    return NextResponse.json({
+      entry,
+      entries,
+      operation_status: "success",
+      user_message: "Timesheet entry updated.",
+      trace_id: `timesheet-entry-update-${Date.now()}`,
+    });
   } catch (error) {
     console.error("PATCH /api/timesheet/entries", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to update timesheet entry." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Failed to update timesheet entry.",
+        operation_status: "error",
+        user_message: "Could not update timesheet entry.",
+        hint: "Refresh and retry the row edit.",
+        trace_id: `timesheet-entry-update-${Date.now()}`,
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -173,9 +203,24 @@ export async function DELETE(request: Request) {
       action: "timesheet.entry_deleted",
       metadata: { header_id: headerId, entry_id: entryId },
     });
-    return NextResponse.json({ ok: true, entries });
+    return NextResponse.json({
+      ok: true,
+      entries,
+      operation_status: "success",
+      user_message: "Timesheet entry deleted.",
+      trace_id: `timesheet-entry-delete-${Date.now()}`,
+    });
   } catch (error) {
     console.error("DELETE /api/timesheet/entries", error);
-    return NextResponse.json({ error: "Failed to delete timesheet entry." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Failed to delete timesheet entry.",
+        operation_status: "error",
+        user_message: "Could not delete timesheet entry.",
+        hint: "Retry after refreshing the sheet.",
+        trace_id: `timesheet-entry-delete-${Date.now()}`,
+      },
+      { status: 500 }
+    );
   }
 }

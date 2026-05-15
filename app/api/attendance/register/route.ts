@@ -56,7 +56,12 @@ export async function PATCH(request: Request) {
         action: "attendance.absent_marked",
         metadata: result,
       });
-      return NextResponse.json(result);
+      return NextResponse.json({
+        ...result,
+        operation_status: "success",
+        user_message: "Absent statuses processed for the selected date.",
+        trace_id: `attendance-absent-${Date.now()}`,
+      });
     }
     if (body.action === "update_shift") {
       const userId = Number(body.user_id);
@@ -73,7 +78,13 @@ export async function PATCH(request: Request) {
         action: "attendance.shift_updated",
         metadata: { user_id: userId, shift },
       });
-      return NextResponse.json({ shift });
+      return NextResponse.json({
+        shift,
+        operation_status: "success",
+        user_message: "Shift timing updated.",
+        hint: "Future late/absent calculation will use this setting.",
+        trace_id: `attendance-shift-${Date.now()}`,
+      });
     }
 
     const record = await adminUpsertAttendance({
@@ -95,9 +106,23 @@ export async function PATCH(request: Request) {
       },
     });
 
-    return NextResponse.json({ record });
+    return NextResponse.json({
+      record,
+      operation_status: "success",
+      user_message: "Attendance record updated.",
+      trace_id: `attendance-record-${Date.now()}`,
+    });
   } catch (error) {
     console.error("PATCH /api/attendance/register", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to update attendance record." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Failed to update attendance record.",
+        operation_status: "error",
+        user_message: "Attendance update failed.",
+        hint: "Verify date/time values and retry.",
+        trace_id: `attendance-record-${Date.now()}`,
+      },
+      { status: 500 }
+    );
   }
 }

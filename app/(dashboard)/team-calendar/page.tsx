@@ -122,21 +122,33 @@ export default function TeamCalendarPage() {
 
     setBusy("save");
     try {
+      let response: { operation_status?: "success" | "partial" | "blocked" | "error"; user_message?: string; hint?: string } | null = null;
       if (editingEventId) {
-        await apiFetchJson(`/api/team-calendar/events/${editingEventId}`, {
+        response = await apiFetchJson(`/api/team-calendar/events/${editingEventId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        setResult({ tone: "success", message: "Team meeting updated and calendar invite re-synced." });
       } else {
-        await apiFetchJson("/api/team-calendar/events", {
+        response = await apiFetchJson("/api/team-calendar/events", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        setResult({ tone: "success", message: "Team meeting scheduled with Google Calendar invite." });
       }
+      const toneMap = {
+        success: "success",
+        partial: "partial",
+        blocked: "blocked",
+        error: "error",
+      } as const;
+      setResult({
+        tone: toneMap[response?.operation_status || "success"] || "success",
+        message:
+          response?.user_message ||
+          (editingEventId ? "Team meeting updated and calendar invite re-synced." : "Team meeting scheduled with Google Calendar invite."),
+        hint: response?.hint,
+      });
       await eventsSwr.mutate();
       resetForm();
     } catch (error) {
@@ -154,8 +166,22 @@ export default function TeamCalendarPage() {
     if (!window.confirm(`Cancel "${event.title}" and send cancellation to attendees?`)) return;
     setBusy(`cancel-${event.id}`);
     try {
-      await apiFetchJson(`/api/team-calendar/events/${event.id}`, { method: "DELETE" });
-      setResult({ tone: "success", message: "Meeting cancelled and attendees notified." });
+      const response = await apiFetchJson<{
+        operation_status?: "success" | "partial" | "blocked" | "error";
+        user_message?: string;
+        hint?: string;
+      }>(`/api/team-calendar/events/${event.id}`, { method: "DELETE" });
+      const toneMap = {
+        success: "success",
+        partial: "partial",
+        blocked: "blocked",
+        error: "error",
+      } as const;
+      setResult({
+        tone: toneMap[response?.operation_status || "success"] || "success",
+        message: response?.user_message || "Meeting cancelled and attendees notified.",
+        hint: response?.hint,
+      });
       await eventsSwr.mutate();
       if (editingEventId === event.id) resetForm();
     } catch (error) {

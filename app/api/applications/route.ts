@@ -83,7 +83,22 @@ async function appendCandidateTrackingEvent(input: {
   message: string;
 }) {
   const { userId, candidateId, applicationId, type, message } = input;
-  const safeType = String(type || "Interview").slice(0, 64);
+  const normalizedTypeMap: Record<string, string> = {
+    Applied: "stage_move",
+    Screening: "stage_move",
+    "Screening Failed": "stage_move",
+    Interview: "interview_outcome",
+    Selected: "stage_move",
+    Rejected: "stage_move",
+    stage_move: "stage_move",
+    interview_schedule: "interview_schedule",
+    interview_reschedule: "interview_reschedule",
+    invite_sent: "invite_sent",
+    interview_outcome: "interview_outcome",
+    record_updated: "record_updated",
+  };
+  const rawType = String(type || "record_updated").trim();
+  const safeType = (normalizedTypeMap[rawType] || "record_updated").slice(0, 64);
   const safeMessage = String(message || "").trim().slice(0, 2000);
   if (!safeMessage) return;
   try {
@@ -1690,7 +1705,7 @@ export async function PATCH(request: Request) {
     const trackingEvents: Array<{ type: string; message: string }> = [];
     if (prevStage !== null && prevStage !== updated.stage) {
       trackingEvents.push({
-        type: updated.stage || "Applied",
+        type: "stage_move",
         message: `Pipeline moved from ${prevStage} to ${updated.stage}`,
       });
     }
@@ -1702,7 +1717,7 @@ export async function PATCH(request: Request) {
       send_email === true
     ) {
       trackingEvents.push({
-        type: "Interview",
+        type: isReschedule ? "interview_reschedule" : "interview_schedule",
         message: `${isReschedule ? "Interview rescheduled" : "Interview scheduled"} for ${formatEmailDateTime(updated.interview_datetime)}`,
       });
     }
@@ -1714,19 +1729,19 @@ export async function PATCH(request: Request) {
         cancelled: "Interview cancelled",
       };
       trackingEvents.push({
-        type: "Interview",
+        type: "interview_outcome",
         message: labelMap[updated.interview_substatus] || `Interview status updated to ${updated.interview_substatus}`,
       });
     }
     if (prevRoundStatus !== updated.interview_round_status && updated.interview_round_status) {
       trackingEvents.push({
-        type: "Interview",
+        type: "record_updated",
         message: `Interview round status updated to ${updated.interview_round_status.replace(/_/g, " ")}`,
       });
     }
     if (calendarSyncStatus && calendarSyncStatus !== prevCalendarSyncStatus) {
       trackingEvents.push({
-        type: "Interview",
+        type: "invite_sent",
         message:
           calendarSyncStatus === "invite_sent" || calendarSyncStatus === "meet_created"
             ? "Calendar invite synced and sent"

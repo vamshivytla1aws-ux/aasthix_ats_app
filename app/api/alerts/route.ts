@@ -257,7 +257,14 @@ export async function PATCH(request: Request) {
     const distinctIds = Array.from(new Set(idList)).filter((x) => Number.isFinite(x));
 
     if (distinctIds.length === 0) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: "id is required",
+          operation_status: "blocked",
+          user_message: "Select at least one alert to update.",
+        },
+        { status: 400 }
+      );
     }
 
     const appAlertIds = distinctIds.filter((x) => x < 1000000000);
@@ -295,9 +302,25 @@ export async function PATCH(request: Request) {
       updatedIds.push(...renewalUpdated.rows.map((r: any) => Number(r.id) + 1000000000));
     }
 
-    return NextResponse.json({ ok: true, ids: updatedIds });
+    const traceId = `alerts-read-${Date.now()}`;
+    return NextResponse.json({
+      ok: true,
+      ids: updatedIds,
+      operation_status: "success",
+      user_message: updatedIds.length > 1 ? `${updatedIds.length} alerts marked as read.` : "Alert marked as read.",
+      trace_id: traceId,
+    });
   } catch (error) {
     console.error("Error marking alerts as read", error);
-    return NextResponse.json({ error: "Failed to update alerts" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Failed to update alerts",
+        operation_status: "error",
+        user_message: "Could not update alert status.",
+        hint: "Retry in a few seconds.",
+        trace_id: `alerts-read-${Date.now()}`,
+      },
+      { status: 500 }
+    );
   }
 }
