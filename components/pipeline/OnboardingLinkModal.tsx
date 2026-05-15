@@ -71,7 +71,30 @@ export default function OnboardingLinkModal({
         {error ? <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
         {sentUrl ? (
           <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            Onboarding link sent successfully.
+            <div className="font-medium">Onboarding link sent successfully.</div>
+            <div className="mt-2 break-all text-xs text-emerald-800">{sentUrl}</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-emerald-300 bg-white px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                onClick={() => window.open(sentUrl, "_blank", "noopener,noreferrer")}
+              >
+                Open preview
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-emerald-300 bg-white px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(sentUrl);
+                  } catch {
+                    /* noop */
+                  }
+                }}
+              >
+                Copy link
+              </button>
+            </div>
           </div>
         ) : null}
 

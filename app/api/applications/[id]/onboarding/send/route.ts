@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/rbac";
 import { appendCandidateActivity, createOnboardingToken } from "@/lib/onboarding";
 import { sendEmailMessage } from "@/lib/sendEmail";
 import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
+import { buildPublicUrl } from "@/lib/publicUrl";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,8 +69,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   );
   const packet = insertRes.rows[0] as any;
 
-  const origin = new URL(request.url).origin;
-  const url = `${origin}/onboarding/${packet.id}?token=${encodeURIComponent(token)}`;
+  const url = buildPublicUrl(`/onboarding/${packet.id}?token=${encodeURIComponent(token)}`);
   const msg = buildCandidateEmailTemplate({
     candidateName: app.candidate_full_name || "Candidate",
     paragraphs: [
