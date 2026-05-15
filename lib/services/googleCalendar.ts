@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { query } from "@/lib/db";
 import { buildPublicUrl } from "@/lib/publicUrl";
+import { ATS_TIMEZONE } from "@/lib/timezones";
 
 type RawCalendarConnection = {
   id: number;
@@ -670,8 +671,8 @@ export async function syncTeamCalendarMeeting(input: SyncTeamCalendarMeetingInpu
     const payload = {
       summary: String(input.title || "Internal meeting").trim(),
       description: String(input.description || "").trim(),
-      start: { dateTime: new Date(input.startAt).toISOString() },
-      end: { dateTime: new Date(input.endAt).toISOString() },
+      start: { dateTime: new Date(input.startAt).toISOString(), timeZone: ATS_TIMEZONE },
+      end: { dateTime: new Date(input.endAt).toISOString(), timeZone: ATS_TIMEZONE },
       attendees: attendees.map((email) => ({ email })),
       recurrence: buildRecurrenceRule(input.recurrence || "none", input.recurrenceUntil),
       conferenceData: input.existingEventId
