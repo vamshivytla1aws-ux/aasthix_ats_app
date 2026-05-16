@@ -14,6 +14,8 @@ export const BOARD_PERMISSION_KEYS = [
   "timesheet.manage_all",
   "team_calendar.view",
   "team_calendar.manage",
+  "salary.view",
+  "salary.manage",
   "candidates.view",
   "candidates.manage",
   "jobs.view",
@@ -83,6 +85,8 @@ const BASELINE_RECRUITER = mergeBaseline({
   "timesheet.manage_self": true,
   "team_calendar.view": true,
   "team_calendar.manage": true,
+  "salary.view": true,
+  "salary.manage": true,
   "candidates.view": true,
   "candidates.manage": true,
   "jobs.view": true,
@@ -140,6 +144,7 @@ const BASELINE_EMPLOYEE = mergeBaseline({
   "timesheet.manage_self": true,
   "alerts.view": true,
   "chat.view": true,
+  "salary.view": true,
 });
 
 export function baselineForRole(role: string): Record<BoardPermissionKey, boolean> {

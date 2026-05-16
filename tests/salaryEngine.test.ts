@@ -1,0 +1,148 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/db", () => ({
+  query: vi.fn(async (sql: string) => {
+    if (sql.includes("FROM salary_settings")) {
+      return { rowCount: 0, rows: [] };
+    }
+    if (sql.includes("FROM tax_configs")) {
+      return { rowCount: 0, rows: [] };
+    }
+    if (sql.includes("FROM tax_slabs")) {
+      return { rowCount: 0, rows: [] };
+    }
+    return { rowCount: 0, rows: [] };
+  }),
+}));
+
+import { calculateSalaryStructure } from "@/lib/salary/engine";
+import { amountToRupeesWords } from "@/lib/salary/numberToWords";
+import { buildPayslipPdf } from "@/lib/pdf/payslipExport";
+import type { SalaryCalcInput } from "@/lib/salary/types";
+
+function baseInput(ctcAnnual: number): SalaryCalcInput {
+  return {
+    employeeId: 1,
+    employeeCode: "EMP-001",
+    department: "Engineering",
+    designation: "Developer",
+    dateOfJoining: "2025-01-01",
+    pan: "ABCDE1234F",
+    uanNumber: "123456789012",
+    pfNumber: "PF123",
+    bankAccountNumber: "1234567890",
+    workLocation: "Hyderabad",
+    ctcAnnual,
+    salaryMonth: "2026-05-01",
+    totalPaidDays: 30,
+    lopDays: 0,
+    taxRegime: "new_regime",
+    manualTdsAnnual: null,
+    professionalTaxMonthly: 200,
+    pfEnabled: true,
+    employerPfIncludedInCtc: true,
+    employeePfEnabled: true,
+    healthInsuranceEnabled: false,
+    healthInsuranceAnnual: 0,
+  };
+}
+
+function getComponent(calc: Awaited<ReturnType<typeof calculateSalaryStructure>>, key: string) {
+  return [...calc.earningsAnnual, ...calc.deductionsAnnual].find((item) => item.key === key);
+}
+
+describe("salary engine", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calculates 16L base components correctly", async () => {
+    const calc = await calculateSalaryStructure(baseInput(1600000));
+    expect(getComponent(calc, "basic")?.annual).toBe(480000);
+    expect(getComponent(calc, "basic")?.monthly).toBe(40000);
+    expect(getComponent(calc, "hra")?.annual).toBe(240000);
+    expect(getComponent(calc, "hra")?.monthly).toBe(20000);
+    expect(getComponent(calc, "special_allowance")?.annual).toBe(160000);
+    expect(getComponent(calc, "special_allowance")?.monthly).toBe(13333.33);
+    expect(getComponent(calc, "conveyance")?.annual).toBe(192000);
+    expect(getComponent(calc, "conveyance")?.monthly).toBe(16000);
+    expect(getComponent(calc, "other_allowance")?.annual).toBe(506400);
+    expect(getComponent(calc, "other_allowance")?.monthly).toBe(42200);
+  });
+
+  it("calculates 17L and 18L without circular other allowance", async () => {
+    const calc17 = await calculateSalaryStructure(baseInput(1700000));
+    const calc18 = await calculateSalaryStructure(baseInput(1800000));
+    expect(getComponent(calc17, "other_allowance")?.annual).toBeGreaterThan(0);
+    expect(getComponent(calc18, "other_allowance")?.annual).toBeGreaterThan(0);
+    expect(getComponent(calc17, "other_allowance")?.annual).toBe(539400);
+    expect(getComponent(calc18, "other_allowance")?.annual).toBe(572400);
+  });
+
+  it("supports manual tds override", async () => {
+    const calc = await calculateSalaryStructure({
+      ...baseInput(1600000),
+      taxRegime: "manual_tds",
+      manualTdsAnnual: 120000,
+    });
+    expect(calc.annualTax).toBe(120000);
+    expect(calc.monthlyTds).toBe(10000);
+  });
+
+  it("handles pf disabled", async () => {
+    const calc = await calculateSalaryStructure({
+      ...baseInput(1600000),
+      pfEnabled: false,
+      employeePfEnabled: false,
+      employerPfIncludedInCtc: false,
+    });
+    expect(getComponent(calc, "employee_pf")).toBeUndefined();
+    expect(getComponent(calc, "employer_pf_adjustment")).toBeUndefined();
+  });
+
+  it("handles employer pf included vs excluded", async () => {
+    const included = await calculateSalaryStructure({ ...baseInput(1600000), employerPfIncludedInCtc: true });
+    const excluded = await calculateSalaryStructure({ ...baseInput(1600000), employerPfIncludedInCtc: false });
+    expect(getComponent(included, "employer_pf_adjustment")?.annual).toBe(21600);
+    expect(getComponent(excluded, "employer_pf_adjustment")).toBeUndefined();
+  });
+
+  it("returns net salary and words", async () => {
+    const calc = await calculateSalaryStructure(baseInput(1600000));
+    expect(calc.netMonthlySalary).toBeGreaterThan(0);
+    expect(calc.netSalaryInWords.toLowerCase()).toContain("rupees");
+  });
+});
+
+describe("salary helper utilities", () => {
+  it("converts amount to words", () => {
+    expect(amountToRupeesWords(33333)).toContain("Rupees");
+  });
+
+  it("payslip pdf generation does not crash", async () => {
+    const pdf = await buildPayslipPdf({
+      companyName: "AASTHIX TALENT",
+      monthLabel: "May 2026",
+      employeeName: "Vamshi Krishna",
+      employeeCode: "EMP-001",
+      department: "Engineering",
+      designation: "Frontend Developer",
+      dateOfJoining: "2024-04-01",
+      pan: "ABCDE1234F",
+      uanNumber: "123456789012",
+      pfNumber: "PF-0001",
+      bankAccountNumber: "000111222333",
+      workLocation: "Hyderabad",
+      paidDays: 30,
+      lopDays: 0,
+      earnings: [{ name: "Basic Salary", annual: 480000, monthly: 40000, amountForMonth: 40000 }],
+      deductions: [{ name: "Professional Tax", annual: 2400, monthly: 200, amountForMonth: 200 }],
+      grossSalary: 40000,
+      totalDeductions: 200,
+      netSalary: 39800,
+      netSalaryInWords: "Thirty Nine Thousand Eight Hundred Rupees Only",
+    });
+    expect(Buffer.isBuffer(pdf)).toBe(true);
+    expect(pdf.length).toBeGreaterThan(1000);
+  });
+});
