@@ -75,6 +75,7 @@ export default function OnboardingPublicPage() {
     department: "",
     reporting_manager: "",
     work_location: "",
+    uan: "",
     employment_type: "",
     joining_date: "",
     work_mode: "",
@@ -268,6 +269,7 @@ export default function OnboardingPublicPage() {
           <label className="text-xs text-slate-600">Department<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.department || ""} onChange={(e) => setField("department", e.target.value)} /></label>
           <label className="text-xs text-slate-600">Reporting Manager<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.reporting_manager || ""} onChange={(e) => setField("reporting_manager", e.target.value)} /></label>
           <label className="text-xs text-slate-600">Work Location<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.work_location || ""} onChange={(e) => setField("work_location", e.target.value)} /></label>
+          <label className="text-xs text-slate-600">UAN<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.uan || ""} onChange={(e) => setField("uan", e.target.value)} /></label>
           <label className="text-xs text-slate-600">Employment Type
             <select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.employment_type || ""} onChange={(e) => setField("employment_type", e.target.value)}>
               <option value="">Select</option><option>Full Time</option><option>Part Time</option><option>Contract</option>
@@ -433,4 +435,3 @@ export default function OnboardingPublicPage() {
     </div>
   );
 }
-
