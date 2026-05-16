@@ -34,10 +34,16 @@ export async function GET(_request: Request, { params }: { params: { packetId: s
   if (packetRes.rowCount === 0) return NextResponse.json({ error: "Packet not found." }, { status: 404 });
 
   const docsRes = await query(
-    `SELECT doc_type, file_name, file_url, uploaded_at FROM application_onboarding_documents WHERE packet_id = $1 ORDER BY uploaded_at ASC`,
+    `SELECT doc_type, file_name, file_url, uploaded_at, file_blob FROM application_onboarding_documents WHERE packet_id = $1 ORDER BY uploaded_at ASC`,
     [packetId]
   );
-  const docs = docsRes.rows as Array<{ doc_type: string; file_name: string; file_url: string; uploaded_at: string }>;
+  const docs = docsRes.rows as Array<{
+    doc_type: string;
+    file_name: string;
+    file_url: string;
+    uploaded_at: string;
+    file_blob: Buffer | null;
+  }>;
   if (docs.length === 0) return NextResponse.json({ error: "No documents uploaded for this packet." }, { status: 404 });
 
   const zip = new JSZip();
@@ -45,7 +51,7 @@ export async function GET(_request: Request, { params }: { params: { packetId: s
   for (const doc of docs) {
     const localPath = path.join(process.cwd(), "public", doc.file_url.replace(/^\//, ""));
     try {
-      const bytes = await readFile(localPath);
+      const bytes = doc.file_blob && Buffer.isBuffer(doc.file_blob) ? doc.file_blob : await readFile(localPath);
       const folder = safeSegment(doc.doc_type || "misc");
       const fileName = safeSegment(doc.file_name || "document");
       zip.folder(folder)?.file(fileName, bytes);

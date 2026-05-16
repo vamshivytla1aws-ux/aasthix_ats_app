@@ -8,6 +8,7 @@ type DocRow = {
   file_url: string;
   uploaded_at: string;
   mime?: string | null;
+  file_blob?: string | null;
 };
 
 type PacketMeta = {
@@ -74,6 +75,15 @@ function formatDate(value?: string | null) {
 async function loadFile(filePath: string) {
   try {
     return await readFile(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function loadDocBytesFromRow(doc: DocRow) {
+  if (!doc.file_blob) return null;
+  try {
+    return Buffer.from(doc.file_blob, "base64");
   } catch {
     return null;
   }
@@ -321,7 +331,11 @@ export async function buildOnboardingPdf(input: {
 
   const photoDoc = input.docs.find((d) => d.doc_type === "passport_photo");
   if (photoDoc) {
-    const photoBytes = await loadFile(path.join(process.cwd(), "public", photoDoc.file_url.replace(/^\//, "")));
+    const blobBytes = loadDocBytesFromRow(photoDoc);
+    const photoBytes =
+      blobBytes && blobBytes.length > 0
+        ? blobBytes
+        : await loadFile(path.join(process.cwd(), "public", photoDoc.file_url.replace(/^\//, "")));
     if (photoBytes) {
       const photo = await embedFromBytes(pdf, photoBytes, photoDoc.file_name, photoDoc.mime);
       if (photo) {
@@ -545,11 +559,13 @@ export async function buildOnboardingPdf(input: {
       p.drawRectangle({ x: cell.x, y: cell.y, width: cell.w, height: cell.h, borderWidth: 1, borderColor: rgb(0.72, 0.75, 0.8) });
       p.drawText(ellipsize(doc.file_name, bold, 8.5, cell.w - 12), { x: cell.x + 6, y: cell.y + cell.h - 14, size: 8.5, font: bold });
       const bytes = await loadFile(path.join(process.cwd(), "public", doc.file_url.replace(/^\//, "")));
-      if (!bytes) {
+      const blobBytes = loadDocBytesFromRow(doc);
+      const effectiveBytes = blobBytes && blobBytes.length > 0 ? blobBytes : bytes;
+      if (!effectiveBytes) {
         p.drawText("Preview unavailable", { x: cell.x + 10, y: cell.y + cell.h / 2, size: 9, font, color: rgb(0.35, 0.38, 0.44) });
         continue;
       }
-      const img = await embedFromBytes(pdf, bytes, doc.file_name, doc.mime);
+      const img = await embedFromBytes(pdf, effectiveBytes, doc.file_name, doc.mime);
       if (!img) {
         p.drawText("Preview unavailable", { x: cell.x + 10, y: cell.y + cell.h / 2, size: 9, font, color: rgb(0.35, 0.38, 0.44) });
         continue;

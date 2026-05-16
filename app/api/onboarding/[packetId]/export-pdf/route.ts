@@ -38,7 +38,7 @@ export async function GET(_request: Request, { params }: { params: { packetId: s
   const payload = (payloadRes.rows?.[0]?.payload ?? {}) as Record<string, unknown>;
 
   const docsRes = await query(
-    `SELECT doc_type, file_name, file_url, mime, uploaded_at FROM application_onboarding_documents WHERE packet_id = $1 ORDER BY uploaded_at ASC`,
+    `SELECT doc_type, file_name, file_url, mime, uploaded_at, file_blob FROM application_onboarding_documents WHERE packet_id = $1 ORDER BY uploaded_at ASC`,
     [packetId]
   );
   const docs = docsRes.rows as Array<any>;
@@ -57,6 +57,7 @@ export async function GET(_request: Request, { params }: { params: { packetId: s
       file_url: String(d.file_url || ""),
       uploaded_at: String(d.uploaded_at || ""),
       mime: d.mime ? String(d.mime) : null,
+      file_blob: Buffer.isBuffer(d.file_blob) ? d.file_blob.toString("base64") : null,
     })),
   });
   await query(

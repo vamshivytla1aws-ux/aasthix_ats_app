@@ -96,6 +96,7 @@ export async function saveOnboardingFiles(input: {
     file_url: string;
     mime: string | null;
     size_bytes: number;
+    file_blob: Buffer;
   }> = [];
 
   for (const row of input.filesByDoc) {
@@ -111,6 +112,7 @@ export async function saveOnboardingFiles(input: {
         file_url: `/uploads/onboarding/${input.packetId}/${safeName}`,
         mime: file.type || null,
         size_bytes: file.size,
+        file_blob: bytes,
       });
     }
   }
@@ -119,10 +121,10 @@ export async function saveOnboardingFiles(input: {
     await query(
       `
       INSERT INTO application_onboarding_documents
-      (packet_id, doc_type, file_name, file_url, mime, size_bytes, uploaded_at)
-      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      (packet_id, doc_type, file_name, file_url, mime, size_bytes, file_blob, uploaded_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
       `,
-      [input.packetId, doc.doc_type, doc.file_name, doc.file_url, doc.mime, doc.size_bytes]
+      [input.packetId, doc.doc_type, doc.file_name, doc.file_url, doc.mime, doc.size_bytes, doc.file_blob]
     );
   }
 
