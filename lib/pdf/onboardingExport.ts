@@ -49,18 +49,18 @@ const PAGE_H = 595;
 // Shared layout constants for every page render.
 const PAGE_MARGIN_X = 32;
 const HEADER_TOP = PAGE_H - 16;
-const LOGO_X = 72;
-const LOGO_Y = PAGE_H - 84;
-const LOGO_WIDTH = 72;
-const LOGO_HEIGHT = 72;
+const LOGO_X = 66;
+const LOGO_Y = PAGE_H - 94;
+const LOGO_WIDTH = 92;
+const LOGO_HEIGHT = 92;
 const BRAND_TEXT_X = LOGO_X + LOGO_WIDTH + 20;
-const BRAND_TITLE_Y = PAGE_H - 42;
-const BRAND_SUBTITLE_Y = PAGE_H - 66;
+const BRAND_TITLE_Y = PAGE_H - 50;
+const BRAND_SUBTITLE_Y = PAGE_H - 74;
 const CONTACT_X = PAGE_W - 210;
 const DIVIDER_Y = PAGE_H - 112;
 const HEADER_HEIGHT = 120;
 const FOOTER_HEIGHT = 80;
-const CONTENT_TOP = DIVIDER_Y + 35;
+const CONTENT_TOP = DIVIDER_Y - 35;
 const CONTENT_BOTTOM = FOOTER_HEIGHT + 10;
 const FOOTER_DIVIDER_Y = 56;
 
@@ -183,8 +183,9 @@ function ellipsize(text: string, font: PDFFont, size: number, maxWidth: number) 
 }
 
 function drawPhoneIcon(page: any, x: number, y: number) {
-  page.drawLine({ start: { x, y }, end: { x: x + 6, y: y + 3 }, thickness: 1.4, color: CYAN });
-  page.drawLine({ start: { x: x + 6, y: y + 3 }, end: { x: x + 2, y: y + 7 }, thickness: 1.4, color: CYAN });
+  page.drawRectangle({ x: x + 1.4, y: y + 0.8, width: 4.2, height: 7, borderWidth: 1, borderColor: CYAN });
+  page.drawRectangle({ x: x + 2.2, y: y + 6.8, width: 2.6, height: 0.9, color: CYAN });
+  page.drawRectangle({ x: x + 2.2, y: y + 0.9, width: 2.6, height: 0.9, color: CYAN });
 }
 
 function drawMailIcon(page: any, x: number, y: number) {
@@ -196,6 +197,7 @@ function drawMailIcon(page: any, x: number, y: number) {
 function drawWebIcon(page: any, x: number, y: number) {
   page.drawCircle({ x: x + 3.5, y: y + 3.5, size: 3.4, borderWidth: 1, borderColor: CYAN });
   page.drawLine({ start: { x: x + 0.7, y: y + 3.5 }, end: { x: x + 6.3, y: y + 3.5 }, thickness: 1, color: CYAN });
+  page.drawLine({ start: { x: x + 3.5, y: y + 0.7 }, end: { x: x + 3.5, y: y + 6.3 }, thickness: 1, color: CYAN });
 }
 
 function drawHeader(page: any, bold: PDFFont, font: PDFFont, logo: PDFImage | null) {
@@ -212,9 +214,9 @@ function drawHeader(page: any, bold: PDFFont, font: PDFFont, logo: PDFImage | nu
   page.drawText("AASTHIX TALENT", { x: BRAND_TEXT_X, y: BRAND_TITLE_Y, size: 20, font: bold, color: rgb(0.2, 0.21, 0.23) });
   page.drawText("Talent That Drives Success", { x: BRAND_TEXT_X, y: BRAND_SUBTITLE_Y, size: 12, font, color: rgb(0.27, 0.31, 0.36) });
 
-  const l1 = HEADER_TOP - 22;
-  const l2 = HEADER_TOP - 46;
-  const l3 = HEADER_TOP - 70;
+  const l1 = HEADER_TOP - 28;
+  const l2 = HEADER_TOP - 50;
+  const l3 = HEADER_TOP - 72;
   const ix = CONTACT_X + 154;
   page.drawText("+91 9573543933", { x: CONTACT_X, y: l1, size: 11, font, color: rgb(0.2, 0.21, 0.23) });
   page.drawText("contact@aasthix.com", { x: CONTACT_X, y: l2, size: 11, font, color: rgb(0.2, 0.21, 0.23) });
