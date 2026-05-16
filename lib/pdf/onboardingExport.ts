@@ -46,7 +46,6 @@ const PAGE_W = 842;
 const PAGE_H = 595;
 const MARGIN_X = 26;
 const HEADER_TOP_PAD = 16;
-const HEADER_BLOCK_H = 84;
 const HEADER_STRIP_Y = PAGE_H - 116;
 const CONTENT_TOP_Y = PAGE_H - 136;
 const FOOTER_LINE_Y = 56;
@@ -154,19 +153,19 @@ function drawHeaderAndFooter(params: {
   const blockTop = PAGE_H - HEADER_TOP_PAD;
 
   if (logo) {
-    const fit = fitImage(logo, 54, 54);
-    page.drawImage(logo, { x: leftX, y: blockTop - fit.height - 18, width: fit.width, height: fit.height });
+    const fit = fitImage(logo, 72, 72);
+    page.drawImage(logo, { x: leftX, y: blockTop - fit.height - 22, width: fit.width, height: fit.height });
   }
 
   page.drawText("AASTHIX TALENT", {
-    x: leftX + 76,
+    x: leftX + 92,
     y: blockTop - 32,
     size: 18,
     font: bold,
     color: rgb(0.16, 0.18, 0.22),
   });
   page.drawText("Talent That Drives Success", {
-    x: leftX + 76,
+    x: leftX + 92,
     y: blockTop - 58,
     size: 11,
     font,
@@ -199,6 +198,19 @@ function drawHeaderAndFooter(params: {
     "Unit.No. 114, Manjeera Trinity Corporate, JNTU - Hitech Road, beside LuLu Mall, Ashok Nagar, Kukatpally Housing Board Colony, Kukatpally, Hyderabad, Telangana 500072.",
     { x: MARGIN_X + 84, y: FOOTER_TEXT_Y, size: 9, font, color: rgb(0.2, 0.22, 0.27) }
   );
+}
+
+function drawSectionHeader(page: any, text: string, x: number, y: number, width: number, bold: PDFFont) {
+  page.drawRectangle({
+    x,
+    y: y - 18,
+    width,
+    height: 18,
+    color: rgb(0.9, 0.93, 0.98),
+    borderWidth: 1,
+    borderColor: rgb(0.62, 0.7, 0.92),
+  });
+  page.drawText(text, { x: x + 8, y: y - 13, size: 9.5, font: bold, color: rgb(0.08, 0.2, 0.46) });
 }
 
 function drawLineField(
@@ -327,7 +339,7 @@ export async function buildOnboardingPdf(input: {
   }
 
   const pStartY = CONTENT_TOP_Y - 168;
-  first.drawText("Personal & Employment", { x: 40, y: pStartY, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
+  drawSectionHeader(first, "Personal & Employment", 40, pStartY + 10, 752, bold);
   drawLineField(first, { label: "Full Name", value: asText(payload.full_name), x: 40, y: pStartY - 26, width: 250, labelWidth: 82, font, bold });
   drawLineField(first, { label: "Date of Birth", value: asText(payload.date_of_birth), x: 300, y: pStartY - 26, width: 250, labelWidth: 96, font, bold });
   drawLineField(first, { label: "Gender", value: asText(payload.gender), x: 560, y: pStartY - 26, width: 232, labelWidth: 58, font, bold });
@@ -341,7 +353,7 @@ export async function buildOnboardingPdf(input: {
 
   // Page 2+: education / employment / references with overflow guards
   let page = newPage(pdf, font, bold, logo);
-  let y = CONTENT_TOP_Y - 6;
+  let y = CONTENT_TOP_Y - 18;
 
   const eduCols = [40, 210, 430, 514, 598, 710, 800];
   const eduHeaderH = 22;
@@ -351,8 +363,8 @@ export async function buildOnboardingPdf(input: {
     page = newPage(pdf, font, bold, logo);
     y = CONTENT_TOP_Y - 6;
   }
-  page.drawText("Education Details", { x: 40, y, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
-  y -= 14;
+  drawSectionHeader(page, "Education Details", 40, y, 760, bold);
+  y -= 24;
   drawTableRow(
     page,
     eduCols,
@@ -375,8 +387,8 @@ export async function buildOnboardingPdf(input: {
     if (y - eduRowH < CONTENT_BOTTOM_Y) {
       page = newPage(pdf, font, bold, logo);
       y = CONTENT_TOP_Y - 6;
-      page.drawText("Education Details (cont.)", { x: 40, y, size: 11, font: bold, color: rgb(0.12, 0.18, 0.28) });
-      y -= 14;
+      drawSectionHeader(page, "Education Details (cont.)", 40, y, 760, bold);
+      y -= 24;
       drawTableRow(
         page,
         eduCols,
@@ -408,8 +420,8 @@ export async function buildOnboardingPdf(input: {
     page = newPage(pdf, font, bold, logo);
     y = CONTENT_TOP_Y - 6;
   }
-  page.drawText("Previous Employment / Jobs", { x: 40, y, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
-  y -= 14;
+  drawSectionHeader(page, "Previous Employment / Jobs", 40, y, 760, bold);
+  y -= 24;
   drawTableRow(page, empCols, y, empHeaderH, ["S.No", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"], {
     font: bold,
     size: 8.5,
@@ -420,8 +432,8 @@ export async function buildOnboardingPdf(input: {
     if (y - empRowH < CONTENT_BOTTOM_Y) {
       page = newPage(pdf, font, bold, logo);
       y = CONTENT_TOP_Y - 6;
-      page.drawText("Previous Employment / Jobs (cont.)", { x: 40, y, size: 11, font: bold, color: rgb(0.12, 0.18, 0.28) });
-      y -= 14;
+      drawSectionHeader(page, "Previous Employment / Jobs (cont.)", 40, y, 760, bold);
+      y -= 24;
       drawTableRow(page, empCols, y, empHeaderH, ["S.No", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"], {
         font: bold,
         size: 8.5,
@@ -455,8 +467,8 @@ export async function buildOnboardingPdf(input: {
     page = newPage(pdf, font, bold, logo);
     y = CONTENT_TOP_Y - 6;
   }
-  page.drawText("Professional References", { x: 40, y, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
-  y -= 14;
+  drawSectionHeader(page, "Professional References", 40, y, 760, bold);
+  y -= 24;
   drawTableRow(page, refCols, y, refHeaderH, ["Field", "Reference No 1", "Reference No 2", "Reference No 3"], {
     font: bold,
     size: 8.5,
@@ -477,32 +489,35 @@ export async function buildOnboardingPdf(input: {
 
   // Manifest pages with wrapping/pagination
   page = newPage(pdf, font, bold, logo);
-  let my = CONTENT_TOP_Y - 6;
-  page.drawText("Document Manifest", { x: 40, y: my, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
-  my -= 18;
+  let my = CONTENT_TOP_Y - 18;
+  drawSectionHeader(page, "Document Manifest", 40, my, 760, bold);
+  my -= 24;
+  const manCols = [40, 180, 510, 800];
+  const manHeaderH = 22;
+  const manRowH = 20;
+  drawTableRow(page, manCols, my, manHeaderH, ["Document Type", "File Name", "Uploaded At"], { font: bold, size: 8.5, bold: true });
+  my -= manHeaderH;
   if (input.docs.length === 0) {
-    page.drawText("No uploaded documents.", { x: 40, y: my, size: 10, font });
+    drawTableRow(page, manCols, my, manRowH, ["-", "No uploaded documents.", "-"], { font, size: 8.5 });
   } else {
     for (const d of input.docs) {
-      const line = `${d.doc_type} | ${d.file_name} | ${formatDate(d.uploaded_at)}`;
-      const wrapped: string[] = [];
-      let remaining = line;
-      while (remaining.length > 0) {
-        let cut = remaining.length;
-        while (cut > 0 && font.widthOfTextAtSize(remaining.slice(0, cut), 8) > PAGE_W - 90) cut -= 1;
-        wrapped.push(remaining.slice(0, Math.max(1, cut)));
-        remaining = remaining.slice(Math.max(1, cut));
+      if (my - manRowH < CONTENT_BOTTOM_Y) {
+        page = newPage(pdf, font, bold, logo);
+        my = CONTENT_TOP_Y - 18;
+        drawSectionHeader(page, "Document Manifest (cont.)", 40, my, 760, bold);
+        my -= 24;
+        drawTableRow(page, manCols, my, manHeaderH, ["Document Type", "File Name", "Uploaded At"], { font: bold, size: 8.5, bold: true });
+        my -= manHeaderH;
       }
-      for (const segment of wrapped) {
-        if (my < CONTENT_BOTTOM_Y) {
-          page = newPage(pdf, font, bold, logo);
-          my = CONTENT_TOP_Y - 6;
-          page.drawText("Document Manifest (cont.)", { x: 40, y: my, size: 11, font: bold, color: rgb(0.12, 0.18, 0.28) });
-          my -= 18;
-        }
-        page.drawText(segment, { x: 40, y: my, size: 8, font, color: rgb(0.14, 0.16, 0.2) });
-        my -= 11;
-      }
+      drawTableRow(
+        page,
+        manCols,
+        my,
+        manRowH,
+        [asText(d.doc_type), asText(d.file_name), formatDate(d.uploaded_at)],
+        { font, size: 8 }
+      );
+      my -= manRowH;
     }
   }
 
