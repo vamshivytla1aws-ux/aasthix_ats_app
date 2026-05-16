@@ -360,7 +360,9 @@ export async function buildOnboardingPdf(input: {
   first.drawRectangle({ x: passportBox.x, y: passportBox.y, width: passportBox.w, height: passportBox.h, borderWidth: 2, borderColor: rgb(0.12, 0.12, 0.12) });
   first.drawText("Passport Size Photo", { x: passportBox.x + 10, y: passportBox.y + passportBox.h - 18, size: 9, font: bold, color: rgb(0.18, 0.2, 0.24) });
 
-  const photoDoc = input.docs.find((d) => d.doc_type === "passport_photo");
+  const photoDoc =
+    input.docs.find((d) => d.doc_type === "passport_photo") ||
+    input.docs.find((d) => String(d.doc_type || "").toLowerCase().includes("passport"));
   if (photoDoc) {
     const blobBytes = loadDocBytesFromRow(photoDoc);
     const photoBytes =
@@ -383,7 +385,8 @@ export async function buildOnboardingPdf(input: {
     }
   }
 
-  const pStartY = CONTENT_TOP_Y - 168;
+  // Keep Personal & Employment completely below the photo block so fields never overlap the passport area.
+  const pStartY = passportBox.y - 28;
   drawSectionHeader(first, "Personal & Employment", 40, pStartY + 10, 752, bold);
   drawLineField(first, { label: "Full Name", value: asText(payload.full_name), x: 40, y: pStartY - 26, width: 250, labelWidth: 82, font, bold });
   drawLineField(first, { label: "Date of Birth", value: asText(payload.date_of_birth), x: 300, y: pStartY - 26, width: 250, labelWidth: 96, font, bold });
