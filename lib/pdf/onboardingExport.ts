@@ -54,8 +54,8 @@ const LOGO_Y = PAGE_H - 106;
 const LOGO_WIDTH = 110;
 const LOGO_HEIGHT = 110;
 const BRAND_TEXT_X = LOGO_X + 84;
-const BRAND_TITLE_Y = PAGE_H - 52;
-const BRAND_SUBTITLE_Y = PAGE_H - 72;
+const BRAND_TITLE_Y = PAGE_H - 54;
+const BRAND_SUBTITLE_Y = PAGE_H - 70;
 const CONTACT_X = PAGE_W - 198;
 const DIVIDER_Y = PAGE_H - 112;
 const HEADER_HEIGHT = 120;
@@ -214,9 +214,9 @@ function drawHeader(page: any, bold: PDFFont, font: PDFFont, logo: PDFImage | nu
   page.drawText("AASTHIX TALENT", { x: BRAND_TEXT_X, y: BRAND_TITLE_Y, size: 20, font: bold, color: rgb(0.2, 0.21, 0.23) });
   page.drawText("Talent That Drives Success", { x: BRAND_TEXT_X, y: BRAND_SUBTITLE_Y, size: 12, font, color: rgb(0.27, 0.31, 0.36) });
 
-  const l1 = HEADER_TOP - 28;
-  const l2 = HEADER_TOP - 50;
-  const l3 = HEADER_TOP - 72;
+  const l1 = HEADER_TOP - 30;
+  const l2 = HEADER_TOP - 48;
+  const l3 = HEADER_TOP - 66;
   const contact1 = "+91 9573543933";
   const contact2 = "contact@aasthix.com";
   const contact3 = "www.aasthix.com";
