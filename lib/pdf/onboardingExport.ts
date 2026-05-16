@@ -46,6 +46,9 @@ type ReferenceRow = {
 const PAGE_W = 842;
 const PAGE_H = 595;
 const MARGIN_X = 26;
+// Fixed layout rails so every page keeps the same safe drawing area.
+const HEADER_HEIGHT = 120;
+const FOOTER_HEIGHT = 80;
 const HEADER_TOP_PAD = 16;
 const HEADER_STRIP_Y = PAGE_H - 116;
 const CONTENT_TOP_Y = PAGE_H - 136;
@@ -152,7 +155,7 @@ function ellipsize(text: string, font: PDFFont, size: number, maxWidth: number) 
   return `${out}${suffix}`;
 }
 
-function drawHeaderAndFooter(params: {
+function drawHeader(params: {
   page: any;
   font: PDFFont;
   bold: PDFFont;
@@ -195,7 +198,13 @@ function drawHeaderAndFooter(params: {
     color: rgb(0.2, 0.22, 0.29),
   });
   page.drawRectangle({ x: MARGIN_X - 10, y: HEADER_STRIP_Y, width: 430, height: 8, color: rgb(0.13, 0.71, 0.95) });
+}
 
+function drawFooter(params: {
+  page: any;
+  font: PDFFont;
+}) {
+  const { page, font } = params;
   page.drawRectangle({
     x: MARGIN_X - 10,
     y: FOOTER_LINE_Y,
@@ -248,8 +257,30 @@ function drawLineField(
 
 function newPage(pdf: PDFDocument, font: PDFFont, bold: PDFFont, logo: PDFImage | null) {
   const page = pdf.addPage([PAGE_W, PAGE_H]);
-  drawHeaderAndFooter({ page, font, bold, logo });
+  drawHeader({ page, font, bold, logo });
+  drawFooter({ page, font });
   return page;
+}
+
+type FlowState = {
+  page: any;
+  y: number;
+};
+
+/**
+ * Ensures there is enough vertical space for the next block.
+ * If not, it creates a new page and redraws header/footer before continuing.
+ */
+function ensurePageBreak(
+  state: FlowState,
+  requiredHeight: number,
+  context: { pdf: PDFDocument; font: PDFFont; bold: PDFFont; logo: PDFImage | null; resetY?: number }
+) {
+  const resetY = context.resetY ?? CONTENT_TOP_Y - 6;
+  if (state.y - requiredHeight < CONTENT_BOTTOM_Y) {
+    state.page = newPage(context.pdf, context.font, context.bold, context.logo);
+    state.y = resetY;
+  }
 }
 
 function drawTableRow(
@@ -366,28 +397,24 @@ export async function buildOnboardingPdf(input: {
   drawLineField(first, { label: "Declaration Date", value: asText(payload.declaration_date), x: 40, y: pStartY - 110, width: 250, labelWidth: 118, font, bold });
 
   // Page 2+: education / employment / references with overflow guards
-  let page = newPage(pdf, font, bold, logo);
-  let y = CONTENT_TOP_Y - 18;
+  const flow: FlowState = { page: newPage(pdf, font, bold, logo), y: CONTENT_TOP_Y - 18 };
 
   const eduCols = [40, 210, 430, 514, 598, 710, 800];
   const eduHeaderH = 22;
   const eduRowH = 28;
   const educationSectionHeight = 18 + eduHeaderH + Math.max(5, educationRows.length || 5) * eduRowH;
-  if (y - educationSectionHeight < CONTENT_BOTTOM_Y) {
-    page = newPage(pdf, font, bold, logo);
-    y = CONTENT_TOP_Y - 6;
-  }
-  drawSectionHeader(page, "Education Details", 40, y, 760, bold);
-  y -= 24;
+  ensurePageBreak(flow, educationSectionHeight, { pdf, font, bold, logo });
+  drawSectionHeader(flow.page, "Education Details", 40, flow.y, 760, bold);
+  flow.y -= 24;
   drawTableRow(
-    page,
+    flow.page,
     eduCols,
-    y,
+    flow.y,
     eduHeaderH,
     ["Education", "College/University (with Location)", "From", "To", "Specialization", "Percentage"],
     { font: bold, size: 9, bold: true }
   );
-  y -= eduHeaderH;
+  flow.y -= eduHeaderH;
   const eduData = educationRows.length
     ? educationRows
     : [
@@ -398,75 +425,70 @@ export async function buildOnboardingPdf(input: {
         { education: "Post-Graduation/Equivalent" },
       ];
   for (const row of eduData) {
-    if (y - eduRowH < CONTENT_BOTTOM_Y) {
-      page = newPage(pdf, font, bold, logo);
-      y = CONTENT_TOP_Y - 6;
-      drawSectionHeader(page, "Education Details (cont.)", 40, y, 760, bold);
-      y -= 24;
+    ensurePageBreak(flow, eduRowH, { pdf, font, bold, logo });
+    if (flow.y === CONTENT_TOP_Y - 6) {
+      drawSectionHeader(flow.page, "Education Details (cont.)", 40, flow.y, 760, bold);
+      flow.y -= 24;
       drawTableRow(
-        page,
+        flow.page,
         eduCols,
-        y,
+        flow.y,
         eduHeaderH,
         ["Education", "College/University (with Location)", "From", "To", "Specialization", "Percentage"],
         { font: bold, size: 9, bold: true }
       );
-      y -= eduHeaderH;
+      flow.y -= eduHeaderH;
     }
     drawTableRow(
-      page,
+      flow.page,
       eduCols,
-      y,
+      flow.y,
       eduRowH,
       [asText(row.education), asText(row.institute), asText(row.from), asText(row.to), asText(row.specialization), asText(row.percentage)],
       { font, size: 8 }
     );
-    y -= eduRowH;
+    flow.y -= eduRowH;
   }
 
-  y -= 16;
+  flow.y -= 16;
   const empCols = [40, 74, 280, 350, 430, 510, 640, 800];
   const empHeaderH = 22;
   const empRowH = 24;
   const empRows = prevRows.length ? prevRows : [{}];
   const empSectionHeight = 18 + empHeaderH + empRows.length * empRowH;
-  if (y - empSectionHeight < CONTENT_BOTTOM_Y) {
-    page = newPage(pdf, font, bold, logo);
-    y = CONTENT_TOP_Y - 6;
-  }
-  drawSectionHeader(page, "Previous Employment / Jobs", 40, y, 760, bold);
-  y -= 24;
-  drawTableRow(page, empCols, y, empHeaderH, ["S.No", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"], {
+  ensurePageBreak(flow, empSectionHeight, { pdf, font, bold, logo });
+  drawSectionHeader(flow.page, "Previous Employment / Jobs", 40, flow.y, 760, bold);
+  flow.y -= 24;
+  drawTableRow(flow.page, empCols, flow.y, empHeaderH, ["S.No", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"], {
     font: bold,
     size: 8.5,
     bold: true,
   });
-  y -= empHeaderH;
+  flow.y -= empHeaderH;
   empRows.forEach((row, index) => {
-    if (y - empRowH < CONTENT_BOTTOM_Y) {
-      page = newPage(pdf, font, bold, logo);
-      y = CONTENT_TOP_Y - 6;
-      drawSectionHeader(page, "Previous Employment / Jobs (cont.)", 40, y, 760, bold);
-      y -= 24;
-      drawTableRow(page, empCols, y, empHeaderH, ["S.No", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"], {
+    ensurePageBreak(flow, empRowH, { pdf, font, bold, logo });
+    if (flow.y === CONTENT_TOP_Y - 6) {
+      drawSectionHeader(flow.page, "Previous Employment / Jobs (cont.)", 40, flow.y, 760, bold);
+      flow.y -= 24;
+      drawTableRow(flow.page, empCols, flow.y, empHeaderH, ["S.No", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"], {
         font: bold,
         size: 8.5,
         bold: true,
       });
-      y -= empHeaderH;
+      flow.y -= empHeaderH;
     }
     drawTableRow(
-      page,
+      flow.page,
       empCols,
-      y,
+      flow.y,
       empRowH,
       [String(index + 1), asText(row.employer), asText(row.empId), asText(row.from), asText(row.to), asText(row.designation), asText(row.salary)],
       { font, size: 8 }
     );
-    y -= empRowH;
+    flow.y -= empRowH;
   });
 
-  y -= 16;
+  flow.y -= 16;
   const refCols = [40, 240, 426, 612, 800];
   const refHeaderH = 22;
   const refRowH = 24;
@@ -477,61 +499,57 @@ export async function buildOnboardingPdf(input: {
   ];
   const refs = [refRows[0] || {}, refRows[1] || {}, refRows[2] || {}];
   const refSectionHeight = 18 + refHeaderH + refFields.length * refRowH;
-  if (y - refSectionHeight < CONTENT_BOTTOM_Y) {
-    page = newPage(pdf, font, bold, logo);
-    y = CONTENT_TOP_Y - 6;
-  }
-  drawSectionHeader(page, "Professional References", 40, y, 760, bold);
-  y -= 24;
-  drawTableRow(page, refCols, y, refHeaderH, ["Field", "Reference No 1", "Reference No 2", "Reference No 3"], {
+  ensurePageBreak(flow, refSectionHeight, { pdf, font, bold, logo });
+  drawSectionHeader(flow.page, "Professional References", 40, flow.y, 760, bold);
+  flow.y -= 24;
+  drawTableRow(flow.page, refCols, flow.y, refHeaderH, ["Field", "Reference No 1", "Reference No 2", "Reference No 3"], {
     font: bold,
     size: 8.5,
     bold: true,
   });
-  y -= refHeaderH;
+  flow.y -= refHeaderH;
   for (const field of refFields) {
     drawTableRow(
-      page,
+      flow.page,
       refCols,
-      y,
+      flow.y,
       refRowH,
       [field.label, asText(refs[0][field.key]), asText(refs[1][field.key]), asText(refs[2][field.key])],
       { font, size: 8 }
     );
-    y -= refRowH;
+    flow.y -= refRowH;
   }
 
   // Manifest pages with wrapping/pagination
-  page = newPage(pdf, font, bold, logo);
-  let my = CONTENT_TOP_Y - 18;
-  drawSectionHeader(page, "Document Manifest", 40, my, 760, bold);
-  my -= 24;
+  flow.page = newPage(pdf, font, bold, logo);
+  flow.y = CONTENT_TOP_Y - 18;
+  drawSectionHeader(flow.page, "Document Manifest", 40, flow.y, 760, bold);
+  flow.y -= 24;
   const manCols = [40, 180, 510, 800];
   const manHeaderH = 22;
   const manRowH = 20;
-  drawTableRow(page, manCols, my, manHeaderH, ["Document Type", "File Name", "Uploaded At"], { font: bold, size: 8.5, bold: true });
-  my -= manHeaderH;
+  drawTableRow(flow.page, manCols, flow.y, manHeaderH, ["Document Type", "File Name", "Uploaded At"], { font: bold, size: 8.5, bold: true });
+  flow.y -= manHeaderH;
   if (input.docs.length === 0) {
-    drawTableRow(page, manCols, my, manRowH, ["-", "No uploaded documents.", "-"], { font, size: 8.5 });
+    drawTableRow(flow.page, manCols, flow.y, manRowH, ["-", "No uploaded documents.", "-"], { font, size: 8.5 });
   } else {
     for (const d of input.docs) {
-      if (my - manRowH < CONTENT_BOTTOM_Y) {
-        page = newPage(pdf, font, bold, logo);
-        my = CONTENT_TOP_Y - 18;
-        drawSectionHeader(page, "Document Manifest (cont.)", 40, my, 760, bold);
-        my -= 24;
-        drawTableRow(page, manCols, my, manHeaderH, ["Document Type", "File Name", "Uploaded At"], { font: bold, size: 8.5, bold: true });
-        my -= manHeaderH;
+      ensurePageBreak(flow, manRowH, { pdf, font, bold, logo, resetY: CONTENT_TOP_Y - 18 });
+      if (flow.y === CONTENT_TOP_Y - 18) {
+        drawSectionHeader(flow.page, "Document Manifest (cont.)", 40, flow.y, 760, bold);
+        flow.y -= 24;
+        drawTableRow(flow.page, manCols, flow.y, manHeaderH, ["Document Type", "File Name", "Uploaded At"], { font: bold, size: 8.5, bold: true });
+        flow.y -= manHeaderH;
       }
       drawTableRow(
-        page,
+        flow.page,
         manCols,
-        my,
+        flow.y,
         manRowH,
         [asText(d.doc_type), asText(d.file_name), formatDate(d.uploaded_at)],
         { font, size: 8 }
       );
-      my -= manRowH;
+      flow.y -= manRowH;
     }
   }
 
@@ -549,34 +567,43 @@ export async function buildOnboardingPdf(input: {
     { x: 430, y: 102, w: 360, h: 175 },
   ];
 
+  function drawAttachmentCard(
+    p: any,
+    cell: { x: number; y: number; w: number; h: number },
+    doc: DocRow,
+    img: PDFImage | null
+  ) {
+    p.drawRectangle({ x: cell.x, y: cell.y, width: cell.w, height: cell.h, borderWidth: 1, borderColor: rgb(0.72, 0.75, 0.8) });
+    p.drawText(ellipsize(doc.file_name, bold, 8.5, cell.w - 12), { x: cell.x + 6, y: cell.y + cell.h - 14, size: 8.5, font: bold });
+    if (!img) {
+      p.drawText("Preview unavailable", { x: cell.x + 10, y: cell.y + cell.h / 2, size: 9, font, color: rgb(0.35, 0.38, 0.44) });
+      return;
+    }
+    const fit = fitImage(img, cell.w - 12, cell.h - 30);
+    p.drawImage(img, {
+      x: cell.x + (cell.w - fit.width) / 2,
+      y: cell.y + (cell.h - 22 - fit.height) / 2,
+      width: fit.width,
+      height: fit.height,
+    });
+  }
+
   for (let i = 0; i < imageDocs.length; i += 4) {
     const chunk = imageDocs.slice(i, i + 4);
     const p = newPage(pdf, font, bold, logo);
-    p.drawText("Attachment Preview", { x: 40, y: CONTENT_TOP_Y - 6, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
+    drawSectionHeader(p, "Attachment Preview", 40, CONTENT_TOP_Y - 2, 760, bold);
     for (let j = 0; j < chunk.length; j++) {
       const doc = chunk[j];
       const cell = cells[j];
-      p.drawRectangle({ x: cell.x, y: cell.y, width: cell.w, height: cell.h, borderWidth: 1, borderColor: rgb(0.72, 0.75, 0.8) });
-      p.drawText(ellipsize(doc.file_name, bold, 8.5, cell.w - 12), { x: cell.x + 6, y: cell.y + cell.h - 14, size: 8.5, font: bold });
       const bytes = await loadFile(path.join(process.cwd(), "public", doc.file_url.replace(/^\//, "")));
       const blobBytes = loadDocBytesFromRow(doc);
       const effectiveBytes = blobBytes && blobBytes.length > 0 ? blobBytes : bytes;
       if (!effectiveBytes) {
-        p.drawText("Preview unavailable", { x: cell.x + 10, y: cell.y + cell.h / 2, size: 9, font, color: rgb(0.35, 0.38, 0.44) });
+        drawAttachmentCard(p, cell, doc, null);
         continue;
       }
       const img = await embedFromBytes(pdf, effectiveBytes, doc.file_name, doc.mime);
-      if (!img) {
-        p.drawText("Preview unavailable", { x: cell.x + 10, y: cell.y + cell.h / 2, size: 9, font, color: rgb(0.35, 0.38, 0.44) });
-        continue;
-      }
-      const fit = fitImage(img, cell.w - 12, cell.h - 30);
-      p.drawImage(img, {
-        x: cell.x + (cell.w - fit.width) / 2,
-        y: cell.y + (cell.h - 22 - fit.height) / 2,
-        width: fit.width,
-        height: fit.height,
-      });
+      drawAttachmentCard(p, cell, doc, img);
     }
   }
 
