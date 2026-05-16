@@ -49,14 +49,14 @@ const PAGE_H = 595;
 // Shared layout constants for every page render.
 const PAGE_MARGIN_X = 32;
 const HEADER_TOP = PAGE_H - 16;
-const LOGO_X = 66;
-const LOGO_Y = PAGE_H - 94;
-const LOGO_WIDTH = 92;
-const LOGO_HEIGHT = 92;
-const BRAND_TEXT_X = LOGO_X + LOGO_WIDTH + 20;
+const LOGO_X = 62;
+const LOGO_Y = PAGE_H - 100;
+const LOGO_WIDTH = 102;
+const LOGO_HEIGHT = 102;
+const BRAND_TEXT_X = LOGO_X + LOGO_WIDTH + 8;
 const BRAND_TITLE_Y = PAGE_H - 50;
 const BRAND_SUBTITLE_Y = PAGE_H - 74;
-const CONTACT_X = PAGE_W - 210;
+const CONTACT_X = PAGE_W - 208;
 const DIVIDER_Y = PAGE_H - 112;
 const HEADER_HEIGHT = 120;
 const FOOTER_HEIGHT = 80;
@@ -217,7 +217,7 @@ function drawHeader(page: any, bold: PDFFont, font: PDFFont, logo: PDFImage | nu
   const l1 = HEADER_TOP - 28;
   const l2 = HEADER_TOP - 50;
   const l3 = HEADER_TOP - 72;
-  const ix = CONTACT_X + 154;
+  const ix = CONTACT_X + 137;
   page.drawText("+91 9573543933", { x: CONTACT_X, y: l1, size: 11, font, color: rgb(0.2, 0.21, 0.23) });
   page.drawText("contact@aasthix.com", { x: CONTACT_X, y: l2, size: 11, font, color: rgb(0.2, 0.21, 0.23) });
   page.drawText("www.aasthix.com", { x: CONTACT_X, y: l3, size: 11, font, color: rgb(0.2, 0.21, 0.23) });
@@ -355,7 +355,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   drawFieldRow(page1, font, bold, { label: "Status :", value: input.packet.status, x: 40, y: CONTENT_TOP - 86, width: 255, labelWidth: 84 });
   drawFieldRow(page1, font, bold, { label: "Submitted At :", value: safeDate(input.packet.submittedAt), x: 300, y: CONTENT_TOP - 86, width: 285, labelWidth: 96 });
 
-  const photoBox = { x: PAGE_W - 196, y: CONTENT_TOP - 176, w: 118, h: 144 };
+  const photoBox = { x: PAGE_W - 198, y: CONTENT_TOP - 184, w: 134, h: 164 };
   page1.drawRectangle({ x: photoBox.x, y: photoBox.y, width: photoBox.w, height: photoBox.h, borderWidth: 2, borderColor: rgb(0.12, 0.12, 0.12) });
   const photoDoc = input.docs.find((d) => d.doc_type === "passport_photo") || input.docs.find((d) => String(d.doc_type || "").toLowerCase().includes("passport"));
   if (photoDoc) {
