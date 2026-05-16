@@ -55,9 +55,10 @@ const CONTENT_TOP_Y = PAGE_H - 136;
 const FOOTER_LINE_Y = 56;
 const FOOTER_TEXT_Y = 24;
 const CONTENT_BOTTOM_Y = 78;
-const HEADER_LOGO_MAX = 96;
-const HEADER_TEXT_X = MARGIN_X + 110;
-const HEADER_RIGHT_X = PAGE_W - 220;
+const HEADER_LOGO_MAX_W = 110;
+const HEADER_LOGO_MAX_H = 84;
+const HEADER_TEXT_X = MARGIN_X + 118;
+const HEADER_RIGHT_X = PAGE_W - 206;
 
 function asText(value: unknown) {
   if (value == null) return "";
@@ -169,28 +170,34 @@ function drawHeader(params: {
   const blockTop = PAGE_H - HEADER_TOP_PAD;
 
   if (logo) {
-    const fit = fitImage(logo, HEADER_LOGO_MAX, HEADER_LOGO_MAX);
-    page.drawImage(logo, { x: leftX, y: blockTop - fit.height - 12, width: fit.width, height: fit.height });
+    const fit = fitImage(logo, HEADER_LOGO_MAX_W, HEADER_LOGO_MAX_H);
+    page.drawImage(logo, { x: leftX + 2, y: blockTop - fit.height - 16, width: fit.width, height: fit.height });
   }
 
   page.drawText("AASTHIX TALENT", {
     x: HEADER_TEXT_X,
-    y: blockTop - 32,
-    size: 18,
+    y: blockTop - 30,
+    size: 17,
     font: bold,
     color: rgb(0.16, 0.18, 0.22),
   });
   page.drawText("Talent That Drives Success", {
     x: HEADER_TEXT_X,
-    y: blockTop - 58,
-    size: 11,
+    y: blockTop - 54,
+    size: 10.5,
     font,
     color: rgb(0.28, 0.31, 0.36),
   });
 
   page.drawText("+91 9573543933", { x: HEADER_RIGHT_X, y: blockTop - 30, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-  page.drawText("contact@aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 55, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-  page.drawText("www.aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 80, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("contact@aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 53, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("www.aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 76, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+
+  // Right-side indicator dots to mirror branded contact icon rhythm without relying on Unicode symbol support.
+  const iconX = HEADER_RIGHT_X + 132;
+  [blockTop - 26, blockTop - 49, blockTop - 72].forEach((y) => {
+    page.drawCircle({ x: iconX, y, size: 3, color: rgb(0.13, 0.71, 0.95) });
+  });
 
   page.drawRectangle({
     x: MARGIN_X - 10,
@@ -215,11 +222,15 @@ function drawFooter(params: {
     color: rgb(0.2, 0.22, 0.29),
   });
   page.drawRectangle({ x: MARGIN_X - 10, y: FOOTER_LINE_Y, width: 350, height: 4, color: rgb(0.13, 0.71, 0.95) });
-  const footerText =
-    "Unit.No. 114, Manjeera Trinity Corporate, JNTU - Hitech Road, beside LuLu Mall, Ashok Nagar, Kukatpally Housing Board Colony, Kukatpally, Hyderabad, Telangana 500072.";
-  const footerSize = 9;
-  const footerX = (PAGE_W - font.widthOfTextAtSize(footerText, footerSize)) / 2;
-  page.drawText(footerText, { x: footerX, y: FOOTER_TEXT_Y, size: footerSize, font, color: rgb(0.2, 0.22, 0.27) });
+  const line1 =
+    "Unit.No. 114, Manjeera Trinity Corporate, JNTU - Hitech Road, beside LuLu Mall, Ashok Nagar,";
+  const line2 =
+    "Kukatpally Housing Board Colony, Kukatpally, Hyderabad, Telangana 500072.";
+  const footerSize = 8.7;
+  const line1X = (PAGE_W - font.widthOfTextAtSize(line1, footerSize)) / 2;
+  const line2X = (PAGE_W - font.widthOfTextAtSize(line2, footerSize)) / 2;
+  page.drawText(line1, { x: line1X, y: FOOTER_TEXT_Y + 11, size: footerSize, font, color: rgb(0.2, 0.22, 0.27) });
+  page.drawText(line2, { x: line2X, y: FOOTER_TEXT_Y, size: footerSize, font, color: rgb(0.2, 0.22, 0.27) });
 }
 
 function drawSectionHeader(page: any, text: string, x: number, y: number, width: number, bold: PDFFont) {
