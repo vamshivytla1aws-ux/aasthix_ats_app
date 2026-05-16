@@ -5,12 +5,13 @@ import useSWR from "swr";
 import { Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
-import OperationResultBanner from "@/components/enterprise/OperationResultBanner";
 import RowActionsMenu from "@/components/enterprise/RowActionsMenu";
 import StatusBadge from "@/components/enterprise/StatusBadge";
+import Toast from "@/components/Toast";
 import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
+import { toneFromStatus, toToastTone, toastMsForTone } from "@/lib/operationFeedback";
 
 type TimesheetStatus = "draft" | "submitted";
 
@@ -181,7 +182,7 @@ export default function TimesheetPage() {
         }),
       });
       setResult({
-        tone: response.operation_status || "success",
+        tone: toneFromStatus(response.operation_status),
         message: response.user_message || "Timesheet header saved.",
         hint: response.hint,
       });
@@ -211,7 +212,7 @@ export default function TimesheetPage() {
       });
       setNewEntry(emptyEntry());
       setResult({
-        tone: response.operation_status || "success",
+        tone: toneFromStatus(response.operation_status),
         message: response.user_message || "Task entry added.",
         hint: response.hint,
       });
@@ -232,7 +233,7 @@ export default function TimesheetPage() {
         hint?: string;
       }>(`/api/timesheet/entries?header_id=${entry.header_id}&entry_id=${entry.id}`, { method: "DELETE" });
       setResult({
-        tone: response.operation_status || "success",
+        tone: toneFromStatus(response.operation_status),
         message: response.user_message || "Task entry removed.",
         hint: response.hint,
       });
@@ -261,6 +262,15 @@ export default function TimesheetPage() {
 
   return (
     <AccessGate permissionKey="timesheet.view_self">
+      {result ? (
+        <Toast
+          message={result.message}
+          detail={result.hint}
+          variant={toToastTone(result.tone)}
+          autoHideMs={toastMsForTone(result.tone)}
+          onClose={() => setResult(null)}
+        />
+      ) : null}
       <ModulePageFrame
         title="Timesheet"
         subtitle="Track daily work by ticket and task details. Admin can review all employee timesheets."
@@ -283,18 +293,6 @@ export default function TimesheetPage() {
           </div>
         }
       >
-        {result ? (
-          <OperationResultBanner
-            tone={result.tone}
-            message={result.message}
-            hint={result.hint}
-            action={
-              <button type="button" className="text-xs font-semibold underline underline-offset-2" onClick={() => setResult(null)}>
-                Dismiss
-              </button>
-            }
-          />
-        ) : null}
         <div className="space-y-5">
           <section className={UI.enterprise.elevatedCard + " p-5"}>
             <div className="grid gap-3 md:grid-cols-4">

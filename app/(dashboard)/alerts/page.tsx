@@ -8,10 +8,11 @@ import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { UI } from "@/lib/ui";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
-import OperationResultBanner from "@/components/enterprise/OperationResultBanner";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import RowActionsMenu, { type RowActionItem } from "@/components/enterprise/RowActionsMenu";
 import FilterDrawer from "@/components/enterprise/FilterDrawer";
+import Toast from "@/components/Toast";
+import { toneFromStatus, toToastTone, toastMsForTone } from "@/lib/operationFeedback";
 
 type AlertRow = {
   id: number;
@@ -135,7 +136,7 @@ export default function AlertsPage() {
       });
       void mutate();
       setResult({
-        tone: response.operation_status || "success",
+        tone: toneFromStatus(response.operation_status),
         message: response.user_message || "Alert marked as read.",
         hint: response.hint,
       });
@@ -161,7 +162,7 @@ export default function AlertsPage() {
       });
       void mutate();
       setResult({
-        tone: response.operation_status || "success",
+        tone: toneFromStatus(response.operation_status),
         message: response.user_message || `${unreadIds.length} alert(s) marked as read.`,
         hint: response.hint,
       });
@@ -175,6 +176,15 @@ export default function AlertsPage() {
 
   return (
     <AccessGate permissionKey="alerts.view">
+      {result ? (
+        <Toast
+          message={result.message}
+          detail={result.hint}
+          variant={toToastTone(result.tone)}
+          autoHideMs={toastMsForTone(result.tone)}
+          onClose={() => setResult(null)}
+        />
+      ) : null}
       <FilterDrawer open={filterDrawer} onClose={() => setFilterDrawer(false)} title="Alert filters" onApply={() => setFilterDrawer(false)}>
         <p className="text-sm text-slate-600 dark:text-slate-400">Saved views and routing rules can live here next.</p>
       </FilterDrawer>
@@ -245,18 +255,6 @@ export default function AlertsPage() {
           </div>
         }
       >
-        {result ? (
-          <OperationResultBanner
-            tone={result.tone}
-            message={result.message}
-            hint={result.hint}
-            action={
-              <button type="button" className="text-xs font-semibold underline underline-offset-2" onClick={() => setResult(null)}>
-                Dismiss
-              </button>
-            }
-          />
-        ) : null}
         {error && rows.length === 0 ? (
           <div className="rounded-xl border border-rose-200 bg-rose-50/80 p-6 text-center shadow-sm dark:border-rose-900 dark:bg-rose-950/40">
             <div className="text-base font-semibold text-rose-900 dark:text-rose-100">Unable to load alerts</div>

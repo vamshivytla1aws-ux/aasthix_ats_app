@@ -112,7 +112,14 @@ function StandardJobsView() {
 
   return (
     <AccessGate permissionKey="jobs.view">
-      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
+      {toast ? (
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          onClose={() => setToast(null)}
+          autoHideMs={toast.variant === "success" ? 1200 : 3500}
+        />
+      ) : null}
 
       <FilterDrawer
         open={filterDrawer}

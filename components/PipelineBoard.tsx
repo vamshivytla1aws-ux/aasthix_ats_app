@@ -15,6 +15,7 @@ import PipelineApplicationDrawer from "@/components/pipeline/PipelineApplication
 import OnboardingLinkModal from "@/components/pipeline/OnboardingLinkModal";
 import { INTELLIGENCE_V3_ENABLED } from "@/lib/featureFlags";
 import { ATS_TIMEZONE, ATS_TIMEZONE_LABEL, kolkataLocalToUtcIso } from "@/lib/timezones";
+import { toToastTone, toastMsForTone } from "@/lib/operationFeedback";
 
 const STAGES = ["Applied", "Screening", "Screening Failed", "Interview", "Selected", "Rejected"] as const;
 type Stage = (typeof STAGES)[number];
@@ -402,7 +403,7 @@ export default function PipelineBoard({
   const [checklistSaving, setChecklistSaving] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [screeningByApplication, setScreeningByApplication] = useState<Record<number, ScreeningTestSummary | null>>({});
-  const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant: "success" | "partial" | "blocked" | "error" | "info"; detail?: string; autoHideMs?: number } | null>(null);
   const [changeRecruiterApp, setChangeRecruiterApp] = useState<ApplicationRow | null>(null);
   const [changeRecruiterUserId, setChangeRecruiterUserId] = useState<string>("");
   const [removeConfirmApp, setRemoveConfirmApp] = useState<ApplicationRow | null>(null);
@@ -427,12 +428,26 @@ export default function PipelineBoard({
     if (err instanceof ApiError && err.status === 403) {
       setToast({
         message: `${String(err.message)} — enable pipeline.manage (or admin) to update stages and interviews.`,
-        variant: "error",
+        variant: "blocked",
+        autoHideMs: toastMsForTone("blocked"),
       });
       return true;
     }
     return false;
   }
+
+  useEffect(() => {
+    if (!error) return;
+    setToast({ message: error, variant: toToastTone("error"), autoHideMs: toastMsForTone("error") });
+    setError(null);
+  }, [error]);
+
+  useEffect(() => {
+    if (!success) return;
+    if (undoStage) return;
+    setToast({ message: success, variant: toToastTone("success"), autoHideMs: 1000 });
+    setSuccess(null);
+  }, [success, undoStage]);
 
   const dndDisabled =
     !canManage ||
@@ -1570,7 +1585,15 @@ export default function PipelineBoard({
           }}
         />
       ) : null}
-      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={4500} /> : null}
+      {toast ? (
+        <Toast
+          message={toast.message}
+          detail={toast.detail}
+          variant={toast.variant}
+          onClose={() => setToast(null)}
+          autoHideMs={toast.autoHideMs ?? (toast.variant === "success" ? 1000 : 3500)}
+        />
+      ) : null}
       <PipelineApplicationDrawer
         app={drawerApp}
         currentUserId={currentUserId}
@@ -1699,7 +1722,6 @@ export default function PipelineBoard({
         </div>
       )}
 
-      {error && <div className="text-red-600 text-sm">{error}</div>}
       {success && (
         <div className="flex flex-wrap items-center gap-2 text-emerald-700 text-sm font-medium">
           <span>{success}</span>

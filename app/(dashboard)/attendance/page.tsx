@@ -301,7 +301,14 @@ export default function AttendancePage() {
 
   return (
     <AccessGate permissionKey="attendance.view_self">
-      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={3500} /> : null}
+      {toast ? (
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          onClose={() => setToast(null)}
+          autoHideMs={toast.variant === "success" ? 1200 : 3500}
+        />
+      ) : null}
       <ModulePageFrame
         title="Attendance"
         subtitle="Track employee check-in and check-out inside the ATS with a company-wide daily register."

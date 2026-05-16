@@ -5,12 +5,13 @@ import useSWR from "swr";
 import { CalendarDays, RefreshCw, Save, Trash2 } from "lucide-react";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
-import OperationResultBanner from "@/components/enterprise/OperationResultBanner";
 import RowActionsMenu from "@/components/enterprise/RowActionsMenu";
 import StatusBadge from "@/components/enterprise/StatusBadge";
+import Toast from "@/components/Toast";
 import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
+import { toneFromStatus, toToastTone, toastMsForTone } from "@/lib/operationFeedback";
 import { ATS_TIMEZONE_LABEL, formatInAtsTimezone, kolkataLocalToUtcIso } from "@/lib/timezones";
 
 type TeamCalendarRecurrence = "none" | "daily" | "weekly" | "monthly";
@@ -136,14 +137,8 @@ export default function TeamCalendarPage() {
           body: JSON.stringify(payload),
         });
       }
-      const toneMap = {
-        success: "success",
-        partial: "partial",
-        blocked: "blocked",
-        error: "error",
-      } as const;
       setResult({
-        tone: toneMap[response?.operation_status || "success"] || "success",
+        tone: toneFromStatus(response?.operation_status),
         message:
           response?.user_message ||
           (editingEventId ? "Team meeting updated and calendar invite re-synced." : "Team meeting scheduled with Google Calendar invite."),
@@ -171,14 +166,8 @@ export default function TeamCalendarPage() {
         user_message?: string;
         hint?: string;
       }>(`/api/team-calendar/events/${event.id}`, { method: "DELETE" });
-      const toneMap = {
-        success: "success",
-        partial: "partial",
-        blocked: "blocked",
-        error: "error",
-      } as const;
       setResult({
-        tone: toneMap[response?.operation_status || "success"] || "success",
+        tone: toneFromStatus(response?.operation_status),
         message: response?.user_message || "Meeting cancelled and attendees notified.",
         hint: response?.hint,
       });
@@ -193,6 +182,15 @@ export default function TeamCalendarPage() {
 
   return (
     <AccessGate permissionKey="team_calendar.view">
+      {result ? (
+        <Toast
+          message={result.message}
+          detail={result.hint}
+          variant={toToastTone(result.tone)}
+          autoHideMs={toastMsForTone(result.tone)}
+          onClose={() => setResult(null)}
+        />
+      ) : null}
       <ModulePageFrame
         title="Team Calendar"
         subtitle="Schedule internal one-time or recurring meetings with Google Meet and attendee invites."
@@ -204,18 +202,6 @@ export default function TeamCalendarPage() {
           </button>
         }
       >
-        {result ? (
-          <OperationResultBanner
-            tone={result.tone}
-            message={result.message}
-            hint={result.hint}
-            action={
-              <button type="button" className="text-xs font-semibold underline underline-offset-2" onClick={() => setResult(null)}>
-                Dismiss
-              </button>
-            }
-          />
-        ) : null}
         <section className={UI.card + " p-4 sm:p-5"}>
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="text-base font-semibold text-[var(--ats-text)]">{editingEventId ? "Edit meeting" : "Create meeting"}</h2>

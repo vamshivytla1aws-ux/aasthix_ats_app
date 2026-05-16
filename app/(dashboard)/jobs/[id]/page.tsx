@@ -228,7 +228,14 @@ export default function JobDetailPage() {
 
   return (
     <>
-      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={3500} /> : null}
+      {toast ? (
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          onClose={() => setToast(null)}
+          autoHideMs={toast.variant === "success" ? 1200 : 3500}
+        />
+      ) : null}
       <SocialShareModal
         open={shareOpen}
         job={job}
