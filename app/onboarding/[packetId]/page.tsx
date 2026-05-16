@@ -221,7 +221,7 @@ export default function OnboardingPublicPage() {
     }
   }
 
-  if (loading) return <div className="mx-auto max-w-6xl p-6 text-sm text-slate-600">Loading onboarding form…</div>;
+  if (loading) return <div className="mx-auto max-w-6xl p-6 text-sm text-slate-600">Loading onboarding form...</div>;
   if (error && !meta) return <div className="mx-auto max-w-6xl p-6 text-sm text-rose-700">{error}</div>;
   if (ok) {
     return (
@@ -234,11 +234,27 @@ export default function OnboardingPublicPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4 sm:p-6">
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="text-xl font-semibold text-slate-900">Employee Onboarding Form</div>
-        <div className="mt-1 text-sm text-slate-600">
-          {meta?.candidate_name || "Candidate"} · {meta?.job_title || "Selected role"}
+    <div className="mx-auto max-w-6xl space-y-4 bg-slate-50 p-4 sm:p-6">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="bg-slate-900 px-5 py-4 text-white">
+          <div className="flex items-center gap-3">
+            <img src="/aasthix-brand.png" alt="Aasthix Talent logo" className="h-12 w-auto shrink-0" />
+            <div>
+              <div className="text-2xl font-bold tracking-wide">AASTHIX TALENT</div>
+              <div className="text-sm text-slate-200">Talent That Drives Success</div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-gradient-to-r from-cyan-600 to-indigo-700 px-5 py-4 text-white">
+          <div className="text-xl font-semibold">Employee Onboarding Form</div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-cyan-50">
+            <span>
+              <span className="font-medium text-white">Candidate:</span> {meta?.candidate_name || "Candidate"}
+            </span>
+            <span>
+              <span className="font-medium text-white">Title:</span> {meta?.job_title || "Selected role"}
+            </span>
+          </div>
         </div>
       </div>
 
