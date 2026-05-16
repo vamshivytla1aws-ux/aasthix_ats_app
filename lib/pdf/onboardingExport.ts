@@ -55,6 +55,9 @@ const CONTENT_TOP_Y = PAGE_H - 136;
 const FOOTER_LINE_Y = 56;
 const FOOTER_TEXT_Y = 24;
 const CONTENT_BOTTOM_Y = 78;
+const HEADER_LOGO_MAX = 96;
+const HEADER_TEXT_X = MARGIN_X + 110;
+const HEADER_RIGHT_X = PAGE_W - 220;
 
 function asText(value: unknown) {
   if (value == null) return "";
@@ -166,29 +169,28 @@ function drawHeader(params: {
   const blockTop = PAGE_H - HEADER_TOP_PAD;
 
   if (logo) {
-    const fit = fitImage(logo, 72, 72);
-    page.drawImage(logo, { x: leftX, y: blockTop - fit.height - 22, width: fit.width, height: fit.height });
+    const fit = fitImage(logo, HEADER_LOGO_MAX, HEADER_LOGO_MAX);
+    page.drawImage(logo, { x: leftX, y: blockTop - fit.height - 12, width: fit.width, height: fit.height });
   }
 
   page.drawText("AASTHIX TALENT", {
-    x: leftX + 92,
+    x: HEADER_TEXT_X,
     y: blockTop - 32,
     size: 18,
     font: bold,
     color: rgb(0.16, 0.18, 0.22),
   });
   page.drawText("Talent That Drives Success", {
-    x: leftX + 92,
+    x: HEADER_TEXT_X,
     y: blockTop - 58,
     size: 11,
     font,
     color: rgb(0.28, 0.31, 0.36),
   });
 
-  const rightX = PAGE_W - 230;
-  page.drawText("+91 9573543933", { x: rightX, y: blockTop - 30, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-  page.drawText("contact@aasthix.com", { x: rightX, y: blockTop - 55, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-  page.drawText("www.aasthix.com", { x: rightX, y: blockTop - 80, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("+91 9573543933", { x: HEADER_RIGHT_X, y: blockTop - 30, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("contact@aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 55, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("www.aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 80, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
 
   page.drawRectangle({
     x: MARGIN_X - 10,
@@ -213,10 +215,11 @@ function drawFooter(params: {
     color: rgb(0.2, 0.22, 0.29),
   });
   page.drawRectangle({ x: MARGIN_X - 10, y: FOOTER_LINE_Y, width: 350, height: 4, color: rgb(0.13, 0.71, 0.95) });
-  page.drawText(
-    "Unit.No. 114, Manjeera Trinity Corporate, JNTU - Hitech Road, beside LuLu Mall, Ashok Nagar, Kukatpally Housing Board Colony, Kukatpally, Hyderabad, Telangana 500072.",
-    { x: MARGIN_X + 84, y: FOOTER_TEXT_Y, size: 9, font, color: rgb(0.2, 0.22, 0.27) }
-  );
+  const footerText =
+    "Unit.No. 114, Manjeera Trinity Corporate, JNTU - Hitech Road, beside LuLu Mall, Ashok Nagar, Kukatpally Housing Board Colony, Kukatpally, Hyderabad, Telangana 500072.";
+  const footerSize = 9;
+  const footerX = (PAGE_W - font.widthOfTextAtSize(footerText, footerSize)) / 2;
+  page.drawText(footerText, { x: footerX, y: FOOTER_TEXT_Y, size: footerSize, font, color: rgb(0.2, 0.22, 0.27) });
 }
 
 function drawSectionHeader(page: any, text: string, x: number, y: number, width: number, bold: PDFFont) {
@@ -247,7 +250,7 @@ function drawLineField(
 ) {
   const { label, value, x, y, width, labelWidth, font, bold } = input;
   page.drawText(label, { x, y: y + 3, size: 10, font: bold, color: rgb(0.1, 0.13, 0.2) });
-  const lineStart = x + labelWidth;
+  const lineStart = Math.min(x + width - 26, x + labelWidth);
   const lineEnd = x + width;
   page.drawLine({ start: { x: lineStart, y }, end: { x: lineEnd, y }, thickness: 1, color: rgb(0.1, 0.1, 0.1) });
   const maxTextW = Math.max(10, lineEnd - lineStart - 8);
@@ -342,15 +345,16 @@ export async function buildOnboardingPdf(input: {
     color: rgb(0.12, 0.18, 0.28),
   });
 
-  drawLineField(first, { label: "Candidate :", value: input.packet.candidateName, x: 40, y: CONTENT_TOP_Y - 56, width: 430, labelWidth: 84, font, bold });
-  drawLineField(first, { label: "Job Title :", value: input.packet.jobTitle, x: 300, y: CONTENT_TOP_Y - 56, width: 280, labelWidth: 84, font, bold });
-  drawLineField(first, { label: "Status :", value: input.packet.status, x: 40, y: CONTENT_TOP_Y - 86, width: 430, labelWidth: 84, font, bold });
+  // Two-column summary fields with fixed gutters so lines never overlap.
+  drawLineField(first, { label: "Candidate :", value: input.packet.candidateName, x: 40, y: CONTENT_TOP_Y - 56, width: 255, labelWidth: 84, font, bold });
+  drawLineField(first, { label: "Job Title :", value: input.packet.jobTitle, x: 300, y: CONTENT_TOP_Y - 56, width: 285, labelWidth: 84, font, bold });
+  drawLineField(first, { label: "Status :", value: input.packet.status, x: 40, y: CONTENT_TOP_Y - 86, width: 255, labelWidth: 84, font, bold });
   drawLineField(first, {
     label: "Submitted At :",
     value: formatDate(input.packet.submittedAt),
     x: 300,
     y: CONTENT_TOP_Y - 86,
-    width: 280,
+    width: 285,
     labelWidth: 96,
     font,
     bold,
@@ -563,11 +567,13 @@ export async function buildOnboardingPdf(input: {
     return mime.startsWith("image/") || [".png", ".jpg", ".jpeg", ".webp"].includes(ext);
   });
 
+  const ATTACH_SECTION_TOP = CONTENT_TOP_Y - 8;
+  const ATTACH_SECTION_GAP = 34;
   const cells = [
-    { x: 40, y: 304, w: 360, h: 175 },
-    { x: 430, y: 304, w: 360, h: 175 },
-    { x: 40, y: 102, w: 360, h: 175 },
-    { x: 430, y: 102, w: 360, h: 175 },
+    { x: 40, y: 294, w: 360, h: 165 },
+    { x: 430, y: 294, w: 360, h: 165 },
+    { x: 40, y: 104, w: 360, h: 165 },
+    { x: 430, y: 104, w: 360, h: 165 },
   ];
 
   function drawAttachmentCard(
@@ -578,14 +584,22 @@ export async function buildOnboardingPdf(input: {
   ) {
     p.drawRectangle({ x: cell.x, y: cell.y, width: cell.w, height: cell.h, borderWidth: 1, borderColor: rgb(0.72, 0.75, 0.8) });
     p.drawText(ellipsize(doc.file_name, bold, 8.5, cell.w - 12), { x: cell.x + 6, y: cell.y + cell.h - 14, size: 8.5, font: bold });
+    p.drawText(asText(doc.doc_type), { x: cell.x + 6, y: cell.y + cell.h - 26, size: 7.5, font, color: rgb(0.32, 0.35, 0.42) });
     if (!img) {
-      p.drawText("Preview unavailable", { x: cell.x + 10, y: cell.y + cell.h / 2, size: 9, font, color: rgb(0.35, 0.38, 0.44) });
+      p.drawRectangle({ x: cell.x + 10, y: cell.y + 14, width: cell.w - 20, height: cell.h - 52, borderWidth: 1, borderColor: rgb(0.85, 0.87, 0.91) });
+      p.drawText("Preview unavailable", {
+        x: cell.x + 18,
+        y: cell.y + cell.h / 2,
+        size: 9,
+        font,
+        color: rgb(0.35, 0.38, 0.44),
+      });
       return;
     }
-    const fit = fitImage(img, cell.w - 12, cell.h - 30);
+    const fit = fitImage(img, cell.w - 20, cell.h - 56);
     p.drawImage(img, {
       x: cell.x + (cell.w - fit.width) / 2,
-      y: cell.y + (cell.h - 22 - fit.height) / 2,
+      y: cell.y + 12 + (cell.h - 56 - fit.height) / 2,
       width: fit.width,
       height: fit.height,
     });
@@ -594,10 +608,10 @@ export async function buildOnboardingPdf(input: {
   for (let i = 0; i < imageDocs.length; i += 4) {
     const chunk = imageDocs.slice(i, i + 4);
     const p = newPage(pdf, font, bold, logo);
-    drawSectionHeader(p, "Attachment Preview", 40, CONTENT_TOP_Y - 2, 760, bold);
+    drawSectionHeader(p, "Attachment Preview", 40, ATTACH_SECTION_TOP, 760, bold);
     for (let j = 0; j < chunk.length; j++) {
       const doc = chunk[j];
-      const cell = cells[j];
+      const cell = { ...cells[j], y: cells[j].y - ATTACH_SECTION_GAP };
       const bytes = await loadFile(path.join(process.cwd(), "public", doc.file_url.replace(/^\//, "")));
       const blobBytes = loadDocBytesFromRow(doc);
       const effectiveBytes = blobBytes && blobBytes.length > 0 ? blobBytes : bytes;
