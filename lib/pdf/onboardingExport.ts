@@ -55,9 +55,9 @@ const CONTENT_TOP_Y = PAGE_H - 136;
 const FOOTER_LINE_Y = 56;
 const FOOTER_TEXT_Y = 24;
 const CONTENT_BOTTOM_Y = 78;
-const HEADER_LOGO_MAX_W = 128;
-const HEADER_LOGO_MAX_H = 98;
-const HEADER_TEXT_X = MARGIN_X + 136;
+const HEADER_LOGO_MAX_W = 142;
+const HEADER_LOGO_MAX_H = 108;
+const HEADER_TEXT_X = MARGIN_X + 146;
 const HEADER_RIGHT_X = PAGE_W - 206;
 const PASSPORT_SHIFT_UP = 52;
 
@@ -172,33 +172,47 @@ function drawHeader(params: {
 
   if (logo) {
     const fit = fitImage(logo, HEADER_LOGO_MAX_W, HEADER_LOGO_MAX_H);
-    page.drawImage(logo, { x: leftX + 2, y: blockTop - fit.height - 10, width: fit.width, height: fit.height });
+    page.drawImage(logo, { x: leftX + 2, y: blockTop - fit.height - 8, width: fit.width, height: fit.height });
   }
 
   page.drawText("AASTHIX TALENT", {
     x: HEADER_TEXT_X,
-    y: blockTop - 30,
+    y: blockTop - 33,
     size: 17,
     font: bold,
     color: rgb(0.16, 0.18, 0.22),
   });
   page.drawText("Talent That Drives Success", {
     x: HEADER_TEXT_X,
-    y: blockTop - 49,
+    y: blockTop - 54,
     size: 10.5,
     font,
     color: rgb(0.28, 0.31, 0.36),
   });
 
-  page.drawText("+91 9573543933", { x: HEADER_RIGHT_X, y: blockTop - 30, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-  page.drawText("contact@aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 48, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-  page.drawText("www.aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 66, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  const line1Y = blockTop - 30;
+  const line2Y = blockTop - 48;
+  const line3Y = blockTop - 66;
+  page.drawText("+91 9573543933", { x: HEADER_RIGHT_X, y: line1Y, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("contact@aasthix.com", { x: HEADER_RIGHT_X, y: line2Y, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("www.aasthix.com", { x: HEADER_RIGHT_X, y: line3Y, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
 
-  // Right-side indicator dots to mirror branded contact icon rhythm without relying on Unicode symbol support.
-  const iconX = HEADER_RIGHT_X + 132;
-  [blockTop - 27, blockTop - 45, blockTop - 63].forEach((y) => {
-    page.drawCircle({ x: iconX, y, size: 3, color: rgb(0.13, 0.71, 0.95) });
-  });
+  const iconX = HEADER_RIGHT_X + 136;
+  const iconColor = rgb(0.13, 0.71, 0.95);
+
+  // Phone icon
+  page.drawRectangle({ x: iconX - 4, y: line1Y + 1, width: 8, height: 6, borderWidth: 1, borderColor: iconColor });
+  page.drawRectangle({ x: iconX - 2.2, y: line1Y - 0.5, width: 4.4, height: 1.2, color: iconColor });
+
+  // Mail icon
+  page.drawRectangle({ x: iconX - 4.5, y: line2Y + 1, width: 9, height: 6.5, borderWidth: 1, borderColor: iconColor });
+  page.drawLine({ start: { x: iconX - 4.5, y: line2Y + 7.5 }, end: { x: iconX, y: line2Y + 4.5 }, thickness: 1, color: iconColor });
+  page.drawLine({ start: { x: iconX + 4.5, y: line2Y + 7.5 }, end: { x: iconX, y: line2Y + 4.5 }, thickness: 1, color: iconColor });
+
+  // Globe icon
+  page.drawCircle({ x: iconX, y: line3Y + 4, size: 3.8, borderWidth: 1, borderColor: iconColor });
+  page.drawLine({ start: { x: iconX - 2.8, y: line3Y + 4 }, end: { x: iconX + 2.8, y: line3Y + 4 }, thickness: 1, color: iconColor });
+  page.drawLine({ start: { x: iconX, y: line3Y + 1.2 }, end: { x: iconX, y: line3Y + 6.8 }, thickness: 1, color: iconColor });
 
   page.drawRectangle({
     x: MARGIN_X - 10,
@@ -244,7 +258,9 @@ function drawSectionHeader(page: any, text: string, x: number, y: number, width:
     borderWidth: 1,
     borderColor: rgb(0.62, 0.7, 0.92),
   });
-  page.drawText(text, { x: x + 8, y: y - 13, size: 9.5, font: bold, color: rgb(0.08, 0.2, 0.46) });
+  const size = 9.5;
+  const tx = x + (width - bold.widthOfTextAtSize(text, size)) / 2;
+  page.drawText(text, { x: tx, y: y - 13, size, font: bold, color: rgb(0.08, 0.2, 0.46) });
 }
 
 function drawLineField(
@@ -267,7 +283,9 @@ function drawLineField(
   page.drawLine({ start: { x: lineStart, y }, end: { x: lineEnd, y }, thickness: 1, color: rgb(0.1, 0.1, 0.1) });
   const maxTextW = Math.max(10, lineEnd - lineStart - 8);
   const text = ellipsize(value || "-", font, 10, maxTextW);
-  page.drawText(text, { x: lineStart + 3, y: y + 3, size: 10, font, color: rgb(0.16, 0.2, 0.26) });
+  const textW = font.widthOfTextAtSize(text, 10);
+  const centeredX = lineStart + Math.max(3, (lineEnd - lineStart - textW) / 2);
+  page.drawText(text, { x: centeredX, y: y + 3, size: 10, font, color: rgb(0.16, 0.2, 0.26) });
 }
 
 function newPage(pdf: PDFDocument, font: PDFFont, bold: PDFFont, logo: PDFImage | null) {
@@ -374,7 +392,6 @@ export async function buildOnboardingPdf(input: {
 
   const passportBox = { x: PAGE_W - 196, y: CONTENT_TOP_Y - 186 + PASSPORT_SHIFT_UP, w: 118, h: 144 };
   first.drawRectangle({ x: passportBox.x, y: passportBox.y, width: passportBox.w, height: passportBox.h, borderWidth: 2, borderColor: rgb(0.12, 0.12, 0.12) });
-  first.drawText("Passport Size Photo", { x: passportBox.x + 10, y: passportBox.y + passportBox.h - 18, size: 9, font: bold, color: rgb(0.18, 0.2, 0.24) });
 
   const photoDoc =
     input.docs.find((d) => d.doc_type === "passport_photo") ||
@@ -388,10 +405,10 @@ export async function buildOnboardingPdf(input: {
     if (photoBytes) {
       const photo = await embedFromBytes(pdf, photoBytes, photoDoc.file_name, photoDoc.mime);
       if (photo) {
-        const fit = fitImage(photo, passportBox.w - 12, passportBox.h - 30);
+        const fit = fitImageCover(photo, passportBox.w - 4, passportBox.h - 4);
         first.drawImage(photo, {
           x: passportBox.x + (passportBox.w - fit.width) / 2,
-          y: passportBox.y + 6,
+          y: passportBox.y + (passportBox.h - fit.height) / 2,
           width: fit.width,
           height: fit.height,
         });
@@ -637,4 +654,8 @@ export async function buildOnboardingPdf(input: {
   }
 
   return Buffer.from(await pdf.save());
+}
+function fitImageCover(img: PDFImage, boxW: number, boxH: number) {
+  const ratio = Math.max(boxW / img.width, boxH / img.height);
+  return { width: Math.max(1, img.width * ratio), height: Math.max(1, img.height * ratio) };
 }
