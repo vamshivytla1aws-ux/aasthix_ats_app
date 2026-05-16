@@ -30,6 +30,20 @@ type ReferenceRow = {
   association: string;
 };
 
+type OnboardingAutofill = Partial<
+  Record<
+    | "full_name"
+    | "personal_email"
+    | "contact_number"
+    | "current_address"
+    | "permanent_address"
+    | "designation"
+    | "work_location"
+    | "employment_type",
+    string
+  >
+>;
+
 const EDUCATION_BASE_ROWS = [
   "Matriculation/SSC/Equivalent",
   "Intermediate/HSC/Equivalent",
@@ -48,6 +62,10 @@ function emptyEmploymentRow(): EmploymentRow {
 
 function emptyReferenceRow(): ReferenceRow {
   return { nameDesignation: "", emailPhone: "", association: "" };
+}
+
+function hasTextValue(v: unknown): v is string {
+  return typeof v === "string" && v.trim().length > 0;
 }
 
 export default function OnboardingPublicPage() {
@@ -115,23 +133,37 @@ export default function OnboardingPublicPage() {
         const data = await apiFetchJson<{
           packet: any;
           payload: Record<string, unknown> | null;
+          autofill?: OnboardingAutofill | null;
           required_documents: DocReq[];
         }>(`/api/onboarding/${packetId}/public?token=${encodeURIComponent(token)}`);
         setRequiredDocs(data.required_documents || []);
         setMeta(data.packet || null);
+
+        const payload = (data.payload || {}) as Record<string, unknown>;
+        const autofill = (data.autofill || {}) as OnboardingAutofill;
+        setForm((prev) => {
+          const next = { ...prev };
+          for (const [k, v] of Object.entries(autofill)) {
+            if (k in next && hasTextValue(v) && !hasTextValue(next[k])) {
+              next[k] = v;
+            }
+          }
+          for (const [k, v] of Object.entries(payload)) {
+            if (k in next && hasTextValue(v)) {
+              next[k] = v;
+            }
+          }
+          if (!hasTextValue(next.declaration_date)) {
+            next.declaration_date = prev.declaration_date || todayIso();
+          }
+          return next;
+        });
+
         if (data.payload) {
-          const payload = data.payload as any;
-          setForm((prev) => ({
-            ...prev,
-            ...Object.fromEntries(
-              Object.entries(payload).filter(([k, v]) => typeof v === "string").map(([k, v]) => [k, String(v)])
-            ),
-            declaration_date:
-              typeof payload.declaration_date === "string" && payload.declaration_date ? payload.declaration_date : prev.declaration_date,
-          }));
+          const parsedPayload = data.payload as any;
           if (Array.isArray(payload.education_rows) && payload.education_rows.length) {
             setEducationRows(
-              payload.education_rows.map((r: any, idx: number) => ({
+              parsedPayload.education_rows.map((r: any, idx: number) => ({
                 education: String(r?.education || EDUCATION_BASE_ROWS[idx] || ""),
                 institute: String(r?.institute || ""),
                 from: String(r?.from || ""),
@@ -141,9 +173,9 @@ export default function OnboardingPublicPage() {
               }))
             );
           }
-          if (Array.isArray(payload.previous_employment_rows) && payload.previous_employment_rows.length) {
+          if (Array.isArray(parsedPayload.previous_employment_rows) && parsedPayload.previous_employment_rows.length) {
             setEmploymentRows(
-              payload.previous_employment_rows.map((r: any) => ({
+              parsedPayload.previous_employment_rows.map((r: any) => ({
                 employer: String(r?.employer || ""),
                 empId: String(r?.empId || ""),
                 from: String(r?.from || ""),
@@ -153,10 +185,10 @@ export default function OnboardingPublicPage() {
               }))
             );
           }
-          if (Array.isArray(payload.professional_references) && payload.professional_references.length) {
+          if (Array.isArray(parsedPayload.professional_references) && parsedPayload.professional_references.length) {
             const base = [emptyReferenceRow(), emptyReferenceRow(), emptyReferenceRow()];
             for (let i = 0; i < 3; i++) {
-              const src = payload.professional_references[i];
+              const src = parsedPayload.professional_references[i];
               if (!src) continue;
               base[i] = {
                 nameDesignation: String(src?.nameDesignation || ""),

@@ -5,6 +5,8 @@ import { ONBOARDING_DOC_FIELDS, appendCandidateActivity } from "@/lib/onboarding
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const ALLOWED_EMPLOYMENT_TYPES = new Set(["full time", "part time", "contract"]);
+
 export async function GET(request: Request, { params }: { params: { packetId: string } }) {
   const packetId = Number(params.packetId);
   const token = String(new URL(request.url).searchParams.get("token") || "").trim();
@@ -16,7 +18,8 @@ export async function GET(request: Request, { params }: { params: { packetId: st
   const res = await query(
     `
     SELECT p.id, p.application_id, p.candidate_id, p.status, p.note, p.deadline_at, p.submitted_at,
-           c.full_name AS candidate_name, j.title AS job_title
+           c.full_name AS candidate_name, c.email AS candidate_email, c.phone AS candidate_phone, c.location AS candidate_location,
+           j.title AS job_title, j.location AS job_location, j.employment_type AS job_employment_type
     FROM application_onboarding_packets p
     JOIN candidates c ON c.id = p.candidate_id
     JOIN applications a ON a.id = p.application_id
@@ -44,6 +47,19 @@ export async function GET(request: Request, { params }: { params: { packetId: st
   );
   const payload = payloadRes.rows?.[0]?.payload ?? null;
 
+  const employmentTypeRaw = String(packet.job_employment_type || "").trim();
+  const autofill = {
+    full_name: packet.candidate_name ? String(packet.candidate_name) : "",
+    personal_email: packet.candidate_email ? String(packet.candidate_email) : "",
+    contact_number: packet.candidate_phone ? String(packet.candidate_phone) : "",
+    current_address: packet.candidate_location ? String(packet.candidate_location) : "",
+    permanent_address: packet.candidate_location ? String(packet.candidate_location) : "",
+    designation: packet.job_title ? String(packet.job_title) : "",
+    work_location: packet.job_location ? String(packet.job_location) : packet.candidate_location ? String(packet.candidate_location) : "",
+    employment_type:
+      employmentTypeRaw && ALLOWED_EMPLOYMENT_TYPES.has(employmentTypeRaw.toLowerCase()) ? employmentTypeRaw : "",
+  };
+
   if (packet.status === "sent") {
     await query(`UPDATE application_onboarding_packets SET status = 'in_progress', updated_at = NOW() WHERE id = $1`, [packetId]);
     await appendCandidateActivity(packet.candidate_id, "onboarding_started", "Candidate opened onboarding form");
@@ -53,6 +69,7 @@ export async function GET(request: Request, { params }: { params: { packetId: st
   return NextResponse.json({
     packet,
     payload,
+    autofill,
     required_documents: ONBOARDING_DOC_FIELDS,
   });
 }
