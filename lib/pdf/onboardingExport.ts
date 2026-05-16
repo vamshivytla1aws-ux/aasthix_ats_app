@@ -55,9 +55,9 @@ const CONTENT_TOP_Y = PAGE_H - 136;
 const FOOTER_LINE_Y = 56;
 const FOOTER_TEXT_Y = 24;
 const CONTENT_BOTTOM_Y = 78;
-const HEADER_LOGO_MAX_W = 110;
-const HEADER_LOGO_MAX_H = 84;
-const HEADER_TEXT_X = MARGIN_X + 118;
+const HEADER_LOGO_MAX_W = 128;
+const HEADER_LOGO_MAX_H = 98;
+const HEADER_TEXT_X = MARGIN_X + 136;
 const HEADER_RIGHT_X = PAGE_W - 206;
 const PASSPORT_SHIFT_UP = 52;
 
@@ -172,31 +172,31 @@ function drawHeader(params: {
 
   if (logo) {
     const fit = fitImage(logo, HEADER_LOGO_MAX_W, HEADER_LOGO_MAX_H);
-    page.drawImage(logo, { x: leftX + 2, y: blockTop - fit.height - 12, width: fit.width, height: fit.height });
+    page.drawImage(logo, { x: leftX + 2, y: blockTop - fit.height - 10, width: fit.width, height: fit.height });
   }
 
   page.drawText("AASTHIX TALENT", {
     x: HEADER_TEXT_X,
-    y: blockTop - 27,
+    y: blockTop - 30,
     size: 17,
     font: bold,
     color: rgb(0.16, 0.18, 0.22),
   });
   page.drawText("Talent That Drives Success", {
     x: HEADER_TEXT_X,
-    y: blockTop - 51,
+    y: blockTop - 49,
     size: 10.5,
     font,
     color: rgb(0.28, 0.31, 0.36),
   });
 
-  page.drawText("+91 9573543933", { x: HEADER_RIGHT_X, y: blockTop - 27, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-  page.drawText("contact@aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 50, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-  page.drawText("www.aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 73, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("+91 9573543933", { x: HEADER_RIGHT_X, y: blockTop - 30, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("contact@aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 48, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("www.aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 66, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
 
   // Right-side indicator dots to mirror branded contact icon rhythm without relying on Unicode symbol support.
   const iconX = HEADER_RIGHT_X + 132;
-  [blockTop - 23, blockTop - 46, blockTop - 69].forEach((y) => {
+  [blockTop - 27, blockTop - 45, blockTop - 63].forEach((y) => {
     page.drawCircle({ x: iconX, y, size: 3, color: rgb(0.13, 0.71, 0.95) });
   });
 
