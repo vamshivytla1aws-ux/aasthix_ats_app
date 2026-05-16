@@ -113,36 +113,62 @@ function ensureSpace(pdf: PDFDocument, flow: Flow, requiredHeight: number, bold:
 }
 
 function drawEmployeeInfo(page: any, bold: PDFFont, font: PDFFont, y: number, payload: PayslipPdfPayload) {
-  page.drawText("Salary Payslip", { x: PAGE_MARGIN_X, y, size: 16, font: bold, color: TITLE });
-  page.drawText(`Month: ${payload.monthLabel}`, { x: PAGE_W - 220, y, size: 11, font: bold, color: TITLE });
-  const rows = [
-    ["Employee Name", payload.employeeName],
-    ["Employee Code", payload.employeeCode],
-    ["Department", payload.department],
-    ["Designation", payload.designation],
-    ["Date of Joining", payload.dateOfJoining],
-    ["PAN", payload.pan],
-    ["UAN Number", payload.uanNumber],
-    ["PF Number", payload.pfNumber],
-    ["Bank Account Number", payload.bankAccountNumber],
-    ["Work Location", payload.workLocation],
-    ["Total Paid Days", String(payload.paidDays)],
-    ["LOP Days", String(payload.lopDays)],
-  ];
+  page.drawText(`Payslip For : ${payload.monthLabel}`, { x: PAGE_W - 220, y: y + 6, size: 11, font, color: TITLE });
+  page.drawText("Amount in INR", { x: PAGE_W - 190, y: y - 14, size: 10, font, color: TITLE });
 
-  let cy = y - 26;
-  for (let i = 0; i < rows.length; i += 2) {
-    const left = rows[i];
-    const right = rows[i + 1];
-    page.drawText(`${left[0]}:`, { x: PAGE_MARGIN_X, y: cy, size: 10, font: bold, color: TITLE });
-    page.drawText(left[1] || "-", { x: PAGE_MARGIN_X + 120, y: cy, size: 10, font, color: TITLE });
-    if (right) {
-      page.drawText(`${right[0]}:`, { x: PAGE_MARGIN_X + 380, y: cy, size: 10, font: bold, color: TITLE });
-      page.drawText(right[1] || "-", { x: PAGE_MARGIN_X + 500, y: cy, size: 10, font, color: TITLE });
-    }
-    cy -= 18;
+  const boxY = y - 180;
+  const boxH = 170;
+  page.drawRectangle({
+    x: PAGE_MARGIN_X,
+    y: boxY,
+    width: PAGE_W - PAGE_MARGIN_X * 2,
+    height: boxH,
+    borderWidth: 1,
+    borderColor: rgb(0.2, 0.2, 0.2),
+  });
+  page.drawRectangle({
+    x: PAGE_MARGIN_X,
+    y: boxY + boxH - 24,
+    width: PAGE_W - PAGE_MARGIN_X * 2,
+    height: 24,
+    borderWidth: 1,
+    borderColor: rgb(0.2, 0.2, 0.2),
+  });
+  const heading = "Personal details";
+  const headingW = bold.widthOfTextAtSize(heading, 12);
+  page.drawText(heading, { x: PAGE_MARGIN_X + (PAGE_W - PAGE_MARGIN_X * 2 - headingW) / 2, y: boxY + boxH - 17, size: 12, font: bold, color: TITLE });
+
+  const leftX = PAGE_MARGIN_X + 10;
+  const leftValX = PAGE_MARGIN_X + 130;
+  const rightX = PAGE_MARGIN_X + 410;
+  const rightValX = PAGE_MARGIN_X + 520;
+  const rowsLeft = [
+    ["Employee Name", payload.employeeName],
+    ["Designation", payload.designation],
+    ["DOJ", payload.dateOfJoining],
+    ["UAN", payload.uanNumber],
+    ["PF No.", payload.pfNumber],
+    ["Bank Name", payload.companyName || "AASTHIX TALENT"],
+    ["Account Number", payload.bankAccountNumber],
+  ];
+  const rowsRight = [
+    ["CS ID", payload.employeeCode],
+    ["PAN", payload.pan],
+    ["Department", payload.department],
+    ["Location", payload.workLocation],
+    ["Pay Days", String(payload.paidDays)],
+    ["LOP Days", String(payload.lopDays)],
+    ["IFSC Code", "-"],
+  ];
+  let cy = boxY + boxH - 44;
+  for (let i = 0; i < rowsLeft.length; i += 1) {
+    page.drawText(rowsLeft[i][0], { x: leftX, y: cy, size: 9, font, color: TITLE });
+    page.drawText(rowsLeft[i][1] || "-", { x: leftValX, y: cy, size: 9, font: bold, color: TITLE });
+    page.drawText(rowsRight[i][0], { x: rightX, y: cy, size: 9, font, color: TITLE });
+    page.drawText(rowsRight[i][1] || "-", { x: rightValX, y: cy, size: 9, font: bold, color: TITLE });
+    cy -= 20;
   }
-  return cy - 4;
+  return boxY - 14;
 }
 
 function drawTableTitle(page: any, bold: PDFFont, title: string, y: number) {
@@ -156,36 +182,47 @@ function drawEarningsDeductionsTable(
   bold: PDFFont,
   font: PDFFont,
   y: number,
-  title: string,
-  rows: Array<{ name: string; annual: number; monthly: number; amountForMonth: number }>
+  payload: PayslipPdfPayload
 ) {
-  drawTableTitle(page, bold, title, y);
+  drawTableTitle(page, bold, `Payslip of ${payload.monthLabel}`, y);
   const tableY = y - 20;
-  const colX = [PAGE_MARGIN_X, PAGE_MARGIN_X + 360, PAGE_MARGIN_X + 505, PAGE_MARGIN_X + 650];
-  const headers = ["Particulars", "Annual", "Monthly", "Amount For Month"];
-  page.drawRectangle({ x: PAGE_MARGIN_X, y: tableY - ROW_H, width: PAGE_W - PAGE_MARGIN_X * 2, height: ROW_H, color: rgb(0.96, 0.97, 0.99) });
-  headers.forEach((h, idx) => page.drawText(h, { x: colX[idx] + 6, y: tableY - 15, size: 9, font: bold, color: TITLE }));
+  const x = PAGE_MARGIN_X;
+  const w = PAGE_W - PAGE_MARGIN_X * 2;
+  const colX = [x, x + 135, x + 220, x + 300, x + 380, x + 510, x + 595, x + 675];
+  const headers = ["EARNINGS", "RATE", "MONTHLY", "ARREARS", "YTD", "DEDUCTIONS", "MONTHLY", "YTD"];
+  page.drawRectangle({ x, y: tableY - ROW_H, width: w, height: ROW_H, color: rgb(0.96, 0.97, 0.99), borderWidth: 1, borderColor: BORDER });
+  headers.forEach((h, i) => page.drawText(h, { x: colX[i] + 4, y: tableY - 15, size: 9, font: bold, color: TITLE }));
+
+  const maxRows = Math.max(payload.earnings.length, payload.deductions.length);
   let cy = tableY - ROW_H;
-  for (const row of rows) {
-    page.drawRectangle({ x: PAGE_MARGIN_X, y: cy - ROW_H, width: PAGE_W - PAGE_MARGIN_X * 2, height: ROW_H, borderWidth: 1, borderColor: BORDER });
-    page.drawText(row.name, { x: colX[0] + 6, y: cy - 15, size: 9, font, color: TITLE });
-    page.drawText(inr(row.annual), { x: colX[1] + 6, y: cy - 15, size: 9, font, color: TITLE });
-    page.drawText(inr(row.monthly), { x: colX[2] + 6, y: cy - 15, size: 9, font, color: TITLE });
-    page.drawText(inr(row.amountForMonth), { x: colX[3] + 6, y: cy - 15, size: 9, font, color: TITLE });
+  for (let i = 0; i < maxRows; i += 1) {
+    page.drawRectangle({ x, y: cy - ROW_H, width: w, height: ROW_H, borderWidth: 1, borderColor: BORDER });
+    const e = payload.earnings[i];
+    const d = payload.deductions[i];
+    if (e) {
+      page.drawText(e.name, { x: colX[0] + 4, y: cy - 15, size: 9, font, color: TITLE });
+      page.drawText(inr(e.monthly), { x: colX[1] + 4, y: cy - 15, size: 9, font, color: TITLE });
+      page.drawText(inr(e.amountForMonth), { x: colX[2] + 4, y: cy - 15, size: 9, font, color: TITLE });
+      page.drawText("0.00", { x: colX[3] + 4, y: cy - 15, size: 9, font, color: TITLE });
+      page.drawText(inr(e.amountForMonth), { x: colX[4] + 4, y: cy - 15, size: 9, font, color: TITLE });
+    }
+    if (d) {
+      page.drawText(d.name, { x: colX[5] + 4, y: cy - 15, size: 9, font, color: TITLE });
+      page.drawText(inr(d.amountForMonth), { x: colX[6] + 4, y: cy - 15, size: 9, font, color: TITLE });
+      page.drawText(inr(d.amountForMonth), { x: colX[7] + 4, y: cy - 15, size: 9, font, color: TITLE });
+    }
     cy -= ROW_H;
   }
-  return cy - 10;
-}
-
-function drawNetSalarySummary(page: any, bold: PDFFont, font: PDFFont, y: number, payload: PayslipPdfPayload) {
-  page.drawRectangle({ x: PAGE_MARGIN_X, y: y - 74, width: PAGE_W - PAGE_MARGIN_X * 2, height: 74, borderWidth: 1, borderColor: BORDER });
-  page.drawText(`Gross Salary: ${inr(payload.grossSalary)}`, { x: PAGE_MARGIN_X + 10, y: y - 20, size: 10, font: bold, color: TITLE });
-  page.drawText(`Total Deductions: ${inr(payload.totalDeductions)}`, { x: PAGE_MARGIN_X + 280, y: y - 20, size: 10, font: bold, color: TITLE });
-  page.drawText(`Net Salary: ${inr(payload.netSalary)}`, { x: PAGE_MARGIN_X + 560, y: y - 20, size: 10, font: bold, color: TITLE });
-  page.drawText(`Net Salary in Words: ${payload.netSalaryInWords}`, { x: PAGE_MARGIN_X + 10, y: y - 40, size: 9, font, color: TITLE });
-
-  page.drawText("Employee Signature", { x: PAGE_MARGIN_X + 30, y: y - 62, size: 9, font, color: TITLE });
-  page.drawText("Employer Signature", { x: PAGE_W - 200, y: y - 62, size: 9, font, color: TITLE });
+  page.drawRectangle({ x, y: cy - ROW_H, width: w, height: ROW_H, borderWidth: 1, borderColor: BORDER });
+  page.drawText("GROSS EARNINGS", { x: colX[0] + 4, y: cy - 15, size: 10, font: bold, color: TITLE });
+  page.drawText(inr(payload.grossSalary), { x: colX[2] + 4, y: cy - 15, size: 10, font: bold, color: TITLE });
+  page.drawText("GROSS DEDUCTIONS", { x: colX[5] + 4, y: cy - 15, size: 10, font: bold, color: TITLE });
+  page.drawText(inr(payload.totalDeductions), { x: colX[6] + 4, y: cy - 15, size: 10, font: bold, color: TITLE });
+  cy -= ROW_H;
+  page.drawRectangle({ x, y: cy - ROW_H, width: w, height: ROW_H, borderWidth: 1, borderColor: BORDER });
+  page.drawText("NET PAY", { x: colX[5] + 170, y: cy - 15, size: 10, font: bold, color: TITLE });
+  page.drawText(inr(payload.netSalary), { x: colX[7] + 4, y: cy - 15, size: 10, font: bold, color: TITLE });
+  return cy - 12;
 }
 
 export async function buildPayslipPdf(payload: PayslipPdfPayload) {
@@ -199,20 +236,21 @@ export async function buildPayslipPdf(payload: PayslipPdfPayload) {
   drawFooter(page, font);
   let flow: Flow = { page, cursorY: CONTENT_TOP };
 
-  flow = ensureSpace(pdf, flow, 240, bold, font, logo);
+  flow = ensureSpace(pdf, flow, 220, bold, font, logo);
   flow.cursorY = drawEmployeeInfo(flow.page, bold, font, flow.cursorY, payload);
 
-  const earningsHeight = 40 + (payload.earnings.length + 1) * ROW_H;
-  flow = ensureSpace(pdf, flow, earningsHeight + 20, bold, font, logo);
-  flow.cursorY = drawEarningsDeductionsTable(flow.page, bold, font, flow.cursorY, "Earnings", payload.earnings);
-
-  const deductionsHeight = 40 + (payload.deductions.length + 1) * ROW_H;
-  flow = ensureSpace(pdf, flow, deductionsHeight + 20, bold, font, logo);
-  flow.cursorY = drawEarningsDeductionsTable(flow.page, bold, font, flow.cursorY, "Deductions", payload.deductions);
-
-  flow = ensureSpace(pdf, flow, 84, bold, font, logo);
-  drawNetSalarySummary(flow.page, bold, font, flow.cursorY, payload);
+  const rowsHeight = 40 + (Math.max(payload.earnings.length, payload.deductions.length) + 3) * ROW_H;
+  flow = ensureSpace(pdf, flow, rowsHeight + 40, bold, font, logo);
+  flow.cursorY = drawEarningsDeductionsTable(flow.page, bold, font, flow.cursorY, payload);
+  flow.page.drawText(`Net Salary in Words: ${payload.netSalaryInWords}`, {
+    x: PAGE_MARGIN_X + 8,
+    y: flow.cursorY - 8,
+    size: 9,
+    font,
+    color: TITLE,
+  });
+  flow.page.drawText("Employee Signature", { x: PAGE_MARGIN_X + 18, y: flow.cursorY - 28, size: 9, font, color: TITLE });
+  flow.page.drawText("Employer Signature", { x: PAGE_W - 180, y: flow.cursorY - 28, size: 9, font, color: TITLE });
 
   return Buffer.from(await pdf.save());
 }
-

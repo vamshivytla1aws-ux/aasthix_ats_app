@@ -103,8 +103,16 @@ describe("salary engine", () => {
   it("handles employer pf included vs excluded", async () => {
     const included = await calculateSalaryStructure({ ...baseInput(1600000), employerPfIncludedInCtc: true });
     const excluded = await calculateSalaryStructure({ ...baseInput(1600000), employerPfIncludedInCtc: false });
-    expect(getComponent(included, "employer_pf_adjustment")?.annual).toBe(21600);
+    expect(getComponent(included, "employer_pf_adjustment")).toBeUndefined();
     expect(getComponent(excluded, "employer_pf_adjustment")).toBeUndefined();
+  });
+
+  it("matches sample mode style net for 18L with PF 1800 and PT 200", async () => {
+    const calc = await calculateSalaryStructure(baseInput(1800000));
+    expect(calc.grossMonthlySalary).toBe(150000);
+    expect(calc.monthlyTds).toBe(13733.33);
+    expect(calc.totalMonthlyDeductions).toBe(15733.33);
+    expect(calc.netMonthlySalary).toBe(134266.67);
   });
 
   it("returns net salary and words", async () => {
