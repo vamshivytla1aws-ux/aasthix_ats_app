@@ -59,7 +59,7 @@ const HEADER_LOGO_MAX_W = 110;
 const HEADER_LOGO_MAX_H = 84;
 const HEADER_TEXT_X = MARGIN_X + 118;
 const HEADER_RIGHT_X = PAGE_W - 206;
-const PASSPORT_SHIFT_UP = 26;
+const PASSPORT_SHIFT_UP = 52;
 
 function asText(value: unknown) {
   if (value == null) return "";
@@ -172,31 +172,31 @@ function drawHeader(params: {
 
   if (logo) {
     const fit = fitImage(logo, HEADER_LOGO_MAX_W, HEADER_LOGO_MAX_H);
-    page.drawImage(logo, { x: leftX + 2, y: blockTop - fit.height - 14, width: fit.width, height: fit.height });
+    page.drawImage(logo, { x: leftX + 2, y: blockTop - fit.height - 12, width: fit.width, height: fit.height });
   }
 
   page.drawText("AASTHIX TALENT", {
     x: HEADER_TEXT_X,
-    y: blockTop - 28,
+    y: blockTop - 27,
     size: 17,
     font: bold,
     color: rgb(0.16, 0.18, 0.22),
   });
   page.drawText("Talent That Drives Success", {
     x: HEADER_TEXT_X,
-    y: blockTop - 52,
+    y: blockTop - 51,
     size: 10.5,
     font,
     color: rgb(0.28, 0.31, 0.36),
   });
 
-  page.drawText("+91 9573543933", { x: HEADER_RIGHT_X, y: blockTop - 28, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-  page.drawText("contact@aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 51, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-  page.drawText("www.aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 74, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("+91 9573543933", { x: HEADER_RIGHT_X, y: blockTop - 27, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("contact@aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 50, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("www.aasthix.com", { x: HEADER_RIGHT_X, y: blockTop - 73, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
 
   // Right-side indicator dots to mirror branded contact icon rhythm without relying on Unicode symbol support.
   const iconX = HEADER_RIGHT_X + 132;
-  [blockTop - 24, blockTop - 47, blockTop - 70].forEach((y) => {
+  [blockTop - 23, blockTop - 46, blockTop - 69].forEach((y) => {
     page.drawCircle({ x: iconX, y, size: 3, color: rgb(0.13, 0.71, 0.95) });
   });
 
@@ -230,8 +230,8 @@ function drawFooter(params: {
   const footerSize = 8.7;
   const line1X = (PAGE_W - font.widthOfTextAtSize(line1, footerSize)) / 2;
   const line2X = (PAGE_W - font.widthOfTextAtSize(line2, footerSize)) / 2;
-  page.drawText(line1, { x: line1X, y: FOOTER_TEXT_Y + 11, size: footerSize, font, color: rgb(0.2, 0.22, 0.27) });
-  page.drawText(line2, { x: line2X, y: FOOTER_TEXT_Y, size: footerSize, font, color: rgb(0.2, 0.22, 0.27) });
+  page.drawText(line1, { x: line1X, y: FOOTER_TEXT_Y + 12, size: footerSize, font, color: rgb(0.2, 0.22, 0.27) });
+  page.drawText(line2, { x: line2X, y: FOOTER_TEXT_Y + 1, size: footerSize, font, color: rgb(0.2, 0.22, 0.27) });
 }
 
 function drawSectionHeader(page: any, text: string, x: number, y: number, width: number, bold: PDFFont) {
