@@ -18,11 +18,40 @@ type PacketMeta = {
   submittedAt: string | null;
 };
 
+type EducationRow = {
+  education?: string;
+  institute?: string;
+  from?: string;
+  to?: string;
+  specialization?: string;
+  percentage?: string;
+};
+
+type EmploymentRow = {
+  employer?: string;
+  empId?: string;
+  from?: string;
+  to?: string;
+  designation?: string;
+  salary?: string;
+};
+
+type ReferenceRow = {
+  nameDesignation?: string;
+  emailPhone?: string;
+  association?: string;
+};
+
 const PAGE_W = 842;
 const PAGE_H = 595;
 const MARGIN_X = 26;
-const TOP_HEADER_H = 108;
-const FOOTER_Y = 32;
+const HEADER_TOP_PAD = 16;
+const HEADER_BLOCK_H = 84;
+const HEADER_STRIP_Y = PAGE_H - 116;
+const CONTENT_TOP_Y = PAGE_H - 136;
+const FOOTER_LINE_Y = 56;
+const FOOTER_TEXT_Y = 24;
+const CONTENT_BOTTOM_Y = 78;
 
 function asText(value: unknown) {
   if (value == null) return "";
@@ -53,13 +82,44 @@ async function loadFile(filePath: string) {
 
 function fitImage(img: PDFImage, maxW: number, maxH: number) {
   const ratio = Math.min(maxW / img.width, maxH / img.height);
-  return { width: img.width * ratio, height: img.height * ratio };
+  return { width: Math.max(1, img.width * ratio), height: Math.max(1, img.height * ratio) };
 }
 
-async function tryEmbedImage(pdf: PDFDocument, bytes: Buffer, nameHint: string) {
-  const lower = nameHint.toLowerCase();
-  if (lower.endsWith(".png")) return pdf.embedPng(bytes);
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) return pdf.embedJpg(bytes);
+function isPng(bytes: Buffer) {
+  return bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+}
+
+function isJpeg(bytes: Buffer) {
+  return bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+}
+
+function isWebp(bytes: Buffer) {
+  return bytes.length > 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
+}
+
+function extensionOf(name: string) {
+  return path.extname(name || "").toLowerCase();
+}
+
+async function embedFromBytes(pdf: PDFDocument, bytes: Buffer, nameHint: string, mime?: string | null) {
+  const ext = extensionOf(nameHint);
+  const mimeLower = String(mime || "").toLowerCase();
+  if (isPng(bytes) || ext === ".png" || mimeLower === "image/png") {
+    try {
+      return await pdf.embedPng(bytes);
+    } catch {
+      return null;
+    }
+  }
+  if (isJpeg(bytes) || ext === ".jpg" || ext === ".jpeg" || mimeLower === "image/jpeg" || mimeLower === "image/jpg") {
+    try {
+      return await pdf.embedJpg(bytes);
+    } catch {
+      return null;
+    }
+  }
+  // pdf-lib does not support WEBP directly.
+  if (isWebp(bytes) || ext === ".webp" || mimeLower === "image/webp") return null;
   try {
     return await pdf.embedPng(bytes);
   } catch {
@@ -71,52 +131,136 @@ async function tryEmbedImage(pdf: PDFDocument, bytes: Buffer, nameHint: string) 
   }
 }
 
-function drawLineField(page: any, label: string, value: string, x: number, y: number, width: number, font: PDFFont, bold: PDFFont) {
-  page.drawText(label, { x, y: y + 3, size: 10, font: bold, color: rgb(0.1, 0.13, 0.2) });
-  const lineStart = x + 76;
-  page.drawLine({ start: { x: lineStart, y }, end: { x: x + width, y }, thickness: 1, color: rgb(0.1, 0.1, 0.1) });
-  page.drawText(value || "-", { x: lineStart + 4, y: y + 3, size: 10, font, color: rgb(0.16, 0.2, 0.26) });
+function ellipsize(text: string, font: PDFFont, size: number, maxWidth: number) {
+  const src = text || "-";
+  if (font.widthOfTextAtSize(src, size) <= maxWidth) return src;
+  const suffix = "...";
+  const suffixW = font.widthOfTextAtSize(suffix, size);
+  let out = src;
+  while (out.length > 1 && font.widthOfTextAtSize(out, size) + suffixW > maxWidth) {
+    out = out.slice(0, -1);
+  }
+  return `${out}${suffix}`;
 }
 
 function drawHeaderAndFooter(params: {
   page: any;
   font: PDFFont;
   bold: PDFFont;
-  logo?: PDFImage | null;
-  headerBanner?: PDFImage | null;
+  logo: PDFImage | null;
 }) {
-  const { page, font, bold, logo, headerBanner } = params;
-  const yTop = PAGE_H - 22;
+  const { page, font, bold, logo } = params;
+  const leftX = MARGIN_X + 8;
+  const blockTop = PAGE_H - HEADER_TOP_PAD;
 
-  if (headerBanner) {
-    const fit = fitImage(headerBanner, PAGE_W - MARGIN_X * 2, 74);
-    page.drawImage(headerBanner, {
-      x: MARGIN_X,
-      y: PAGE_H - fit.height - 14,
-      width: fit.width,
-      height: fit.height,
-    });
-  } else {
-    if (logo) {
-      const fitted = fitImage(logo, 58, 58);
-      page.drawImage(logo, { x: MARGIN_X + 6, y: yTop - fitted.height - 14, width: fitted.width, height: fitted.height });
-    }
-    page.drawText("AASTHIX TALENT", { x: MARGIN_X + 80, y: yTop - 16, size: 18, font: bold, color: rgb(0.16, 0.18, 0.22) });
-    page.drawText("Talent That Drives Success", { x: MARGIN_X + 80, y: yTop - 42, size: 13, font, color: rgb(0.25, 0.29, 0.36) });
-    page.drawText("+91 9573543933", { x: PAGE_W - 220, y: yTop - 16, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-    page.drawText("contact@aasthix.com", { x: PAGE_W - 220, y: yTop - 42, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
-    page.drawText("www.aasthix.com", { x: PAGE_W - 220, y: yTop - 68, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  if (logo) {
+    const fit = fitImage(logo, 54, 54);
+    page.drawImage(logo, { x: leftX, y: blockTop - fit.height - 18, width: fit.width, height: fit.height });
   }
 
-  page.drawRectangle({ x: MARGIN_X - 10, y: PAGE_H - TOP_HEADER_H, width: PAGE_W - (MARGIN_X - 10) * 2, height: 6, color: rgb(0.2, 0.22, 0.29) });
-  page.drawRectangle({ x: MARGIN_X - 10, y: PAGE_H - TOP_HEADER_H, width: 430, height: 6, color: rgb(0.13, 0.71, 0.95) });
+  page.drawText("AASTHIX TALENT", {
+    x: leftX + 76,
+    y: blockTop - 32,
+    size: 18,
+    font: bold,
+    color: rgb(0.16, 0.18, 0.22),
+  });
+  page.drawText("Talent That Drives Success", {
+    x: leftX + 76,
+    y: blockTop - 58,
+    size: 11,
+    font,
+    color: rgb(0.28, 0.31, 0.36),
+  });
 
-  page.drawRectangle({ x: MARGIN_X - 10, y: FOOTER_Y + 22, width: PAGE_W - (MARGIN_X - 10) * 2, height: 4, color: rgb(0.2, 0.22, 0.29) });
-  page.drawRectangle({ x: MARGIN_X - 10, y: FOOTER_Y + 22, width: 350, height: 4, color: rgb(0.13, 0.71, 0.95) });
+  const rightX = PAGE_W - 230;
+  page.drawText("+91 9573543933", { x: rightX, y: blockTop - 30, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("contact@aasthix.com", { x: rightX, y: blockTop - 55, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+  page.drawText("www.aasthix.com", { x: rightX, y: blockTop - 80, size: 11, font, color: rgb(0.16, 0.18, 0.22) });
+
+  page.drawRectangle({
+    x: MARGIN_X - 10,
+    y: HEADER_STRIP_Y,
+    width: PAGE_W - (MARGIN_X - 10) * 2,
+    height: 8,
+    color: rgb(0.2, 0.22, 0.29),
+  });
+  page.drawRectangle({ x: MARGIN_X - 10, y: HEADER_STRIP_Y, width: 430, height: 8, color: rgb(0.13, 0.71, 0.95) });
+
+  page.drawRectangle({
+    x: MARGIN_X - 10,
+    y: FOOTER_LINE_Y,
+    width: PAGE_W - (MARGIN_X - 10) * 2,
+    height: 4,
+    color: rgb(0.2, 0.22, 0.29),
+  });
+  page.drawRectangle({ x: MARGIN_X - 10, y: FOOTER_LINE_Y, width: 350, height: 4, color: rgb(0.13, 0.71, 0.95) });
   page.drawText(
     "Unit.No. 114, Manjeera Trinity Corporate, JNTU - Hitech Road, beside LuLu Mall, Ashok Nagar, Kukatpally Housing Board Colony, Kukatpally, Hyderabad, Telangana 500072.",
-    { x: MARGIN_X + 100, y: FOOTER_Y, size: 9, font, color: rgb(0.18, 0.2, 0.24) }
+    { x: MARGIN_X + 84, y: FOOTER_TEXT_Y, size: 9, font, color: rgb(0.2, 0.22, 0.27) }
   );
+}
+
+function drawLineField(
+  page: any,
+  input: {
+    label: string;
+    value: string;
+    x: number;
+    y: number;
+    width: number;
+    labelWidth: number;
+    font: PDFFont;
+    bold: PDFFont;
+  }
+) {
+  const { label, value, x, y, width, labelWidth, font, bold } = input;
+  page.drawText(label, { x, y: y + 3, size: 10, font: bold, color: rgb(0.1, 0.13, 0.2) });
+  const lineStart = x + labelWidth;
+  const lineEnd = x + width;
+  page.drawLine({ start: { x: lineStart, y }, end: { x: lineEnd, y }, thickness: 1, color: rgb(0.1, 0.1, 0.1) });
+  const maxTextW = Math.max(10, lineEnd - lineStart - 8);
+  const text = ellipsize(value || "-", font, 10, maxTextW);
+  page.drawText(text, { x: lineStart + 3, y: y + 3, size: 10, font, color: rgb(0.16, 0.2, 0.26) });
+}
+
+function newPage(pdf: PDFDocument, font: PDFFont, bold: PDFFont, logo: PDFImage | null) {
+  const page = pdf.addPage([PAGE_W, PAGE_H]);
+  drawHeaderAndFooter({ page, font, bold, logo });
+  return page;
+}
+
+function drawTableRow(
+  page: any,
+  cols: number[],
+  yTop: number,
+  rowHeight: number,
+  values: string[],
+  options: { font: PDFFont; size: number; bold?: boolean; verticalAlign?: "middle" | "top" }
+) {
+  const { font, size, bold, verticalAlign = "middle" } = options;
+  page.drawRectangle({
+    x: cols[0],
+    y: yTop - rowHeight,
+    width: cols[cols.length - 1] - cols[0],
+    height: rowHeight,
+    borderWidth: 1,
+    borderColor: rgb(0, 0, 0),
+  });
+  for (let i = 1; i < cols.length - 1; i++) {
+    page.drawLine({ start: { x: cols[i], y: yTop - rowHeight }, end: { x: cols[i], y: yTop }, thickness: 1, color: rgb(0, 0, 0) });
+  }
+  values.forEach((raw, i) => {
+    const text = ellipsize(raw || "-", font, size, Math.max(10, cols[i + 1] - cols[i] - 8));
+    const y = verticalAlign === "top" ? yTop - size - 4 : yTop - rowHeight / 2 - size / 2 + 1;
+    page.drawText(text, {
+      x: cols[i] + 4,
+      y,
+      size,
+      font,
+      color: bold ? rgb(0.08, 0.11, 0.16) : rgb(0.12, 0.14, 0.18),
+    });
+  });
 }
 
 export async function buildOnboardingPdf(input: {
@@ -128,172 +272,280 @@ export async function buildOnboardingPdf(input: {
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const logoBytes = await loadFile(path.join(process.cwd(), "public", "aasthix-brand.png"));
-  const bannerBytes = await loadFile(path.join(process.cwd(), "public", "brand-logo.png"));
-  const logo = logoBytes ? await pdf.embedPng(logoBytes) : null;
-  const headerBanner = bannerBytes ? await tryEmbedImage(pdf, bannerBytes, "brand-logo.png") : null;
-
-  const first = pdf.addPage([PAGE_W, PAGE_H]);
-  drawHeaderAndFooter({ page: first, font, bold, logo, headerBanner });
+  const logo = logoBytes ? await embedFromBytes(pdf, logoBytes, "aasthix-brand.png", "image/png") : null;
 
   const payload = input.payload;
+  const educationRows = asRows<EducationRow>(payload.education_rows);
+  const prevRows = asRows<EmploymentRow>(payload.previous_employment_rows);
+  const refRows = asRows<ReferenceRow>(payload.professional_references);
+
+  const first = newPage(pdf, font, bold, logo);
   const summaryTitle = "Employee Onboarding Summary";
-  const titleWidth = bold.widthOfTextAtSize(summaryTitle, 14);
-  first.drawText(summaryTitle, { x: (PAGE_W - titleWidth) / 2, y: PAGE_H - 132, size: 14, font: bold, color: rgb(0.12, 0.18, 0.28) });
+  first.drawText(summaryTitle, {
+    x: (PAGE_W - bold.widthOfTextAtSize(summaryTitle, 14)) / 2,
+    y: CONTENT_TOP_Y - 16,
+    size: 14,
+    font: bold,
+    color: rgb(0.12, 0.18, 0.28),
+  });
 
-  drawLineField(first, "Candidate :", input.packet.candidateName, 40, PAGE_H - 168, 250, font, bold);
-  drawLineField(first, "Job Title :", input.packet.jobTitle, 300, PAGE_H - 168, 250, font, bold);
-  drawLineField(first, "Status :", input.packet.status, 40, PAGE_H - 188, 250, font, bold);
-  drawLineField(first, "Submitted At :", formatDate(input.packet.submittedAt), 300, PAGE_H - 188, 250, font, bold);
+  drawLineField(first, { label: "Candidate :", value: input.packet.candidateName, x: 40, y: CONTENT_TOP_Y - 56, width: 430, labelWidth: 84, font, bold });
+  drawLineField(first, { label: "Job Title :", value: input.packet.jobTitle, x: 300, y: CONTENT_TOP_Y - 56, width: 280, labelWidth: 84, font, bold });
+  drawLineField(first, { label: "Status :", value: input.packet.status, x: 40, y: CONTENT_TOP_Y - 86, width: 430, labelWidth: 84, font, bold });
+  drawLineField(first, {
+    label: "Submitted At :",
+    value: formatDate(input.packet.submittedAt),
+    x: 300,
+    y: CONTENT_TOP_Y - 86,
+    width: 280,
+    labelWidth: 96,
+    font,
+    bold,
+  });
 
-  const passportBox = { x: PAGE_W - 196, y: PAGE_H - 248, w: 110, h: 128 };
-  first.drawRectangle({ x: passportBox.x, y: passportBox.y, width: passportBox.w, height: passportBox.h, borderWidth: 2, borderColor: rgb(0.1, 0.1, 0.1) });
-  first.drawText("Passport Size Photo", { x: passportBox.x + 12, y: passportBox.y + passportBox.h - 16, size: 9, font: bold, color: rgb(0.18, 0.2, 0.24) });
+  const passportBox = { x: PAGE_W - 196, y: CONTENT_TOP_Y - 186, w: 118, h: 144 };
+  first.drawRectangle({ x: passportBox.x, y: passportBox.y, width: passportBox.w, height: passportBox.h, borderWidth: 2, borderColor: rgb(0.12, 0.12, 0.12) });
+  first.drawText("Passport Size Photo", { x: passportBox.x + 10, y: passportBox.y + passportBox.h - 18, size: 9, font: bold, color: rgb(0.18, 0.2, 0.24) });
 
   const photoDoc = input.docs.find((d) => d.doc_type === "passport_photo");
   if (photoDoc) {
     const photoBytes = await loadFile(path.join(process.cwd(), "public", photoDoc.file_url.replace(/^\//, "")));
     if (photoBytes) {
-      const img = await tryEmbedImage(pdf, photoBytes, photoDoc.file_name);
-      if (img) {
-        const fit = fitImage(img, passportBox.w - 12, passportBox.h - 26);
-        first.drawImage(img, { x: passportBox.x + (passportBox.w - fit.width) / 2, y: passportBox.y + 6, width: fit.width, height: fit.height });
+      const photo = await embedFromBytes(pdf, photoBytes, photoDoc.file_name, photoDoc.mime);
+      if (photo) {
+        const fit = fitImage(photo, passportBox.w - 12, passportBox.h - 30);
+        first.drawImage(photo, {
+          x: passportBox.x + (passportBox.w - fit.width) / 2,
+          y: passportBox.y + 6,
+          width: fit.width,
+          height: fit.height,
+        });
+      } else {
+        first.drawText("Preview unavailable", { x: passportBox.x + 12, y: passportBox.y + 60, size: 9, font, color: rgb(0.34, 0.37, 0.42) });
       }
     }
-  } else {
-    first.drawText("No photo", { x: passportBox.x + 30, y: passportBox.y + 52, size: 10, font, color: rgb(0.35, 0.38, 0.44) });
   }
 
-  const pStartY = PAGE_H - 236;
+  const pStartY = CONTENT_TOP_Y - 168;
   first.drawText("Personal & Employment", { x: 40, y: pStartY, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
-  drawLineField(first, "Full Name", asText(payload.full_name), 40, pStartY - 26, 250, font, bold);
-  drawLineField(first, "Date of Birth", asText(payload.date_of_birth), 300, pStartY - 26, 250, font, bold);
-  drawLineField(first, "Gender", asText(payload.gender), 560, pStartY - 26, 230, font, bold);
-  drawLineField(first, "Contact Number", asText(payload.contact_number), 40, pStartY - 54, 250, font, bold);
-  drawLineField(first, "Email", asText(payload.personal_email), 300, pStartY - 54, 250, font, bold);
-  drawLineField(first, "Joining Date", asText(payload.joining_date), 560, pStartY - 54, 230, font, bold);
-  drawLineField(first, "Employment Type", asText(payload.employment_type), 40, pStartY - 82, 250, font, bold);
-  drawLineField(first, "Work Mode", asText(payload.work_mode), 300, pStartY - 82, 250, font, bold);
-  drawLineField(first, "Work Location", asText(payload.work_location), 560, pStartY - 82, 230, font, bold);
-  drawLineField(first, "Declaration Date", asText(payload.declaration_date), 40, pStartY - 110, 250, font, bold);
+  drawLineField(first, { label: "Full Name", value: asText(payload.full_name), x: 40, y: pStartY - 26, width: 250, labelWidth: 82, font, bold });
+  drawLineField(first, { label: "Date of Birth", value: asText(payload.date_of_birth), x: 300, y: pStartY - 26, width: 250, labelWidth: 96, font, bold });
+  drawLineField(first, { label: "Gender", value: asText(payload.gender), x: 560, y: pStartY - 26, width: 232, labelWidth: 58, font, bold });
+  drawLineField(first, { label: "Contact Number", value: asText(payload.contact_number), x: 40, y: pStartY - 54, width: 250, labelWidth: 104, font, bold });
+  drawLineField(first, { label: "Email", value: asText(payload.personal_email), x: 300, y: pStartY - 54, width: 250, labelWidth: 54, font, bold });
+  drawLineField(first, { label: "Joining Date", value: asText(payload.joining_date), x: 560, y: pStartY - 54, width: 232, labelWidth: 92, font, bold });
+  drawLineField(first, { label: "Employment Type", value: asText(payload.employment_type), x: 40, y: pStartY - 82, width: 250, labelWidth: 116, font, bold });
+  drawLineField(first, { label: "Work Mode", value: asText(payload.work_mode), x: 300, y: pStartY - 82, width: 250, labelWidth: 78, font, bold });
+  drawLineField(first, { label: "Work Location", value: asText(payload.work_location), x: 560, y: pStartY - 82, width: 232, labelWidth: 92, font, bold });
+  drawLineField(first, { label: "Declaration Date", value: asText(payload.declaration_date), x: 40, y: pStartY - 110, width: 250, labelWidth: 118, font, bold });
 
-  const educationRows = asRows<{ education?: string; institute?: string; from?: string; to?: string; specialization?: string; percentage?: string }>(
-    payload.education_rows
-  );
-  const prevRows = asRows<{ employer?: string; empId?: string; from?: string; to?: string; designation?: string; salary?: string }>(
-    payload.previous_employment_rows
-  );
-  const refRows = asRows<{ nameDesignation?: string; emailPhone?: string; association?: string }>(payload.professional_references);
+  // Page 2+: education / employment / references with overflow guards
+  let page = newPage(pdf, font, bold, logo);
+  let y = CONTENT_TOP_Y - 6;
 
-  const p2 = pdf.addPage([PAGE_W, PAGE_H]);
-  drawHeaderAndFooter({ page: p2, font, bold, logo, headerBanner });
-  let y = PAGE_H - 114;
-  p2.drawText("Education Details", { x: 40, y, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
-  y -= 16;
-  const eduCols = [40, 200, 420, 500, 580, 710, 800];
-  p2.drawRectangle({ x: eduCols[0], y: y - 18, width: eduCols[6] - eduCols[0], height: 18, borderWidth: 1, borderColor: rgb(0, 0, 0) });
-  ["Education", "College/University (with Location)", "From", "To", "Specialization", "Percentage"].forEach((h, i) => {
-    p2.drawText(h, { x: eduCols[i] + 4, y: y - 12, size: 8, font: bold });
-    if (i > 0) p2.drawLine({ start: { x: eduCols[i], y: y - 18 }, end: { x: eduCols[i], y }, thickness: 1, color: rgb(0, 0, 0) });
-  });
-  y -= 18;
-  for (const row of educationRows.slice(0, 8)) {
-    p2.drawRectangle({ x: eduCols[0], y: y - 18, width: eduCols[6] - eduCols[0], height: 18, borderWidth: 1, borderColor: rgb(0, 0, 0) });
-    const vals = [asText(row.education), asText(row.institute), asText(row.from), asText(row.to), asText(row.specialization), asText(row.percentage)];
-    vals.forEach((v, i) => {
-      p2.drawText((v || "-").slice(0, 34), { x: eduCols[i] + 4, y: y - 12, size: 8, font });
-      if (i > 0) p2.drawLine({ start: { x: eduCols[i], y: y - 18 }, end: { x: eduCols[i], y }, thickness: 1, color: rgb(0, 0, 0) });
-    });
-    y -= 18;
+  const eduCols = [40, 210, 430, 514, 598, 710, 800];
+  const eduHeaderH = 22;
+  const eduRowH = 28;
+  const educationSectionHeight = 18 + eduHeaderH + Math.max(5, educationRows.length || 5) * eduRowH;
+  if (y - educationSectionHeight < CONTENT_BOTTOM_Y) {
+    page = newPage(pdf, font, bold, logo);
+    y = CONTENT_TOP_Y - 6;
+  }
+  page.drawText("Education Details", { x: 40, y, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
+  y -= 14;
+  drawTableRow(
+    page,
+    eduCols,
+    y,
+    eduHeaderH,
+    ["Education", "College/University (with Location)", "From", "To", "Specialization", "Percentage"],
+    { font: bold, size: 9, bold: true }
+  );
+  y -= eduHeaderH;
+  const eduData = educationRows.length
+    ? educationRows
+    : [
+        { education: "Matriculation/SSC/Equivalent" },
+        { education: "Intermediate/HSC/Equivalent" },
+        { education: "Diploma/Equivalent" },
+        { education: "Graduation/Equivalent" },
+        { education: "Post-Graduation/Equivalent" },
+      ];
+  for (const row of eduData) {
+    if (y - eduRowH < CONTENT_BOTTOM_Y) {
+      page = newPage(pdf, font, bold, logo);
+      y = CONTENT_TOP_Y - 6;
+      page.drawText("Education Details (cont.)", { x: 40, y, size: 11, font: bold, color: rgb(0.12, 0.18, 0.28) });
+      y -= 14;
+      drawTableRow(
+        page,
+        eduCols,
+        y,
+        eduHeaderH,
+        ["Education", "College/University (with Location)", "From", "To", "Specialization", "Percentage"],
+        { font: bold, size: 9, bold: true }
+      );
+      y -= eduHeaderH;
+    }
+    drawTableRow(
+      page,
+      eduCols,
+      y,
+      eduRowH,
+      [asText(row.education), asText(row.institute), asText(row.from), asText(row.to), asText(row.specialization), asText(row.percentage)],
+      { font, size: 8 }
+    );
+    y -= eduRowH;
   }
 
-  y -= 14;
-  p2.drawText("Previous Employment / Jobs", { x: 40, y, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
   y -= 16;
-  const empCols = [40, 74, 260, 330, 406, 484, 600, 740, 800];
-  p2.drawRectangle({ x: empCols[0], y: y - 18, width: empCols[8] - empCols[0], height: 18, borderWidth: 1, borderColor: rgb(0, 0, 0) });
-  ["SNo", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"].forEach((h, i) => {
-    p2.drawText(h, { x: empCols[i] + 3, y: y - 12, size: 8, font: bold });
-    if (i > 0) p2.drawLine({ start: { x: empCols[i], y: y - 18 }, end: { x: empCols[i], y }, thickness: 1, color: rgb(0, 0, 0) });
+  const empCols = [40, 74, 280, 350, 430, 510, 640, 800];
+  const empHeaderH = 22;
+  const empRowH = 24;
+  const empRows = prevRows.length ? prevRows : [{}];
+  const empSectionHeight = 18 + empHeaderH + empRows.length * empRowH;
+  if (y - empSectionHeight < CONTENT_BOTTOM_Y) {
+    page = newPage(pdf, font, bold, logo);
+    y = CONTENT_TOP_Y - 6;
+  }
+  page.drawText("Previous Employment / Jobs", { x: 40, y, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
+  y -= 14;
+  drawTableRow(page, empCols, y, empHeaderH, ["S.No", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"], {
+    font: bold,
+    size: 8.5,
+    bold: true,
   });
-  y -= 18;
-  prevRows.slice(0, 8).forEach((r, idx) => {
-    p2.drawRectangle({ x: empCols[0], y: y - 18, width: empCols[8] - empCols[0], height: 18, borderWidth: 1, borderColor: rgb(0, 0, 0) });
-    const vals = [String(idx + 1), asText(r.employer), asText(r.empId), asText(r.from), asText(r.to), asText(r.designation), asText(r.salary)];
-    vals.forEach((v, i) => {
-      p2.drawText((v || "-").slice(0, 28), { x: empCols[i] + 3, y: y - 12, size: 8, font });
-      if (i > 0) p2.drawLine({ start: { x: empCols[i], y: y - 18 }, end: { x: empCols[i], y }, thickness: 1, color: rgb(0, 0, 0) });
-    });
-    y -= 18;
+  y -= empHeaderH;
+  empRows.forEach((row, index) => {
+    if (y - empRowH < CONTENT_BOTTOM_Y) {
+      page = newPage(pdf, font, bold, logo);
+      y = CONTENT_TOP_Y - 6;
+      page.drawText("Previous Employment / Jobs (cont.)", { x: 40, y, size: 11, font: bold, color: rgb(0.12, 0.18, 0.28) });
+      y -= 14;
+      drawTableRow(page, empCols, y, empHeaderH, ["S.No", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"], {
+        font: bold,
+        size: 8.5,
+        bold: true,
+      });
+      y -= empHeaderH;
+    }
+    drawTableRow(
+      page,
+      empCols,
+      y,
+      empRowH,
+      [String(index + 1), asText(row.employer), asText(row.empId), asText(row.from), asText(row.to), asText(row.designation), asText(row.salary)],
+      { font, size: 8 }
+    );
+    y -= empRowH;
   });
 
-  y -= 14;
-  p2.drawText("Professional References", { x: 40, y, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
   y -= 16;
   const refCols = [40, 240, 426, 612, 800];
-  const refRowsDef = [
-    { label: "Name / Designation", key: "nameDesignation" as const },
-    { label: "Email id and Mob. No.", key: "emailPhone" as const },
-    { label: "Nature of Association", key: "association" as const },
+  const refHeaderH = 22;
+  const refRowH = 24;
+  const refFields: Array<{ label: string; key: keyof ReferenceRow }> = [
+    { label: "Name / Designation", key: "nameDesignation" },
+    { label: "Email id and Mob. No.", key: "emailPhone" },
+    { label: "Nature of Association", key: "association" },
   ];
-  p2.drawRectangle({ x: refCols[0], y: y - 18, width: refCols[4] - refCols[0], height: 18, borderWidth: 1, borderColor: rgb(0, 0, 0) });
-  p2.drawText("Field", { x: refCols[0] + 4, y: y - 12, size: 8, font: bold });
-  p2.drawText("Reference No 1", { x: refCols[1] + 4, y: y - 12, size: 8, font: bold });
-  p2.drawText("Reference No 2", { x: refCols[2] + 4, y: y - 12, size: 8, font: bold });
-  p2.drawText("Reference No 3", { x: refCols[3] + 4, y: y - 12, size: 8, font: bold });
-  [refCols[1], refCols[2], refCols[3]].forEach((x) => p2.drawLine({ start: { x, y: y - 18 }, end: { x, y }, thickness: 1, color: rgb(0, 0, 0) }));
-  y -= 18;
-  for (const rr of refRowsDef) {
-    p2.drawRectangle({ x: refCols[0], y: y - 20, width: refCols[4] - refCols[0], height: 20, borderWidth: 1, borderColor: rgb(0, 0, 0) });
-    p2.drawText(rr.label, { x: refCols[0] + 4, y: y - 13, size: 8, font: bold });
-    for (let i = 0; i < 3; i++) {
-      const ref = refRows[i] || {};
-      p2.drawText(asText(ref[rr.key]).slice(0, 30) || "-", { x: refCols[i + 1] + 4, y: y - 13, size: 8, font });
-    }
-    [refCols[1], refCols[2], refCols[3]].forEach((x) => p2.drawLine({ start: { x, y: y - 20 }, end: { x, y }, thickness: 1, color: rgb(0, 0, 0) }));
-    y -= 20;
+  const refs = [refRows[0] || {}, refRows[1] || {}, refRows[2] || {}];
+  const refSectionHeight = 18 + refHeaderH + refFields.length * refRowH;
+  if (y - refSectionHeight < CONTENT_BOTTOM_Y) {
+    page = newPage(pdf, font, bold, logo);
+    y = CONTENT_TOP_Y - 6;
+  }
+  page.drawText("Professional References", { x: 40, y, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
+  y -= 14;
+  drawTableRow(page, refCols, y, refHeaderH, ["Field", "Reference No 1", "Reference No 2", "Reference No 3"], {
+    font: bold,
+    size: 8.5,
+    bold: true,
+  });
+  y -= refHeaderH;
+  for (const field of refFields) {
+    drawTableRow(
+      page,
+      refCols,
+      y,
+      refRowH,
+      [field.label, asText(refs[0][field.key]), asText(refs[1][field.key]), asText(refs[2][field.key])],
+      { font, size: 8 }
+    );
+    y -= refRowH;
   }
 
-  const p3 = pdf.addPage([PAGE_W, PAGE_H]);
-  drawHeaderAndFooter({ page: p3, font, bold, logo, headerBanner });
-  let my = PAGE_H - 114;
-  p3.drawText("Document Manifest", { x: 40, y: my, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
-  my -= 16;
+  // Manifest pages with wrapping/pagination
+  page = newPage(pdf, font, bold, logo);
+  let my = CONTENT_TOP_Y - 6;
+  page.drawText("Document Manifest", { x: 40, y: my, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
+  my -= 18;
   if (input.docs.length === 0) {
-    p3.drawText("No uploaded documents.", { x: 40, y: my, size: 10, font });
+    page.drawText("No uploaded documents.", { x: 40, y: my, size: 10, font });
   } else {
     for (const d of input.docs) {
-      p3.drawText(`${d.doc_type} | ${d.file_name} | ${formatDate(d.uploaded_at)}`, { x: 40, y: my, size: 8, font });
-      my -= 10;
-      if (my < 84) break;
+      const line = `${d.doc_type} | ${d.file_name} | ${formatDate(d.uploaded_at)}`;
+      const wrapped: string[] = [];
+      let remaining = line;
+      while (remaining.length > 0) {
+        let cut = remaining.length;
+        while (cut > 0 && font.widthOfTextAtSize(remaining.slice(0, cut), 8) > PAGE_W - 90) cut -= 1;
+        wrapped.push(remaining.slice(0, Math.max(1, cut)));
+        remaining = remaining.slice(Math.max(1, cut));
+      }
+      for (const segment of wrapped) {
+        if (my < CONTENT_BOTTOM_Y) {
+          page = newPage(pdf, font, bold, logo);
+          my = CONTENT_TOP_Y - 6;
+          page.drawText("Document Manifest (cont.)", { x: 40, y: my, size: 11, font: bold, color: rgb(0.12, 0.18, 0.28) });
+          my -= 18;
+        }
+        page.drawText(segment, { x: 40, y: my, size: 8, font, color: rgb(0.14, 0.16, 0.2) });
+        my -= 11;
+      }
     }
   }
 
+  // 4-per-page attachment previews
   const imageDocs = input.docs.filter((d) => {
-    const n = d.file_name.toLowerCase();
-    return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".webp");
+    const ext = extensionOf(d.file_name);
+    const mime = String(d.mime || "").toLowerCase();
+    return mime.startsWith("image/") || [".png", ".jpg", ".jpeg", ".webp"].includes(ext);
   });
+
+  const cells = [
+    { x: 40, y: 304, w: 360, h: 175 },
+    { x: 430, y: 304, w: 360, h: 175 },
+    { x: 40, y: 102, w: 360, h: 175 },
+    { x: 430, y: 102, w: 360, h: 175 },
+  ];
+
   for (let i = 0; i < imageDocs.length; i += 4) {
     const chunk = imageDocs.slice(i, i + 4);
-    const p = pdf.addPage([PAGE_W, PAGE_H]);
-    drawHeaderAndFooter({ page: p, font, bold, logo, headerBanner });
-    p.drawText("Attachment Preview", { x: 40, y: PAGE_H - 114, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
-    const cells = [
-      { x: 40, y: 300, w: 360, h: 185 },
-      { x: 430, y: 300, w: 360, h: 185 },
-      { x: 40, y: 92, w: 360, h: 185 },
-      { x: 430, y: 92, w: 360, h: 185 },
-    ];
+    const p = newPage(pdf, font, bold, logo);
+    p.drawText("Attachment Preview", { x: 40, y: CONTENT_TOP_Y - 6, size: 12, font: bold, color: rgb(0.12, 0.18, 0.28) });
     for (let j = 0; j < chunk.length; j++) {
       const doc = chunk[j];
       const cell = cells[j];
-      p.drawRectangle({ x: cell.x, y: cell.y, width: cell.w, height: cell.h, borderWidth: 1, borderColor: rgb(0.7, 0.74, 0.8) });
-      p.drawText(doc.file_name.slice(0, 56), { x: cell.x + 6, y: cell.y + cell.h - 14, size: 8, font: bold });
+      p.drawRectangle({ x: cell.x, y: cell.y, width: cell.w, height: cell.h, borderWidth: 1, borderColor: rgb(0.72, 0.75, 0.8) });
+      p.drawText(ellipsize(doc.file_name, bold, 8.5, cell.w - 12), { x: cell.x + 6, y: cell.y + cell.h - 14, size: 8.5, font: bold });
       const bytes = await loadFile(path.join(process.cwd(), "public", doc.file_url.replace(/^\//, "")));
-      if (!bytes) continue;
-      const img = await tryEmbedImage(pdf, bytes, doc.file_name);
-      if (!img) continue;
-      const fit = fitImage(img, cell.w - 12, cell.h - 28);
-      p.drawImage(img, { x: cell.x + (cell.w - fit.width) / 2, y: cell.y + (cell.h - 20 - fit.height) / 2, width: fit.width, height: fit.height });
+      if (!bytes) {
+        p.drawText("Preview unavailable", { x: cell.x + 10, y: cell.y + cell.h / 2, size: 9, font, color: rgb(0.35, 0.38, 0.44) });
+        continue;
+      }
+      const img = await embedFromBytes(pdf, bytes, doc.file_name, doc.mime);
+      if (!img) {
+        p.drawText("Preview unavailable", { x: cell.x + 10, y: cell.y + cell.h / 2, size: 9, font, color: rgb(0.35, 0.38, 0.44) });
+        continue;
+      }
+      const fit = fitImage(img, cell.w - 12, cell.h - 30);
+      p.drawImage(img, {
+        x: cell.x + (cell.w - fit.width) / 2,
+        y: cell.y + (cell.h - 22 - fit.height) / 2,
+        width: fit.width,
+        height: fit.height,
+      });
     }
   }
 
