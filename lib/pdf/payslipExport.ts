@@ -219,14 +219,16 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
   drawSectionHeader(page, bold, "Personal details", x, topY, w, headH, s.baseFont + 1);
 
   const tableTop = topY - headH;
-  const colLabelW = 84;
-  const valW = 132;
-  const midLabelW = 84;
+  // Two label/value pairs that consume full table width (no trailing empty column).
   const col1X = x;
-  const col2X = col1X + colLabelW;
-  const col3X = col2X + valW;
-  const col4X = col3X + midLabelW;
-  const col5X = col4X + valW;
+  const col2X = x + w * 0.16;
+  const col3X = x + w * 0.40;
+  const col4X = x + w * 0.55;
+  const col5X = x + w;
+  const leftLabelW = col2X - col1X;
+  const leftValW = col3X - col2X;
+  const rightLabelW = col4X - col3X;
+  const rightValW = col5X - col4X;
 
   page.drawRectangle({ x, y: tableTop - rowCount * rowH, width: w, height: rowCount * rowH, borderWidth: 1, borderColor: BORDER });
   [col2X, col3X, col4X, col5X].forEach((vx) =>
@@ -241,10 +243,10 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
   for (let i = 0; i < rowCount; i += 1) {
     const l = leftRows[i] || ["", ""];
     const r = rightRows[i] || ["", ""];
-    drawCellText(page, font, l[0], col1X + s.padX, cy, colLabelW - s.padX * 2, s.baseFont);
-    drawCellText(page, font, l[1] || "-", col2X + s.padX, cy, valW - s.padX * 2, s.baseFont, true, bold);
-    drawCellText(page, font, r[0], col3X + s.padX, cy, midLabelW - s.padX * 2, s.baseFont);
-    drawCellText(page, font, r[1] || "-", col4X + s.padX, cy, valW - s.padX * 2, s.baseFont, true, bold);
+    drawCellText(page, font, l[0], col1X + s.padX, cy, leftLabelW - s.padX * 2, s.baseFont);
+    drawCellText(page, font, l[1] || "-", col2X + s.padX, cy, leftValW - s.padX * 2, s.baseFont, true, bold);
+    drawCellText(page, font, r[0], col3X + s.padX, cy, rightLabelW - s.padX * 2, s.baseFont);
+    drawCellText(page, font, r[1] || "-", col4X + s.padX, cy, rightValW - s.padX * 2, s.baseFont, true, bold);
     cy -= rowH;
   }
 
@@ -262,7 +264,11 @@ function drawEarningsDeductionsBlock(page: any, bold: PDFFont, font: PDFFont, y:
   const rows = Math.max(1, maxRows);
   const totalRows = rows + 2;
 
-  const colX = [x, x + 80, x + 132, x + 184, x + 236, x + 290, x + 370, x + 420, x + 472];
+  // 8 columns total: 5 for earnings + 3 for deductions, ending exactly at table width.
+  const colWidths = [0.18, 0.11, 0.10, 0.10, 0.11, 0.21, 0.10, 0.09];
+  const colX = [x];
+  for (const ratio of colWidths) colX.push(colX[colX.length - 1] + w * ratio);
+  colX[colX.length - 1] = x + w;
   page.drawRectangle({ x, y: tableTop - rowH * (totalRows + 1), width: w, height: rowH * (totalRows + 1), borderWidth: 1, borderColor: BORDER });
   colX.slice(1).forEach((vx) => page.drawLine({ start: { x: vx, y: tableTop }, end: { x: vx, y: tableTop - rowH * (totalRows + 1) }, thickness: 1, color: BORDER }));
 
@@ -273,8 +279,9 @@ function drawEarningsDeductionsBlock(page: any, bold: PDFFont, font: PDFFont, y:
 
   const headers = ["EARNINGS", "RATE", "MONTHLY", "ARREARS", "YTD", "DEDUCTIONS", "MONTHLY", "YTD"];
   headers.forEach((header, i) => {
-    const hx = i < 5 ? colX[i] + s.padX : colX[i + 1] + s.padX;
-    drawCellText(page, font, header, hx, tableTop - rowH + (rowH - s.baseFont) / 2, (i < 5 ? colX[i + 1] : colX[i + 2]) - (i < 5 ? colX[i] : colX[i + 1]) - s.padX * 2, s.baseFont, true, bold);
+    const hx = colX[i] + s.padX;
+    const hw = colX[i + 1] - colX[i] - s.padX * 2;
+    drawCellText(page, font, header, hx, tableTop - rowH + (rowH - s.baseFont) / 2, hw, s.baseFont, true, bold);
   });
 
   let cy = tableTop - rowH * 2 + (rowH - s.baseFont) / 2;
