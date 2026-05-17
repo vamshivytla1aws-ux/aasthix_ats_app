@@ -84,6 +84,9 @@ async function loadLogo(pdf: PDFDocument): Promise<PDFImage | null> {
 async function loadPayslipTemplateBackground(pdf: PDFDocument): Promise<PDFImage | null> {
   const candidates = [
     path.join(process.cwd(), "public", "payslip-template.png"),
+    path.join(process.cwd(), "public", "Payslip-template.png"),
+    path.join(process.cwd(), "payslip-template.png"),
+    path.join("/app", "public", "payslip-template.png"),
     path.join(process.cwd(), "public", "payslip-background.png"),
     path.join(process.cwd(), "public", "payslip-bg.png"),
   ];
@@ -159,8 +162,13 @@ function drawSectionHeader(page: any, bold: PDFFont, title: string, x: number, y
 }
 
 function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: number, payload: PayslipPdfPayload, s: ScaleBand) {
-  page.drawText(`Payslip For : ${payload.monthLabel}`, { x: PAGE_W - 165, y: y + 2, size: s.baseFont + 1.2, font, color: TEXT });
-  page.drawText("Amount in INR", { x: PAGE_W - 143, y: y - 14, size: s.baseFont + 0.8, font, color: TEXT });
+  page.drawText(`Payslip For : ${payload.monthLabel}    Amount in INR`, {
+    x: PAGE_W - 285,
+    y: y + 10,
+    size: s.baseFont + 1.1,
+    font,
+    color: TEXT,
+  });
 
   const x = PAGE_MARGIN_X;
   const w = PAGE_W - PAGE_MARGIN_X * 2;
@@ -168,7 +176,7 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
   const rowH = s.rowH;
   const rowCount = 8;
   const totalH = headH + rowCount * rowH;
-  const topY = y - 24;
+  const topY = y - 18;
   drawSectionHeader(page, bold, "Personal details", x, topY, w, headH, s.baseFont + 1);
 
   const tableTop = topY - headH;
@@ -350,14 +358,9 @@ function drawTaxSheetBlock(page: any, bold: PDFFont, font: PDFFont, y: number, p
   return valY - s.sectionGap;
 }
 
-function drawSignatures(page: any, bold: PDFFont, font: PDFFont, y: number, payload: PayslipPdfPayload, s: ScaleBand) {
+function drawSignatures(page: any, _bold: PDFFont, font: PDFFont, y: number, payload: PayslipPdfPayload, s: ScaleBand) {
   const netWords = `Net Salary in Words: ${payload.netSalaryInWords}`;
   page.drawText(netWords, { x: PAGE_MARGIN_X + 2, y, size: s.smallFont, font, color: TEXT });
-  const lineY = y - 20;
-  page.drawLine({ start: { x: PAGE_MARGIN_X + 12, y: lineY }, end: { x: PAGE_MARGIN_X + 140, y: lineY }, thickness: 1, color: BORDER });
-  page.drawLine({ start: { x: PAGE_W - 170, y: lineY }, end: { x: PAGE_W - 38, y: lineY }, thickness: 1, color: BORDER });
-  page.drawText("Employee Signature", { x: PAGE_MARGIN_X + 22, y: lineY - 12, size: s.smallFont, font: bold, color: TEXT });
-  page.drawText("Employer Signature", { x: PAGE_W - 160, y: lineY - 12, size: s.smallFont, font: bold, color: TEXT });
 }
 
 function estimateHeight(payload: PayslipPdfPayload, s: ScaleBand) {
@@ -378,10 +381,13 @@ export async function buildPayslipPdf(payload: PayslipPdfPayload) {
   const bg = await loadPayslipTemplateBackground(pdf);
   const page = pdf.addPage([PAGE_W, PAGE_H]);
 
-  if (!bg) {
-    throw new Error("Payslip template background is missing. Upload /public/payslip-template.png to generate the exact sample layout.");
+  if (bg) {
+    page.drawImage(bg, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
+  } else {
+    // Fallback keeps generation alive if runtime cannot find the template asset.
+    drawHeader(page, bold, font, logo);
+    drawFooter(page, font);
   }
-  page.drawImage(bg, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
 
   const availableHeight = CONTENT_TOP - CONTENT_BOTTOM;
   let scale = SCALE_BANDS[SCALE_BANDS.length - 1];

@@ -113,6 +113,12 @@ async function loadFileBytes(filePath: string) {
   }
 }
 
+async function loadTemplateBackground(pdf: PDFDocument): Promise<PDFImage | null> {
+  const bytes = await loadFileBytes(path.join(process.cwd(), "public", "payslip-template.png"));
+  if (!bytes) return null;
+  return embedImage(pdf, bytes, "payslip-template.png", "image/png");
+}
+
 function blobBytes(doc: DocRow) {
   if (!doc.file_blob) return null;
   try {
@@ -241,8 +247,11 @@ function drawFooter(page: any, font: PDFFont) {
   page.drawText(line2, { x: (PAGE_W - font.widthOfTextAtSize(line2, s)) / 2, y: 24, size: s, font, color: rgb(0.2, 0.22, 0.27) });
 }
 
-function newPage(pdf: PDFDocument, bold: PDFFont, font: PDFFont, logo: PDFImage | null) {
+function newPage(pdf: PDFDocument, bold: PDFFont, font: PDFFont, logo: PDFImage | null, templateBg: PDFImage | null) {
   const page = pdf.addPage([PAGE_W, PAGE_H]);
+  if (templateBg) {
+    page.drawImage(templateBg, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
+  }
   drawHeader(page, bold, font, logo);
   drawFooter(page, font);
   return page;
@@ -252,9 +261,17 @@ function newPage(pdf: PDFDocument, bold: PDFFont, font: PDFFont, logo: PDFImage 
  * Ensures vertical room before drawing a block. If there is not enough room,
  * a new page is created and the fixed header/footer are redrawn.
  */
-function ensureSpace(state: FlowState, requiredHeight: number, pdf: PDFDocument, bold: PDFFont, font: PDFFont, logo: PDFImage | null) {
+function ensureSpace(
+  state: FlowState,
+  requiredHeight: number,
+  pdf: PDFDocument,
+  bold: PDFFont,
+  font: PDFFont,
+  logo: PDFImage | null,
+  templateBg: PDFImage | null,
+) {
   if (state.cursorY - requiredHeight < CONTENT_BOTTOM) {
-    state.page = newPage(pdf, bold, font, logo);
+    state.page = newPage(pdf, bold, font, logo, templateBg);
     state.cursorY = CONTENT_TOP;
   }
 }
@@ -337,13 +354,14 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const logoBytes = await loadFileBytes(path.join(process.cwd(), "public", "aasthix-brand.png"));
   const logo = logoBytes ? await embedImage(pdf, logoBytes, "aasthix-brand.png", "image/png") : null;
+  const templateBg = await loadTemplateBackground(pdf);
 
   const payload = input.payload || {};
   const educationRows = asRows<EducationRow>(payload.education_rows);
   const prevRows = asRows<EmploymentRow>(payload.previous_employment_rows);
   const refRows = asRows<ReferenceRow>(payload.professional_references);
 
-  const page1 = newPage(pdf, bold, font, logo);
+  const page1 = newPage(pdf, bold, font, logo, templateBg);
   page1.drawText("Employee Onboarding Summary", {
     x: (PAGE_W - bold.widthOfTextAtSize("Employee Onboarding Summary", 14)) / 2,
     y: CONTENT_TOP - 16,
@@ -406,7 +424,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   drawFieldRow(page1, font, bold, { label: "UAN", value: uan, x: 40, y: personalStartY - 138, width: 250, labelWidth: 58 });
   drawFieldRow(page1, font, bold, { label: "Declaration Date", value: firstValue(payload, ["declaration_date"]), x: 300, y: personalStartY - 138, width: 250, labelWidth: 118 });
 
-  const flow: FlowState = { page: newPage(pdf, bold, font, logo), cursorY: CONTENT_TOP };
+  const flow: FlowState = { page: newPage(pdf, bold, font, logo, templateBg), cursorY: CONTENT_TOP };
 
   const eduCols = [40, 210, 430, 514, 598, 710, 800];
   const eduHeaderH = 22;
@@ -420,13 +438,13 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
         { education: "Graduation/Equivalent" },
         { education: "Post-Graduation/Equivalent" },
       ];
-  ensureSpace(flow, 18 + eduHeaderH + eduData.length * eduRowH + 10, pdf, bold, font, logo);
+  ensureSpace(flow, 18 + eduHeaderH + eduData.length * eduRowH + 10, pdf, bold, font, logo, templateBg);
   drawSectionHeader(flow.page, 40, flow.cursorY, 760, "Education Details", bold);
   flow.cursorY -= 24;
   drawTableRow(flow.page, eduCols, flow.cursorY, eduHeaderH, ["Education", "College/University (with Location)", "From", "To", "Specialization", "Percentage"], bold, 9, true);
   flow.cursorY -= eduHeaderH;
   for (const row of eduData) {
-    ensureSpace(flow, eduRowH, pdf, bold, font, logo);
+    ensureSpace(flow, eduRowH, pdf, bold, font, logo, templateBg);
     drawTableRow(flow.page, eduCols, flow.cursorY, eduRowH, [asText(row.education), asText(row.institute), asText(row.from), asText(row.to), asText(row.specialization), asText(row.percentage)], font, 8);
     flow.cursorY -= eduRowH;
   }
@@ -436,13 +454,13 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   const empHeaderH = 22;
   const empRowH = 24;
   const empRows = prevRows.length ? prevRows : [{}];
-  ensureSpace(flow, 18 + empHeaderH + empRows.length * empRowH + 10, pdf, bold, font, logo);
+  ensureSpace(flow, 18 + empHeaderH + empRows.length * empRowH + 10, pdf, bold, font, logo, templateBg);
   drawSectionHeader(flow.page, 40, flow.cursorY, 760, "Previous Employment / Jobs", bold);
   flow.cursorY -= 24;
   drawTableRow(flow.page, empCols, flow.cursorY, empHeaderH, ["S.No", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"], bold, 8.5, true);
   flow.cursorY -= empHeaderH;
   empRows.forEach((row, i) => {
-    ensureSpace(flow, empRowH, pdf, bold, font, logo);
+    ensureSpace(flow, empRowH, pdf, bold, font, logo, templateBg);
     drawTableRow(flow.page, empCols, flow.cursorY, empRowH, [String(i + 1), asText(row.employer), asText(row.empId), asText(row.from), asText(row.to), asText(row.designation), asText(row.salary)], font, 8);
     flow.cursorY -= empRowH;
   });
@@ -451,7 +469,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   const refCols = [40, 240, 426, 612, 800];
   const refHeaderH = 22;
   const refRowH = 24;
-  ensureSpace(flow, 18 + refHeaderH + 3 * refRowH + 10, pdf, bold, font, logo);
+  ensureSpace(flow, 18 + refHeaderH + 3 * refRowH + 10, pdf, bold, font, logo, templateBg);
   drawSectionHeader(flow.page, 40, flow.cursorY, 760, "Professional References", bold);
   flow.cursorY -= 24;
   drawTableRow(flow.page, refCols, flow.cursorY, refHeaderH, ["Field", "Reference No 1", "Reference No 2", "Reference No 3"], bold, 8.5, true);
@@ -464,7 +482,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   drawTableRow(flow.page, refCols, flow.cursorY, refRowH, ["Nature of Association", asText(refs[0].association), asText(refs[1].association), asText(refs[2].association)], font, 8);
   flow.cursorY -= refRowH;
 
-  flow.page = newPage(pdf, bold, font, logo);
+  flow.page = newPage(pdf, bold, font, logo, templateBg);
   flow.cursorY = CONTENT_TOP;
   drawSectionHeader(flow.page, 40, flow.cursorY, 760, "Document Manifest", bold);
   flow.cursorY -= 24;
@@ -476,7 +494,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
 
   const docs = input.docs.length ? input.docs : [{ doc_type: "-", file_name: "No uploaded documents.", file_url: "", uploaded_at: "", mime: null, file_blob: null }];
   for (const doc of docs) {
-    ensureSpace(flow, manRowH + 2, pdf, bold, font, logo);
+    ensureSpace(flow, manRowH + 2, pdf, bold, font, logo, templateBg);
     drawTableRow(flow.page, manCols, flow.cursorY, manRowH, [asText(doc.doc_type), asText(doc.file_name), safeDate(doc.uploaded_at)], font, 8);
     flow.cursorY -= manRowH;
   }
@@ -494,7 +512,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
     const gapY = 24;
     let index = 0;
     while (index < imageDocs.length) {
-      flow.page = newPage(pdf, bold, font, logo);
+      flow.page = newPage(pdf, bold, font, logo, templateBg);
       flow.cursorY = CONTENT_TOP;
       drawSectionHeader(flow.page, 40, flow.cursorY, 760, "Attachment Preview", bold);
       flow.cursorY -= 30;
@@ -502,7 +520,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
       const cardsPerRow = 2;
       const rowHeight = cardH + gapY;
       while (index < imageDocs.length) {
-        ensureSpace(flow, rowHeight, pdf, bold, font, logo);
+        ensureSpace(flow, rowHeight, pdf, bold, font, logo, templateBg);
         const rowY = flow.cursorY - cardH;
         for (let col = 0; col < cardsPerRow && index < imageDocs.length; col++) {
           const x = 40 + col * (cardW + gapX);
