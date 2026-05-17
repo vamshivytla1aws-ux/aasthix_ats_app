@@ -42,11 +42,6 @@ export async function POST(request: Request) {
     if (!body.employeeIdCode?.trim()) return NextResponse.json({ error: "Employee ID is required." }, { status: 400 });
     if (!body.fullName?.trim()) return NextResponse.json({ error: "Full name is required." }, { status: 400 });
     if (!body.email?.trim()) return NextResponse.json({ error: "Email is required." }, { status: 400 });
-    const role = String(body.role || "employee").trim().toLowerCase();
-    const managerOptional = role === "manager" || role === "hr" || role === "admin";
-    if (!managerOptional && !Number(body.reportingManagerUserId) && !String(body.reportingManagerEmail || "").trim()) {
-      return NextResponse.json({ error: "Select reporting manager or enter manager email." }, { status: 400 });
-    }
     const id = await createEmployee(
       {
         employeeIdCode: body.employeeIdCode,

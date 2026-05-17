@@ -44,7 +44,6 @@ const EMPTY_FORM = {
   designation: "",
   employmentType: "",
   joiningDate: "",
-  reportingManagerUserId: "",
   reportingManagerEmail: "",
   workLocation: "",
   status: "active",
@@ -59,19 +58,6 @@ export default function EmployeeDirectoryPage() {
   const [toast, setToast] = React.useState<{ message: string; variant: "success" | "error" | "blocked" } | null>(null);
   const [importRows, setImportRows] = React.useState<EmployeeImportRowResult[]>([]);
   const [importSummary, setImportSummary] = React.useState<{ valid: number; invalid: number; conflict: number } | null>(null);
-  const [showQuickManager, setShowQuickManager] = React.useState(false);
-  const [quickManager, setQuickManager] = React.useState({
-    employeeIdCode: "",
-    fullName: "",
-    email: "",
-    phone: "",
-    department: "HR",
-    designation: "Manager",
-    employmentType: "Full-Time",
-    joiningDate: "",
-    workLocation: "",
-    status: "active",
-  });
 
   const { data, mutate } = useSWR<{ employees: Employee[] }>(`/api/hrms/employees?q=${encodeURIComponent(q)}`, dashboardFetcher, {
     revalidateOnFocus: false,
@@ -95,7 +81,6 @@ export default function EmployeeDirectoryPage() {
       designation: employee.designation || "",
       employmentType: employee.employment_type || "",
       joiningDate: employee.joining_date ? String(employee.joining_date).slice(0, 10) : "",
-      reportingManagerUserId: employee.reporting_manager_user_id ? String(employee.reporting_manager_user_id) : "",
       reportingManagerEmail: employee.reporting_manager_email || "",
       workLocation: employee.work_location || "",
       status: employee.employment_status || "active",
@@ -108,12 +93,6 @@ export default function EmployeeDirectoryPage() {
       setToast({ message: "Employee ID, full name, and email are required.", variant: "blocked" });
       return;
     }
-    const managerOptional =
-      form.role === "manager" || form.role === "hr" || form.role === "admin";
-    if (!managerOptional && !form.reportingManagerUserId && !form.reportingManagerEmail.trim()) {
-      setToast({ message: "Select reporting manager or enter manager email.", variant: "blocked" });
-      return;
-    }
     setBusy(true);
     try {
       if (editingId) {
@@ -122,7 +101,6 @@ export default function EmployeeDirectoryPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...form,
-            reportingManagerUserId: form.reportingManagerUserId ? Number(form.reportingManagerUserId) : null,
             reportingManagerEmail: form.reportingManagerEmail.trim() || null,
           }),
         });
@@ -132,7 +110,6 @@ export default function EmployeeDirectoryPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...form,
-            reportingManagerUserId: form.reportingManagerUserId ? Number(form.reportingManagerUserId) : null,
             reportingManagerEmail: form.reportingManagerEmail.trim() || null,
           }),
         });
@@ -142,46 +119,6 @@ export default function EmployeeDirectoryPage() {
       await mutate();
     } catch (error) {
       setToast({ message: error instanceof Error ? error.message : "Failed to save employee.", variant: "error" });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createManagerQuick() {
-    if (!quickManager.employeeIdCode.trim() || !quickManager.fullName.trim() || !quickManager.email.trim()) {
-      setToast({ message: "Manager ID, name and email are required.", variant: "blocked" });
-      return;
-    }
-    setBusy(true);
-    try {
-      const response = await apiFetchJson<{ id: number; user_message?: string }>("/api/hrms/employees", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...quickManager,
-          role: "manager",
-          reportingManagerUserId: null,
-          reportingManagerEmail: null,
-        }),
-      });
-      await mutate();
-      setForm((s) => ({ ...s, reportingManagerUserId: String(response.id), reportingManagerEmail: "" }));
-      setShowQuickManager(false);
-      setQuickManager({
-        employeeIdCode: "",
-        fullName: "",
-        email: "",
-        phone: "",
-        department: "HR",
-        designation: "Manager",
-        employmentType: "Full-Time",
-        joiningDate: "",
-        workLocation: "",
-        status: "active",
-      });
-      setToast({ message: response.user_message || "Manager created and selected.", variant: "success" });
-    } catch (error) {
-      setToast({ message: error instanceof Error ? error.message : "Failed to create manager.", variant: "error" });
     } finally {
       setBusy(false);
     }
@@ -271,66 +208,12 @@ export default function EmployeeDirectoryPage() {
               <option value="recruiter">Recruiter</option>
               <option value="hr">HR</option>
             </select>
-            <div className="flex gap-2">
-              <select
-                className={UI.select + " flex-1"}
-                value={form.reportingManagerUserId}
-                onChange={(e) =>
-                  setForm((s) => ({
-                    ...s,
-                    reportingManagerUserId: e.target.value,
-                    reportingManagerEmail: e.target.value ? "" : s.reportingManagerEmail,
-                  }))
-                }
-              >
-                <option value="">Select reporting manager</option>
-                {employees.map((employee) => (
-                  <option key={employee.id} value={String(employee.id)}>
-                    {employee.full_name} ({employee.email})
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className={UI.secondaryButton + " py-2 text-sm whitespace-nowrap"}
-                onClick={() => setShowQuickManager((v) => !v)}
-                disabled={busy}
-              >
-                {showQuickManager ? "Hide" : "Create manager first"}
-              </button>
-            </div>
             <input
               className={UI.input}
-              placeholder="Or enter manager email (e.g. manager@aasthix.com)"
+              placeholder="Reporting manager / director email (optional, assign later)"
               value={form.reportingManagerEmail}
-              onChange={(e) =>
-                setForm((s) => ({
-                  ...s,
-                  reportingManagerEmail: e.target.value,
-                  reportingManagerUserId: e.target.value.trim() ? "" : s.reportingManagerUserId,
-                }))
-              }
+              onChange={(e) => setForm((s) => ({ ...s, reportingManagerEmail: e.target.value }))}
             />
-            {showQuickManager ? (
-              <div className="md:col-span-3 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-fill-1)] p-3">
-                <div className="mb-2 text-xs text-[var(--ats-text-muted)]">
-                  Quick manager setup (one-click): create manager and auto-select as reporting manager.
-                </div>
-                <div className="grid gap-2 md:grid-cols-3">
-                  <input className={UI.input} placeholder="Manager ID" value={quickManager.employeeIdCode} onChange={(e) => setQuickManager((s) => ({ ...s, employeeIdCode: e.target.value }))} />
-                  <input className={UI.input} placeholder="Manager name" value={quickManager.fullName} onChange={(e) => setQuickManager((s) => ({ ...s, fullName: e.target.value }))} />
-                  <input className={UI.input} placeholder="Manager email" value={quickManager.email} onChange={(e) => setQuickManager((s) => ({ ...s, email: e.target.value }))} />
-                  <input className={UI.input} placeholder="Phone (optional)" value={quickManager.phone} onChange={(e) => setQuickManager((s) => ({ ...s, phone: e.target.value }))} />
-                  <input className={UI.input} placeholder="Department" value={quickManager.department} onChange={(e) => setQuickManager((s) => ({ ...s, department: e.target.value }))} />
-                  <input className={UI.input} placeholder="Work location" value={quickManager.workLocation} onChange={(e) => setQuickManager((s) => ({ ...s, workLocation: e.target.value }))} />
-                </div>
-                <div className="mt-2">
-                  <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void createManagerQuick()} disabled={busy}>
-                    Create and use manager
-                  </button>
-                </div>
-              </div>
-            ) : null}
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void submitForm()} disabled={busy}>

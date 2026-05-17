@@ -57,7 +57,7 @@ async function resolveReportingManagerUserId(
       `,
       [Number(managerUserId)],
     );
-    if (res.rowCount === 0) throw new Error("Reporting manager must be an active employee.");
+    if (res.rowCount === 0) return null;
     return Number(res.rows[0].id);
   }
 
@@ -73,7 +73,7 @@ async function resolveReportingManagerUserId(
       `,
       [email],
     );
-    if (res.rowCount === 0) throw new Error("Reporting manager email not found in active employees.");
+    if (res.rowCount === 0) return null;
     return Number(res.rows[0].id);
   }
 
@@ -238,22 +238,6 @@ export function validateImportRows(rows: EmployeeImportRow[]) {
       });
       continue;
     }
-    const managerOptional =
-      String(normalized.role || "").toLowerCase() === "manager" ||
-      String(normalized.role || "").toLowerCase() === "hr" ||
-      String(normalized.role || "").toLowerCase() === "admin";
-    if (
-      !managerOptional &&
-      !normalized.reportingManagerUserId &&
-      !String(normalized.reportingManagerEmail || "").trim()
-    ) {
-      results.push({
-        rowNumber: row.rowNumber,
-        status: "invalid",
-        message: "reportingManagerUserId or reportingManagerEmail is required.",
-      });
-      continue;
-    }
     results.push({
       rowNumber: row.rowNumber,
       status: "valid",
@@ -337,15 +321,10 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
   try {
     await client.query("BEGIN");
     for (const row of rows) {
-      const role = String(row.role || "employee").trim().toLowerCase();
-      const managerOptional = role === "manager" || role === "hr" || role === "admin";
       const managerId = await resolveReportingManagerUserId(
         row.reportingManagerUserId || null,
         row.reportingManagerEmail || null,
       );
-      if (!managerOptional && !managerId) {
-        throw new Error("Reporting manager is required.");
-      }
       await client.query(
         `
           INSERT INTO users
@@ -404,11 +383,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
   const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const normalizedStatus = normalizeEmployeeStatus(input.status);
   const role = (input.role || "employee").trim().toLowerCase();
-  const managerOptional = role === "manager" || role === "hr" || role === "admin";
   const managerId = await resolveReportingManagerUserId(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
-  if (!managerOptional && !managerId) {
-    throw new Error("Reporting manager is required.");
-  }
   const ins = await query(
     `
       INSERT INTO users
@@ -457,12 +432,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
 export async function updateEmployee(id: number, input: EmployeeDirectoryInput, actorUserId: number) {
   const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const normalizedStatus = normalizeEmployeeStatus(input.status);
-  const role = (input.role || "employee").trim().toLowerCase();
-  const managerOptional = role === "manager" || role === "hr" || role === "admin";
   const managerId = await resolveReportingManagerUserId(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
-  if (!managerOptional && !managerId) {
-    throw new Error("Reporting manager is required.");
-  }
   await query(
     `
       UPDATE users
