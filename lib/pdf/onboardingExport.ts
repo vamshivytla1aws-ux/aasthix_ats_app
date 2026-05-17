@@ -97,9 +97,19 @@ function safeDate(value?: string | null) {
   });
 }
 
+function normalizeKey(key: string) {
+  return String(key || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 function firstValue(payload: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = asText(payload[key]);
+    if (value) return value;
+  }
+  const normalizedPayload = new Map<string, unknown>();
+  for (const [k, v] of Object.entries(payload || {})) normalizedPayload.set(normalizeKey(k), v);
+  for (const key of keys) {
+    const value = asText(normalizedPayload.get(normalizeKey(key)));
     if (value) return value;
   }
   return "";
@@ -375,10 +385,12 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
     color: TITLE,
   });
 
-  drawFieldRow(page1, font, bold, { label: "Candidate :", value: input.packet.candidateName, x: 32, y: CONTENT_TOP - 56, width: 248, labelWidth: 84 });
-  drawFieldRow(page1, font, bold, { label: "Job Title :", value: input.packet.jobTitle, x: 286, y: CONTENT_TOP - 56, width: 170, labelWidth: 78 });
-  drawFieldRow(page1, font, bold, { label: "Status :", value: input.packet.status, x: 32, y: CONTENT_TOP - 84, width: 248, labelWidth: 84 });
-  drawFieldRow(page1, font, bold, { label: "Submitted At :", value: safeDate(input.packet.submittedAt), x: 286, y: CONTENT_TOP - 84, width: 170, labelWidth: 96 });
+  const summaryLeftX = 32;
+  const summaryLeftW = 400;
+  drawFieldRow(page1, font, bold, { label: "Candidate :", value: input.packet.candidateName, x: summaryLeftX, y: CONTENT_TOP - 52, width: summaryLeftW, labelWidth: 96 });
+  drawFieldRow(page1, font, bold, { label: "Job Title :", value: input.packet.jobTitle, x: summaryLeftX, y: CONTENT_TOP - 78, width: summaryLeftW, labelWidth: 96 });
+  drawFieldRow(page1, font, bold, { label: "Status :", value: input.packet.status, x: summaryLeftX, y: CONTENT_TOP - 104, width: summaryLeftW, labelWidth: 96 });
+  drawFieldRow(page1, font, bold, { label: "Submitted At :", value: safeDate(input.packet.submittedAt), x: summaryLeftX, y: CONTENT_TOP - 130, width: summaryLeftW, labelWidth: 110 });
 
   const photoBox = { x: PAGE_W - 132, y: CONTENT_TOP - 184, w: 94, h: 126 };
   page1.drawRectangle({ x: photoBox.x, y: photoBox.y, width: photoBox.w, height: photoBox.h, borderWidth: 2, borderColor: rgb(0.12, 0.12, 0.12) });
@@ -403,7 +415,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
     page1.drawText("Passport Size Photo", { x: photoBox.x + 13, y: photoBox.y + photoBox.h / 2, size: 9, font, color: rgb(0.34, 0.37, 0.42) });
   }
 
-  const summaryFieldsBottomY = CONTENT_TOP - 86;
+  const summaryFieldsBottomY = CONTENT_TOP - 130;
   const profilePhotoBottomY = photoBox.y;
   const personalStartY = Math.min(summaryFieldsBottomY, profilePhotoBottomY) - 30;
   drawSectionHeader(page1, 32, personalStartY + 10, PAGE_W - 64, "Personal & Employment", bold);
@@ -414,20 +426,31 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   const workLocation = firstValue(payload, ["work_location", "workLocation", "location"]);
   const uan = firstValue(payload, ["uan", "UAN"]) || "-";
 
-  drawFieldRow(page1, font, bold, { label: "Full Name", value: firstValue(payload, ["full_name"]), x: 32, y: personalStartY - 26, width: 248, labelWidth: 84 });
-  drawFieldRow(page1, font, bold, { label: "Date of Birth", value: firstValue(payload, ["date_of_birth"]), x: 286, y: personalStartY - 26, width: 134, labelWidth: 98 });
-  drawFieldRow(page1, font, bold, { label: "Gender", value: firstValue(payload, ["gender"]), x: 426, y: personalStartY - 26, width: 136, labelWidth: 58 });
-  drawFieldRow(page1, font, bold, { label: "Contact Number", value: firstValue(payload, ["contact_number"]), x: 32, y: personalStartY - 54, width: 248, labelWidth: 106 });
-  drawFieldRow(page1, font, bold, { label: "Email", value: firstValue(payload, ["personal_email"]), x: 286, y: personalStartY - 54, width: 134, labelWidth: 56 });
-  drawFieldRow(page1, font, bold, { label: "Joining Date", value: firstValue(payload, ["joining_date"]), x: 426, y: personalStartY - 54, width: 136, labelWidth: 88 });
-  drawFieldRow(page1, font, bold, { label: "Employment Type", value: firstValue(payload, ["employment_type"]), x: 32, y: personalStartY - 82, width: 248, labelWidth: 118 });
-  drawFieldRow(page1, font, bold, { label: "Work Mode", value: firstValue(payload, ["work_mode"]), x: 286, y: personalStartY - 82, width: 134, labelWidth: 80 });
-  drawFieldRow(page1, font, bold, { label: "Work Location", value: workLocation, x: 426, y: personalStartY - 82, width: 136, labelWidth: 90 });
-  drawFieldRow(page1, font, bold, { label: "Position / Designation", value: positionDesignation, x: 32, y: personalStartY - 110, width: 248, labelWidth: 145 });
-  drawFieldRow(page1, font, bold, { label: "Department", value: department, x: 286, y: personalStartY - 110, width: 134, labelWidth: 90 });
-  drawFieldRow(page1, font, bold, { label: "Reporting Manager", value: reportingManager, x: 426, y: personalStartY - 110, width: 136, labelWidth: 120 });
-  drawFieldRow(page1, font, bold, { label: "UAN", value: uan, x: 32, y: personalStartY - 138, width: 248, labelWidth: 58 });
-  drawFieldRow(page1, font, bold, { label: "Declaration Date", value: firstValue(payload, ["declaration_date"]), x: 286, y: personalStartY - 138, width: 276, labelWidth: 110 });
+  const col1X = 32;
+  const col2X = 300;
+  const colW = 262;
+  const gapY = 28;
+  let rowY = personalStartY - 26;
+  drawFieldRow(page1, font, bold, { label: "Full Name", value: firstValue(payload, ["full_name", "fullName", "candidate_name"]), x: col1X, y: rowY, width: colW, labelWidth: 96 });
+  drawFieldRow(page1, font, bold, { label: "Date of Birth", value: firstValue(payload, ["date_of_birth", "dateOfBirth", "dob"]), x: col2X, y: rowY, width: colW, labelWidth: 110 });
+  rowY -= gapY;
+  drawFieldRow(page1, font, bold, { label: "Gender", value: firstValue(payload, ["gender"]), x: col1X, y: rowY, width: colW, labelWidth: 96 });
+  drawFieldRow(page1, font, bold, { label: "Contact Number", value: firstValue(payload, ["contact_number", "contactNumber", "phone"]), x: col2X, y: rowY, width: colW, labelWidth: 120 });
+  rowY -= gapY;
+  drawFieldRow(page1, font, bold, { label: "Email", value: firstValue(payload, ["personal_email", "email"]), x: col1X, y: rowY, width: colW, labelWidth: 96 });
+  drawFieldRow(page1, font, bold, { label: "Joining Date", value: firstValue(payload, ["joining_date", "joiningDate"]), x: col2X, y: rowY, width: colW, labelWidth: 110 });
+  rowY -= gapY;
+  drawFieldRow(page1, font, bold, { label: "Employment Type", value: firstValue(payload, ["employment_type", "employmentType"]), x: col1X, y: rowY, width: colW, labelWidth: 120 });
+  drawFieldRow(page1, font, bold, { label: "Work Mode", value: firstValue(payload, ["work_mode", "workMode"]), x: col2X, y: rowY, width: colW, labelWidth: 110 });
+  rowY -= gapY;
+  drawFieldRow(page1, font, bold, { label: "Work Location", value: workLocation, x: col1X, y: rowY, width: colW, labelWidth: 110 });
+  drawFieldRow(page1, font, bold, { label: "Position / Designation", value: positionDesignation, x: col2X, y: rowY, width: colW, labelWidth: 145 });
+  rowY -= gapY;
+  drawFieldRow(page1, font, bold, { label: "Department", value: department, x: col1X, y: rowY, width: colW, labelWidth: 96 });
+  drawFieldRow(page1, font, bold, { label: "Reporting Manager", value: reportingManager, x: col2X, y: rowY, width: colW, labelWidth: 130 });
+  rowY -= gapY;
+  drawFieldRow(page1, font, bold, { label: "UAN", value: uan, x: col1X, y: rowY, width: colW, labelWidth: 96 });
+  drawFieldRow(page1, font, bold, { label: "Declaration Date", value: firstValue(payload, ["declaration_date", "declarationDate"]), x: col2X, y: rowY, width: colW, labelWidth: 120 });
 
   const flow: FlowState = { page: newPage(pdf, bold, font, logo, templateBg), cursorY: CONTENT_TOP };
 
