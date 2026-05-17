@@ -5,9 +5,20 @@ import { createCorrectionRequest, listCorrectionRequests, decideCorrectionReques
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function canViewCorrections(access: NonNullable<Awaited<ReturnType<typeof getAuthAccess>>>) {
+  if (access.role === "admin") return true;
+  return Boolean(access.permissions["attendance_corrections.manage"] || access.permissions["attendance.view_self"]);
+}
+
+function canCreateCorrection(access: NonNullable<Awaited<ReturnType<typeof getAuthAccess>>>) {
+  if (access.role === "admin") return true;
+  return Boolean(access.permissions["attendance.manage_self"] || access.permissions["attendance_corrections.manage"]);
+}
+
 export async function GET() {
   const access = await getAuthAccess();
   if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canViewCorrections(access)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const requests = await listCorrectionRequests(access.user_id, access.role);
   return NextResponse.json({ requests });
 }
@@ -15,6 +26,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const access = await getAuthAccess();
   if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canCreateCorrection(access)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = (await request.json().catch(() => null)) as
     | {
         attendanceDate?: string;

@@ -1,15 +1,9 @@
 import { NextResponse } from "next/server";
-import { getAuthAccess, requirePermission } from "@/lib/rbac";
+import { requirePermission } from "@/lib/rbac";
 import { deactivateEmployee, updateEmployee, type EmployeeDirectoryInput } from "@/lib/hrms/employeeDirectory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function canTouchEmployee(access: NonNullable<Awaited<ReturnType<typeof getAuthAccess>>>, employeeId: number) {
-  if (access.role === "admin") return true;
-  if (access.permissions["employee_directory.manage"]) return true;
-  return access.user_id === employeeId;
-}
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -57,14 +51,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 }
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
-  const access = await getAuthAccess();
-  if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requirePermission("employee_directory.manage");
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id: idRaw } = await context.params;
   const id = Number(idRaw);
   if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "Invalid employee id." }, { status: 400 });
-  if (!canTouchEmployee(access, id)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {
-    await deactivateEmployee(id, access.user_id);
+    await deactivateEmployee(id, auth.access.user_id);
     return NextResponse.json({
       operation_status: "success",
       user_message: "Employee marked inactive.",

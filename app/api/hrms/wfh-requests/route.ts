@@ -6,9 +6,20 @@ import { writeAuditLog } from "@/lib/auditLog";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function canViewWfh(access: NonNullable<Awaited<ReturnType<typeof getAuthAccess>>>) {
+  if (access.role === "admin") return true;
+  return Boolean(access.permissions["wfh.manage"] || access.permissions["attendance.manage_self"]);
+}
+
+function canCreateWfh(access: NonNullable<Awaited<ReturnType<typeof getAuthAccess>>>) {
+  if (access.role === "admin") return true;
+  return Boolean(access.permissions["attendance.manage_self"] || access.permissions["wfh.manage"]);
+}
+
 export async function GET() {
   const access = await getAuthAccess();
   if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canViewWfh(access)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const values: number[] = [];
   let where = "";
   if (access.role === "employee") {
@@ -34,6 +45,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const access = await getAuthAccess();
   if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canCreateWfh(access)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = (await request.json().catch(() => null)) as
     | { fromDate?: string; toDate?: string; reason?: string; managerUserId?: number | null }
     | null;

@@ -25,6 +25,13 @@ import { apiFetchJson } from "@/lib/apiClient";
 
 type Tone = "success" | "partial" | "blocked" | "error" | "info";
 type HealthStatus = "healthy" | "warning" | "blocked" | "error";
+type HrmsSchemaDiagnostics = {
+  status: "healthy" | "warning";
+  missing_tables: string[];
+  missing_columns: string[];
+  checked_at: string;
+  recommended_migrations: string[];
+};
 
 const EXPECTED_RETENTION = ["candidates", "jobs", "applications", "notes", "chat", "attendance", "timesheet"];
 
@@ -63,6 +70,10 @@ export default function GovernancePage() {
   const { data: aiPolicies, mutate: mutateAiPolicies } = useSWR("/api/ai-governance/policies", dashboardFetcher);
   const { data: aiModels, mutate: mutateAiModels } = useSWR("/api/ai-governance/models", dashboardFetcher);
   const { data: aiAudit, mutate: mutateAiAudit } = useSWR("/api/ai-governance/audit?limit=40", dashboardFetcher);
+  const { data: hrmsSchema, mutate: mutateHrmsSchema } = useSWR<{ diagnostics: HrmsSchemaDiagnostics; user_message?: string }>(
+    "/api/hrms/diagnostics/schema",
+    dashboardFetcher,
+  );
 
   const workspaceRows = Array.isArray((workspaces as any)?.workspaces) ? (workspaces as any).workspaces : [];
   const accessRows = Array.isArray((accessPolicies as any)?.policies) ? (accessPolicies as any).policies : [];
@@ -137,6 +148,7 @@ export default function GovernancePage() {
       mutateAiPolicies(),
       mutateAiModels(),
       mutateAiAudit(),
+      mutateHrmsSchema(),
     ]);
   }
 
@@ -331,6 +343,26 @@ export default function GovernancePage() {
           )}
         </section>
 
+        {hrmsSchema?.diagnostics?.status === "warning" ? (
+          <section className={UI.enterprise.elevatedCard + " mb-4 p-4"}>
+            <div className="text-sm font-semibold text-amber-900">HRMS schema warning</div>
+            <div className="mt-1 text-xs text-amber-800">
+              Missing schema objects detected. HRMS fallbacks are active, but migrations should be applied.
+            </div>
+            <div className="mt-2 text-xs text-[var(--ats-text)]">
+              Missing columns: {hrmsSchema.diagnostics.missing_columns.join(", ") || "None"}
+            </div>
+            <div className="mt-1 text-xs text-[var(--ats-text)]">
+              Missing tables: {hrmsSchema.diagnostics.missing_tables.join(", ") || "None"}
+            </div>
+            {hrmsSchema.diagnostics.recommended_migrations.length ? (
+              <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                {hrmsSchema.diagnostics.recommended_migrations.join(" | ")}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         <div className="grid gap-4 md:grid-cols-2">
           <section className={UI.enterprise.elevatedCard + " p-4"}>
             <div className="text-sm font-semibold text-[var(--ats-text)]">Workspace matrix</div>
@@ -438,4 +470,3 @@ export default function GovernancePage() {
     </AccessGate>
   );
 }
-

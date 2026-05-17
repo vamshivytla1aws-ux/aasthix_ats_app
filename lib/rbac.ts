@@ -267,6 +267,7 @@ export function normalizeRole(role: string | null | undefined): string {
   if (r === "admin" || r === "administrator") return "admin";
   if (r === "hr") return "hr";
   if (r === "recruiter") return "recruiter";
+  if (r === "manager") return "hiring_manager";
   if (r === "hiring_manager") return "hiring_manager";
   if (r === "coordinator") return "coordinator";
   if (r === "employee") return "employee";

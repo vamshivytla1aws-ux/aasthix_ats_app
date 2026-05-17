@@ -14,6 +14,13 @@ type UserRow = {
   role: string;
   permissions: Record<string, boolean>;
 };
+type HrmsSchemaDiagnostics = {
+  status: "healthy" | "warning";
+  missing_tables: string[];
+  missing_columns: string[];
+  checked_at: string;
+  recommended_migrations: string[];
+};
 
 export default function AdminPermissionsPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -22,6 +29,7 @@ export default function AdminPermissionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<number | null>(null);
+  const [hrmsDiagnostics, setHrmsDiagnostics] = useState<HrmsSchemaDiagnostics | null>(null);
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<string>(INVITE_ROLES[0] ?? "recruiter");
@@ -41,6 +49,12 @@ export default function AdminPermissionsPage() {
       const data = await apiFetchJson<{ users: UserRow[]; permission_keys: string[]; roles?: string[] }>(
         "/api/admin/users-permissions"
       );
+      try {
+        const diagnostics = await apiFetchJson<{ diagnostics: HrmsSchemaDiagnostics }>("/api/hrms/diagnostics/schema");
+        setHrmsDiagnostics(diagnostics.diagnostics || null);
+      } catch {
+        setHrmsDiagnostics(null);
+      }
       setUsers(data.users || []);
       setKeys(data.permission_keys || []);
       if (Array.isArray(data.roles) && data.roles.length) setRoles(data.roles);
@@ -152,6 +166,23 @@ export default function AdminPermissionsPage() {
           </Link>
         </div>
       </div>
+
+      {hrmsDiagnostics?.status === "warning" ? (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm">
+          <div className="font-semibold">HRMS schema warning</div>
+          <div className="mt-1 text-xs">
+            Missing columns: {hrmsDiagnostics.missing_columns.join(", ") || "None"}
+          </div>
+          <div className="mt-1 text-xs">
+            Missing tables: {hrmsDiagnostics.missing_tables.join(", ") || "None"}
+          </div>
+          {hrmsDiagnostics.recommended_migrations.length ? (
+            <div className="mt-2 text-xs font-medium">
+              Suggested migration: {hrmsDiagnostics.recommended_migrations.join(" | ")}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-slate-900">

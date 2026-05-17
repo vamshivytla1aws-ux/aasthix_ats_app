@@ -1,15 +1,27 @@
 import { NextResponse } from "next/server";
 import { getAuthAccess, requirePermission } from "@/lib/rbac";
+import { query } from "@/lib/db";
 import { deleteDocument, getDocumentById } from "@/lib/hrms/documents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function canAccessDocument(access: NonNullable<Awaited<ReturnType<typeof getAuthAccess>>>, ownerUserId: number) {
+async function canAccessDocument(access: NonNullable<Awaited<ReturnType<typeof getAuthAccess>>>, ownerUserId: number) {
   if (access.role === "admin") return true;
   if (access.permissions["documents.view_all"]) return true;
-  if (access.permissions["documents.view_team"]) return true;
-  return access.user_id === ownerUserId;
+  if (access.user_id === ownerUserId) return true;
+  if (!access.permissions["documents.view_team"]) return false;
+  const teamCheck = await query(
+    `
+      SELECT 1
+      FROM users
+      WHERE id = $1
+        AND reporting_manager_user_id = $2
+      LIMIT 1
+    `,
+    [ownerUserId, access.user_id],
+  );
+  return teamCheck.rowCount > 0;
 }
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -21,7 +33,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
   const doc = await getDocumentById(id);
   if (!doc) return NextResponse.json({ error: "Not found." }, { status: 404 });
-  if (!canAccessDocument(access, Number(doc.user_id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await canAccessDocument(access, Number(doc.user_id)))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   return new NextResponse(Buffer.from(doc.file_blob), {
     status: 200,
