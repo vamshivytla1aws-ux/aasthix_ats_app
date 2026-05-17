@@ -326,9 +326,11 @@ function drawTaxDeductionDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y
   return valY - s.sectionGap - 6;
 }
 
-function drawSignatures(page: any, _bold: PDFFont, font: PDFFont, y: number, payload: PayslipPdfPayload, s: ScaleBand) {
-  const netWords = `Net Salary in Words: ${payload.netSalaryInWords}`;
-  page.drawText(netWords, { x: PAGE_MARGIN_X + 2, y, size: s.smallFont, font, color: TEXT });
+function drawSignatures(page: any, _bold: PDFFont, font: PDFFont, y: number, _payload: PayslipPdfPayload, s: ScaleBand) {
+  const note = "** This is a computer generated payslip and does not require signature and stamp.";
+  const size = s.smallFont;
+  const textW = font.widthOfTextAtSize(note, size);
+  page.drawText(note, { x: Math.max(PAGE_MARGIN_X + 2, (PAGE_W - textW) / 2), y, size, font, color: TEXT });
 }
 
 function estimateHeight(payload: PayslipPdfPayload, s: ScaleBand) {
