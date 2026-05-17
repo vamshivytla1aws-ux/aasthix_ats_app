@@ -172,19 +172,19 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
   drawSectionHeader(page, bold, "Personal details", x, topY, w, headH, s.baseFont + 1);
 
   const tableTop = topY - headH;
-  const colLabelW = 72;
-  const valW = 154;
-  const midLabelW = 72;
+  const colLabelW = 84;
+  const valW = 132;
+  const midLabelW = 84;
   const col1X = x;
   const col2X = col1X + colLabelW;
   const col3X = col2X + valW;
   const col4X = col3X + midLabelW;
   const col5X = col4X + valW;
-  const col6X = col5X + 62;
-  const colEnd = x + w;
 
   page.drawRectangle({ x, y: tableTop - rowCount * rowH, width: w, height: rowCount * rowH, borderWidth: 1, borderColor: BORDER });
-  [col3X, col5X].forEach((vx) => page.drawLine({ start: { x: vx, y: tableTop }, end: { x: vx, y: tableTop - rowCount * rowH }, thickness: 1, color: BORDER }));
+  [col2X, col3X, col4X, col5X].forEach((vx) =>
+    page.drawLine({ start: { x: vx, y: tableTop }, end: { x: vx, y: tableTop - rowCount * rowH }, thickness: 1, color: BORDER }),
+  );
   for (let i = 1; i < rowCount; i += 1) {
     const ly = tableTop - i * rowH;
     page.drawLine({ start: { x, y: ly }, end: { x: x + w, y: ly }, thickness: 1, color: BORDER });
@@ -194,21 +194,21 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
     ["Employee Name", payload.employeeName],
     ["Designation", payload.designation],
     ["DOJ", payload.dateOfJoining],
+    ["Bank A/c", payload.bankAccountNumber],
+    ["PAN", payload.pan],
     ["UAN", payload.uanNumber],
     ["PF No.", payload.pfNumber],
-    ["PAN", payload.pan],
-    ["Bank A/c", payload.bankAccountNumber],
-    ["Department", payload.department],
+    ["Net Pay", inr(payload.netSalary)],
   ];
   const rightRows: Array<[string, string]> = [
-    ["CS ID", payload.employeeCode],
+    ["Employee Code", payload.employeeCode],
+    ["Department", payload.department],
     ["Location", payload.workLocation],
     ["Pay Days", String(payload.paidDays)],
     ["LOP Days", String(payload.lopDays)],
-    ["Gross", inr(payload.grossSalary)],
-    ["Deductions", inr(payload.totalDeductions)],
-    ["Net", inr(payload.netSalary)],
-    ["", ""],
+    ["Gross Earnings", inr(payload.grossSalary)],
+    ["Gross Deductions", inr(payload.totalDeductions)],
+    ["Salary Month", payload.monthLabel],
   ];
 
   let cy = tableTop - rowH + (rowH - s.baseFont) / 2;
@@ -220,9 +220,6 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
     cy -= rowH;
   }
 
-  void col4X;
-  void col6X;
-  void colEnd;
   return topY - totalH - s.sectionGap;
 }
 
@@ -300,10 +297,13 @@ function drawTaxSheetBlock(page: any, bold: PDFFont, font: PDFFont, y: number, p
   const rows: Array<[string, string, string, string]> = [
     ["Description", "Actual YTD Earnings", "Proj. Earnings till March", "Annual Total"],
     ["Total Income", inr(payload.grossSalary), inr(annualGross), inr(annualGross)],
+    ["Additional Income", "-", "-", "-"],
     ["Gross Salary", "", "", inr(annualGross)],
     ["Standard Deduction", "", "", inr(standardDeduction)],
     ["Taxable Income", "", "", inr(taxable)],
     ["Income Tax Payable", "", "", inr(annualTax)],
+    ["Cess", "", "", inr(Math.round((annualTax * 0.04) * 100) / 100)],
+    ["Total Income Tax Payable", "", "", inr(Math.round((annualTax * 1.04) * 100) / 100)],
   ];
 
   const colX = [x, x + 155, x + 288, x + 420, x + w];
@@ -378,14 +378,10 @@ export async function buildPayslipPdf(payload: PayslipPdfPayload) {
   const bg = await loadPayslipTemplateBackground(pdf);
   const page = pdf.addPage([PAGE_W, PAGE_H]);
 
-  if (bg) {
-    page.drawImage(bg, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
-  } else {
-    // Fallback renderer so payslip generation never crashes in production
-    // when the template asset is missing from deployment snapshot.
-    drawHeader(page, bold, font, logo);
-    drawFooter(page, font);
+  if (!bg) {
+    throw new Error("Payslip template background is missing. Upload /public/payslip-template.png to generate the exact sample layout.");
   }
+  page.drawImage(bg, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
 
   const availableHeight = CONTENT_TOP - CONTENT_BOTTOM;
   let scale = SCALE_BANDS[SCALE_BANDS.length - 1];

@@ -173,22 +173,49 @@ export default function AttendanceRulesPage() {
       <ModulePageFrame title="Attendance Rules" subtitle="Shift mapping, grace policies, WFH controls, and correction approvals.">
         <section className={UI.card + " p-4 sm:p-5"}>
           <h2 className="text-base font-semibold text-[var(--ats-text)]">Shift mapping</h2>
+          <p className="mt-1 text-xs text-[var(--ats-text-muted)]">
+            Configure shift boundaries and policy thresholds in minutes. Example: Late grace 15 means check-in up to 15 minutes after shift start is not marked late.
+          </p>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
-            <select className={UI.select} value={userId} onChange={(e) => setUserId(e.target.value)}>
-              <option value="">Select employee</option>
-              {(employeesSwr.data?.employees || []).map((employee) => (
-                <option key={employee.id} value={String(employee.id)}>
-                  {employee.full_name}
-                </option>
-              ))}
-            </select>
-            <input className={UI.input} placeholder="Shift name" value={shiftName} onChange={(e) => setShiftName(e.target.value)} />
-            <input className={UI.input} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
-            <input className={UI.input} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
-            <input className={UI.input} type="number" value={lateGrace} onChange={(e) => setLateGrace(e.target.value)} placeholder="Late grace (mins)" />
-            <input className={UI.input} type="number" value={earlyGrace} onChange={(e) => setEarlyGrace(e.target.value)} placeholder="Early logout grace (mins)" />
-            <input className={UI.input} type="number" value={halfDay} onChange={(e) => setHalfDay(e.target.value)} placeholder="Half-day minutes" />
-            <input className={UI.input} type="number" value={overtimeAfter} onChange={(e) => setOvertimeAfter(e.target.value)} placeholder="Overtime after minutes" />
+            <label className={UI.label}>
+              Employee
+              <select className={UI.select} value={userId} onChange={(e) => setUserId(e.target.value)}>
+                <option value="">Select employee</option>
+                {(employeesSwr.data?.employees || []).map((employee) => (
+                  <option key={employee.id} value={String(employee.id)}>
+                    {employee.full_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={UI.label}>
+              Shift name
+              <input className={UI.input} placeholder="General" value={shiftName} onChange={(e) => setShiftName(e.target.value)} />
+            </label>
+            <label className={UI.label}>
+              Shift start
+              <input className={UI.input} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+            </label>
+            <label className={UI.label}>
+              Shift end
+              <input className={UI.input} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+            </label>
+            <label className={UI.label}>
+              Late grace (minutes)
+              <input className={UI.input} type="number" value={lateGrace} onChange={(e) => setLateGrace(e.target.value)} placeholder="0-240" />
+            </label>
+            <label className={UI.label}>
+              Early logout grace (minutes)
+              <input className={UI.input} type="number" value={earlyGrace} onChange={(e) => setEarlyGrace(e.target.value)} placeholder="0-240" />
+            </label>
+            <label className={UI.label}>
+              Half-day threshold (minutes worked)
+              <input className={UI.input} type="number" value={halfDay} onChange={(e) => setHalfDay(e.target.value)} placeholder="0-720" />
+            </label>
+            <label className={UI.label}>
+              Overtime starts after (minutes worked)
+              <input className={UI.input} type="number" value={overtimeAfter} onChange={(e) => setOvertimeAfter(e.target.value)} placeholder="0-960" />
+            </label>
           </div>
           <label className="mt-3 flex items-center gap-2 text-sm text-[var(--ats-text)]">
             <input type="checkbox" checked={wfhAllowed} onChange={(e) => setWfhAllowed(e.target.checked)} />
@@ -223,7 +250,7 @@ export default function AttendanceRulesPage() {
                       {rule.start_time} - {rule.end_time}
                     </td>
                     <td className="px-2 py-2">
-                      Late {rule.late_grace_minutes}m · Early {rule.early_logout_grace_minutes}m
+                      Late {rule.late_grace_minutes}m | Early {rule.early_logout_grace_minutes}m
                     </td>
                     <td className="px-2 py-2">{rule.half_day_minutes}m</td>
                     <td className="px-2 py-2">{rule.overtime_after_minutes}m</td>

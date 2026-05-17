@@ -42,6 +42,9 @@ export async function POST(request: Request) {
     if (!body.employeeIdCode?.trim()) return NextResponse.json({ error: "Employee ID is required." }, { status: 400 });
     if (!body.fullName?.trim()) return NextResponse.json({ error: "Full name is required." }, { status: 400 });
     if (!body.email?.trim()) return NextResponse.json({ error: "Email is required." }, { status: 400 });
+    if (!Number(body.reportingManagerUserId)) {
+      return NextResponse.json({ error: "Reporting manager is required." }, { status: 400 });
+    }
     const id = await createEmployee(
       {
         employeeIdCode: body.employeeIdCode,

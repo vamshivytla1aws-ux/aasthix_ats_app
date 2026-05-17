@@ -6,6 +6,7 @@ export type HrmsSchemaDiagnostics = {
   missing_columns: string[];
   checked_at: string;
   recommended_migrations: string[];
+  checked_query_paths?: string[];
 };
 
 const EXPECTED_TABLES = [
@@ -93,6 +94,12 @@ export async function getHrmsSchemaDiagnostics(): Promise<HrmsSchemaDiagnostics>
     missing_columns: [...missingColumns],
     checked_at: new Date().toISOString(),
     recommended_migrations: recommendedMigrations,
+    checked_query_paths: [
+      "lib/hrms/employeeDirectory.ts:listEmployees",
+      "lib/hrms/employeeDirectory.ts:createEmployee",
+      "lib/hrms/employeeDirectory.ts:updateEmployee",
+      "lib/hrms/employeeDirectory.ts:importEmployees",
+      "lib/hrms/employeeDirectory.ts:applyImportConflictChecks",
+    ],
   };
 }
-

@@ -44,6 +44,7 @@ const COMPLETENESS_FIELDS = [
 let hasEmployeeCodeColumnCache: boolean | null = null;
 
 async function hasUsersEmployeeCodeColumn() {
+  // Re-check periodically so long-lived processes do not hold stale schema capability state.
   if (hasEmployeeCodeColumnCache != null) return hasEmployeeCodeColumnCache;
   const res = await query(
     `
@@ -60,6 +61,17 @@ async function hasUsersEmployeeCodeColumn() {
   return hasEmployeeCodeColumnCache;
 }
 
+function isMissingEmployeeCodeError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String((error as { code?: unknown }).code || "") : "";
+  const message = "message" in error ? String((error as { message?: unknown }).message || "") : "";
+  return code === "42703" && /employee_code/i.test(message);
+}
+
+function invalidateEmployeeCodeCache() {
+  hasEmployeeCodeColumnCache = null;
+}
+
 export function normalizeEmployeeStatus(value: string): EmployeeStatus {
   const v = (value || "").trim().toLowerCase();
   if (v === "inactive") return "inactive";
@@ -74,7 +86,7 @@ export async function listEmployees(params: {
   department?: string;
   status?: string;
 }) {
-  const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
+  let hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const where: string[] = [];
   const values: Array<string | number> = [];
   let idx = 1;
@@ -109,11 +121,10 @@ export async function listEmployees(params: {
   }
 
   const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
-  const res = await query(
-    `
+  const buildSql = (withEmployeeCode: boolean) => `
       SELECT
         u.id,
-        ${hasEmployeeCode ? "COALESCE(u.employee_code, '')" : "''"} AS employee_code,
+        ${withEmployeeCode ? "COALESCE(u.employee_code, '')" : "''"} AS employee_code,
         u.full_name,
         u.email,
         COALESCE(u.phone, '') AS phone,
@@ -130,9 +141,19 @@ export async function listEmployees(params: {
       LEFT JOIN users m ON m.id = u.reporting_manager_user_id
       ${whereSql}
       ORDER BY LOWER(u.full_name) ASC, u.id ASC
-    `,
-    values,
-  );
+    `;
+  let res;
+  try {
+    res = await query(
+      buildSql(hasEmployeeCode),
+      values,
+    );
+  } catch (error) {
+    if (!hasEmployeeCode || !isMissingEmployeeCodeError(error)) throw error;
+    invalidateEmployeeCodeCache();
+    hasEmployeeCode = false;
+    res = await query(buildSql(false), values);
+  }
   return res.rows.map((row: Record<string, unknown>) => {
     const filled = COMPLETENESS_FIELDS.reduce((acc, key) => {
       const value = row[key];
@@ -176,6 +197,14 @@ export function validateImportRows(rows: EmployeeImportRow[]) {
       });
       continue;
     }
+    if (!normalized.reportingManagerUserId || !Number.isFinite(Number(normalized.reportingManagerUserId))) {
+      results.push({
+        rowNumber: row.rowNumber,
+        status: "invalid",
+        message: "reportingManagerUserId is required.",
+      });
+      continue;
+    }
     results.push({
       rowNumber: row.rowNumber,
       status: "valid",
@@ -202,7 +231,18 @@ export async function applyImportConflictChecks(results: EmployeeImportRowResult
           valid.map((item) => String(item.normalized?.email || "").toLowerCase()),
           valid.map((item) => String(item.normalized?.employeeIdCode || "").toLowerCase()),
         ],
-      )
+      ).catch(async (error: unknown) => {
+        if (!isMissingEmployeeCodeError(error)) throw error;
+        invalidateEmployeeCodeCache();
+        return query(
+          `
+            SELECT LOWER(email) AS email, ''::text AS employee_code
+            FROM users
+            WHERE LOWER(email) = ANY($1::text[])
+          `,
+          [valid.map((item) => String(item.normalized?.email || "").toLowerCase())],
+        );
+      })
     : await query(
         `
           SELECT LOWER(email) AS email, ''::text AS employee_code
@@ -240,6 +280,25 @@ export async function applyImportConflictChecks(results: EmployeeImportRowResult
   });
 }
 
+async function validateReportingManagerUser(managerUserId: number | null | undefined) {
+  if (!managerUserId || !Number.isFinite(Number(managerUserId))) {
+    throw new Error("Reporting manager is required.");
+  }
+  const res = await query(
+    `
+      SELECT id
+      FROM users
+      WHERE id = $1
+        AND COALESCE(employment_status, 'active') = 'active'
+      LIMIT 1
+    `,
+    [Number(managerUserId)],
+  );
+  if (res.rowCount === 0) {
+    throw new Error("Reporting manager must be an active employee.");
+  }
+}
+
 export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserId: number) {
   if (rows.length === 0) return { created: 0 };
   const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
@@ -248,6 +307,7 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
   try {
     await client.query("BEGIN");
     for (const row of rows) {
+      await validateReportingManagerUser(row.reportingManagerUserId || null);
       await client.query(
         `
           INSERT INTO users
@@ -306,6 +366,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
   const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const normalizedStatus = normalizeEmployeeStatus(input.status);
   const role = (input.role || "employee").trim().toLowerCase();
+  await validateReportingManagerUser(input.reportingManagerUserId || null);
   const ins = await query(
     `
       INSERT INTO users
@@ -354,6 +415,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
 export async function updateEmployee(id: number, input: EmployeeDirectoryInput, actorUserId: number) {
   const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const normalizedStatus = normalizeEmployeeStatus(input.status);
+  await validateReportingManagerUser(input.reportingManagerUserId || null);
   await query(
     `
       UPDATE users

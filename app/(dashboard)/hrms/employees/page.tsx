@@ -92,6 +92,10 @@ export default function EmployeeDirectoryPage() {
       setToast({ message: "Employee ID, full name, and email are required.", variant: "blocked" });
       return;
     }
+    if (!form.reportingManagerUserId) {
+      setToast({ message: "Reporting manager is required.", variant: "blocked" });
+      return;
+    }
     setBusy(true);
     try {
       if (editingId) {
@@ -212,7 +216,7 @@ export default function EmployeeDirectoryPage() {
               value={form.reportingManagerUserId}
               onChange={(e) => setForm((s) => ({ ...s, reportingManagerUserId: e.target.value }))}
             >
-              <option value="">Reporting manager (optional)</option>
+              <option value="">Select reporting manager</option>
               {employees.map((employee) => (
                 <option key={employee.id} value={String(employee.id)}>
                   {employee.full_name}
