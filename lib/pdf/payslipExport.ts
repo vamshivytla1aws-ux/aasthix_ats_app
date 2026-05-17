@@ -193,7 +193,7 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
   const w = PAGE_W - PAGE_MARGIN_X * 2;
   const headH = s.tableTitleH;
   const rowH = s.rowH;
-  const leftRows: Array<[string, string]> = [
+  const leftRows = [
     ["Employee Name", payload.employeeName],
     ["Designation", payload.designation],
     ["DOJ", formatDoj(payload.dateOfJoining)],
@@ -202,8 +202,8 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
     ["UAN", payload.uanNumber],
     ["PF No.", payload.pfNumber],
     ["Net Pay", inr(payload.netSalary)],
-  ].filter((row) => String(row[1] || "").trim() !== "");
-  const rightRows: Array<[string, string]> = [
+  ].filter((row): row is [string, string] => String(row[1] || "").trim() !== "");
+  const rightRows = [
     ["Employee Code", payload.employeeCode],
     ["Department", payload.department],
     ["Location", payload.workLocation],
@@ -212,7 +212,7 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
     ["Gross Earnings", inr(payload.grossSalary)],
     ["Gross Deductions", inr(payload.totalDeductions)],
     ["Salary Month", payload.monthLabel],
-  ].filter((row) => String(row[1] || "").trim() !== "");
+  ].filter((row): row is [string, string] => String(row[1] || "").trim() !== "");
   const rowCount = Math.max(leftRows.length, rightRows.length);
   const totalH = headH + rowCount * rowH;
   const topY = y - 18;
