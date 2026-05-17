@@ -291,54 +291,14 @@ function drawEarningsDeductionsBlock(page: any, bold: PDFFont, font: PDFFont, y:
   return tableTop - rowH * (totalRows + 1) - s.sectionGap;
 }
 
-function drawTaxSheetBlock(page: any, bold: PDFFont, font: PDFFont, y: number, payload: PayslipPdfPayload, s: ScaleBand) {
+function drawTaxDeductionDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: number, payload: PayslipPdfPayload, s: ScaleBand) {
   const x = PAGE_MARGIN_X;
   const w = PAGE_W - PAGE_MARGIN_X * 2;
-  drawSectionHeader(page, bold, `Tax Sheet of ${payload.monthLabel}`, x, y, w, s.tableTitleH, s.baseFont + 1);
-  const tableTop = y - s.tableTitleH;
-  const rowH = s.rowH - 2;
   const snapshot = payload.taxSheetSnapshot;
   const tdsMonthly = Number(snapshot?.monthlyTaxDeduction?.[0] ?? payload.deductions.find((d) => d.name.toLowerCase().includes("tds"))?.amountForMonth ?? 0);
-  const rows: Array<[string, string, string, string]> = [
-    ["Description", "Actual YTD Earnings", "Proj. Earnings till March", "Annual Total"],
-    [
-      "Total Income",
-      inr(snapshot?.totalIncomeActualYtd ?? payload.grossSalary),
-      inr(snapshot?.projectedIncomeTillMarch ?? payload.grossSalary * 12),
-      inr(snapshot?.annualTotalIncome ?? payload.grossSalary * 12),
-    ],
-    ["Add :", "Additional Income", "", inr(snapshot?.additionalIncome ?? 0)],
-    ["", "Total Gross Income", "Actual HRA received", inr(snapshot?.actualHraReceived ?? 0)],
-    ["", "Gross Salary", "", inr(snapshot?.grossSalaryBeforeStdDeduction ?? payload.grossSalary * 12)],
-    ["", "Standard Deduction", "", inr(snapshot?.standardDeduction ?? 75000)],
-    ["", "Gross Salary", "", inr(snapshot?.grossSalaryAfterStdDeduction ?? Math.max(0, (payload.grossSalary * 12) - 75000))],
-    ["", "Total Income from Salary", "Gross Taxable Income", inr(snapshot?.grossTaxableIncome ?? Math.max(0, (payload.grossSalary * 12) - 75000))],
-    ["", "", "Rebate", inr(snapshot?.rebate ?? 0)],
-    ["", "", "Total Investments", inr(snapshot?.totalInvestments ?? 0)],
-    ["", "Net Taxable Income(rounded off)", "", inr(snapshot?.netTaxableIncomeRoundedOff ?? Math.round(Math.max(0, (payload.grossSalary * 12) - 75000)))],
-    ["", "Income Tax Payable", "", inr(snapshot?.incomeTaxPayable ?? tdsMonthly * 12)],
-    ["", "Cess", "", inr(snapshot?.cess ?? (tdsMonthly * 12 * 0.04))],
-    ["", "Total Income Tax Payable (I/Tax +E/C+ S/C)", "", inr(snapshot?.totalIncomeTaxPayable ?? (tdsMonthly * 12 * 1.04))],
-    ["", "Balance Tax", "", inr(snapshot?.balanceTax ?? (tdsMonthly * 12 * 1.04))],
-  ];
-
-  const colX = [x, x + 155, x + 288, x + 420, x + w];
-  page.drawRectangle({ x, y: tableTop - rowH * rows.length, width: w, height: rowH * rows.length, borderWidth: 1, borderColor: BORDER });
-  colX.slice(1).forEach((vx) => page.drawLine({ start: { x: vx, y: tableTop }, end: { x: vx, y: tableTop - rowH * rows.length }, thickness: 1, color: BORDER }));
-  for (let i = 1; i < rows.length; i += 1) {
-    const ly = tableTop - i * rowH;
-    page.drawLine({ start: { x, y: ly }, end: { x: x + w, y: ly }, thickness: 1, color: BORDER });
-  }
-
-  let cy = tableTop - rowH + (rowH - s.smallFont) / 2;
-  rows.forEach((row, idx) => {
-    for (let c = 0; c < 4; c += 1) {
-      drawCellText(page, font, row[c], colX[c] + s.padX, cy, colX[c + 1] - colX[c] - s.padX * 2, s.smallFont, idx === 0 || (idx >= 2 && c === 0), bold);
-    }
-    cy -= rowH;
-  });
-
-  const monthsY = tableTop - rowH * rows.length - s.sectionGap;
+  drawSectionHeader(page, bold, "Tax deduction details", x, y, w, s.tableTitleH, s.baseFont + 1);
+  const monthsY = y - s.tableTitleH - s.sectionGap;
+  const rowH = s.rowH - 2;
   const stripH = rowH + 2;
   const monthCols = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
   const mw = w / monthCols.length;
@@ -363,7 +323,7 @@ function drawTaxSheetBlock(page: any, bold: PDFFont, font: PDFFont, y: number, p
     drawCellText(page, font, value, x + i * mw + s.padX, valY + ((rowH - 2) - s.smallFont) / 2, mw - s.padX * 2, s.smallFont);
   });
 
-  return valY - s.sectionGap;
+  return valY - s.sectionGap - 6;
 }
 
 function drawSignatures(page: any, _bold: PDFFont, font: PDFFont, y: number, payload: PayslipPdfPayload, s: ScaleBand) {
@@ -375,8 +335,7 @@ function estimateHeight(payload: PayslipPdfPayload, s: ScaleBand) {
   const rows = Math.max(6, Math.max(payload.earnings.length, payload.deductions.length));
   const personal = 24 + s.tableTitleH + 8 * s.rowH + s.sectionGap;
   const earnDed = s.tableTitleH + (rows + 3) * s.rowH + s.sectionGap;
-  const taxRows = 15;
-  const tax = s.tableTitleH + taxRows * (s.rowH - 2) + s.sectionGap + (s.rowH + 2) + (s.rowH - 2) + s.sectionGap;
+  const tax = s.tableTitleH + s.sectionGap + (s.rowH + 2) + (s.rowH - 2) + s.sectionGap + 6;
   const signs = 34;
   const topMeta = 20;
   return personal + earnDed + tax + signs + topMeta;
@@ -408,7 +367,7 @@ export async function buildPayslipPdf(payload: PayslipPdfPayload) {
   let cursorY = PAGE_H - 162;
   cursorY = drawPersonalDetailsBlock(page, bold, font, cursorY, payload, scale);
   cursorY = drawEarningsDeductionsBlock(page, bold, font, cursorY, payload, scale);
-  cursorY = drawTaxSheetBlock(page, bold, font, cursorY, payload, scale);
+  cursorY = drawTaxDeductionDetailsBlock(page, bold, font, cursorY, payload, scale);
   drawSignatures(page, bold, font, Math.max(cursorY - 3, 108), payload, scale);
 
   return Buffer.from(await pdf.save());
