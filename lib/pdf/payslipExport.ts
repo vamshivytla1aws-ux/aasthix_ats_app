@@ -61,6 +61,23 @@ function inr(v: number) {
   return Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
 }
 
+function formatDoj(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return "-";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [y, m, d] = raw.split("-");
+    return `${d}-${m}-${y}`;
+  }
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    const d = String(parsed.getDate()).padStart(2, "0");
+    const m = String(parsed.getMonth() + 1).padStart(2, "0");
+    const y = parsed.getFullYear();
+    return `${d}-${m}-${y}`;
+  }
+  return raw;
+}
+
 function fitContain(img: PDFImage, maxW: number, maxH: number) {
   const ratio = Math.min(maxW / img.width, maxH / img.height);
   return { width: Math.max(1, img.width * ratio), height: Math.max(1, img.height * ratio) };
@@ -176,7 +193,27 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
   const w = PAGE_W - PAGE_MARGIN_X * 2;
   const headH = s.tableTitleH;
   const rowH = s.rowH;
-  const rowCount = 8;
+  const leftRows: Array<[string, string]> = [
+    ["Employee Name", payload.employeeName],
+    ["Designation", payload.designation],
+    ["DOJ", formatDoj(payload.dateOfJoining)],
+    ["Bank A/c", payload.bankAccountNumber],
+    ["PAN", payload.pan],
+    ["UAN", payload.uanNumber],
+    ["PF No.", payload.pfNumber],
+    ["Net Pay", inr(payload.netSalary)],
+  ].filter((row) => String(row[1] || "").trim() !== "");
+  const rightRows: Array<[string, string]> = [
+    ["Employee Code", payload.employeeCode],
+    ["Department", payload.department],
+    ["Location", payload.workLocation],
+    ["Pay Days", String(payload.paidDays)],
+    ["LOP Days", String(payload.lopDays)],
+    ["Gross Earnings", inr(payload.grossSalary)],
+    ["Gross Deductions", inr(payload.totalDeductions)],
+    ["Salary Month", payload.monthLabel],
+  ].filter((row) => String(row[1] || "").trim() !== "");
+  const rowCount = Math.max(leftRows.length, rightRows.length);
   const totalH = headH + rowCount * rowH;
   const topY = y - 18;
   drawSectionHeader(page, bold, "Personal details", x, topY, w, headH, s.baseFont + 1);
@@ -200,33 +237,14 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
     page.drawLine({ start: { x, y: ly }, end: { x: x + w, y: ly }, thickness: 1, color: BORDER });
   }
 
-  const leftRows: Array<[string, string]> = [
-    ["Employee Name", payload.employeeName],
-    ["Designation", payload.designation],
-    ["DOJ", payload.dateOfJoining],
-    ["Bank A/c", payload.bankAccountNumber],
-    ["PAN", payload.pan],
-    ["UAN", payload.uanNumber],
-    ["PF No.", payload.pfNumber],
-    ["Net Pay", inr(payload.netSalary)],
-  ];
-  const rightRows: Array<[string, string]> = [
-    ["Employee Code", payload.employeeCode],
-    ["Department", payload.department],
-    ["Location", payload.workLocation],
-    ["Pay Days", String(payload.paidDays)],
-    ["LOP Days", String(payload.lopDays)],
-    ["Gross Earnings", inr(payload.grossSalary)],
-    ["Gross Deductions", inr(payload.totalDeductions)],
-    ["Salary Month", payload.monthLabel],
-  ];
-
   let cy = tableTop - rowH + (rowH - s.baseFont) / 2;
   for (let i = 0; i < rowCount; i += 1) {
-    drawCellText(page, font, leftRows[i][0], col1X + s.padX, cy, colLabelW - s.padX * 2, s.baseFont);
-    drawCellText(page, font, leftRows[i][1] || "-", col2X + s.padX, cy, valW - s.padX * 2, s.baseFont, true, bold);
-    drawCellText(page, font, rightRows[i][0], col3X + s.padX, cy, midLabelW - s.padX * 2, s.baseFont);
-    drawCellText(page, font, rightRows[i][1] || "-", col4X + s.padX, cy, valW - s.padX * 2, s.baseFont, true, bold);
+    const l = leftRows[i] || ["", ""];
+    const r = rightRows[i] || ["", ""];
+    drawCellText(page, font, l[0], col1X + s.padX, cy, colLabelW - s.padX * 2, s.baseFont);
+    drawCellText(page, font, l[1] || "-", col2X + s.padX, cy, valW - s.padX * 2, s.baseFont, true, bold);
+    drawCellText(page, font, r[0], col3X + s.padX, cy, midLabelW - s.padX * 2, s.baseFont);
+    drawCellText(page, font, r[1] || "-", col4X + s.padX, cy, valW - s.padX * 2, s.baseFont, true, bold);
     cy -= rowH;
   }
 
@@ -241,7 +259,7 @@ function drawEarningsDeductionsBlock(page: any, bold: PDFFont, font: PDFFont, y:
   const tableTop = y - s.tableTitleH;
   const rowH = s.rowH;
   const maxRows = Math.max(payload.earnings.length, payload.deductions.length);
-  const rows = Math.max(6, maxRows);
+  const rows = Math.max(1, maxRows);
   const totalRows = rows + 2;
 
   const colX = [x, x + 80, x + 132, x + 184, x + 236, x + 290, x + 370, x + 420, x + 472];
@@ -279,10 +297,10 @@ function drawEarningsDeductionsBlock(page: any, bold: PDFFont, font: PDFFont, y:
   }
 
   const grossY = tableTop - rowH * (rows + 2) + (rowH - s.baseFont) / 2;
-  drawCellText(page, font, "GROSS EARNINGS", colX[0] + s.padX, grossY, colX[2] - colX[0], s.baseFont, true, bold);
-  drawCellText(page, font, inr(payload.grossSalary), colX[2] + s.padX, grossY, colX[3] - colX[2], s.baseFont, true, bold);
-  drawCellText(page, font, "GROSS DEDUCTIONS", colX[5] + s.padX, grossY, colX[7] - colX[5], s.baseFont, true, bold);
-  drawCellText(page, font, inr(payload.totalDeductions), colX[7] + s.padX, grossY, colX[8] - colX[7], s.baseFont, true, bold);
+  drawCellText(page, font, "GROSS EARNINGS", colX[0] + s.padX, grossY, colX[2] - colX[0] - s.padX * 2, s.baseFont, true, bold);
+  drawCellText(page, font, inr(payload.grossSalary), colX[4] + s.padX, grossY, colX[5] - colX[4] - s.padX * 2, s.baseFont, true, bold);
+  drawCellText(page, font, "GROSS DEDUCTIONS", colX[5] + s.padX, grossY, colX[7] - colX[5] - s.padX * 2, s.baseFont, true, bold);
+  drawCellText(page, font, inr(payload.totalDeductions), colX[7] + s.padX, grossY, colX[8] - colX[7] - s.padX * 2, s.baseFont, true, bold);
 
   const netY = tableTop - rowH * (rows + 3) + (rowH - s.baseFont) / 2;
   drawCellText(page, font, "NET PAY", colX[5] + s.padX, netY, colX[7] - colX[5], s.baseFont, true, bold);
