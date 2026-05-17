@@ -7,9 +7,80 @@ import { query } from "@/lib/db";
 import { buildPayslipPdf } from "@/lib/pdf/payslipExport";
 import { getMonthlyApprovedLopDays } from "@/lib/leave";
 import { getPayrollRunByMonthYear } from "@/lib/hrms/payroll";
+import { loadActiveTaxConfig, calculateAnnualTaxFromConfig } from "@/lib/salary/tax";
+import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function fyAprilIndex(month: number) {
+  return month >= 4 ? month - 4 : month + 8;
+}
+
+async function buildTaxSheetSnapshot(
+  grossMonthly: number,
+  deductions: Array<{ name: string; amountForMonth?: number }>,
+  regime: "new_regime" | "old_regime" | "manual_tds",
+  month: number,
+  monthLabel: string,
+): Promise<PayslipTaxSheetSnapshot> {
+  const monthIndex = fyAprilIndex(month);
+  const annualTotalIncome = Math.round(grossMonthly * 12 * 100) / 100;
+  const totalIncomeActualYtd = Math.round(grossMonthly * (monthIndex + 1) * 100) / 100;
+  const projectedIncomeTillMarch = annualTotalIncome;
+  const additionalIncome = 0;
+  const actualHraReceived = 0;
+  const totalInvestments = 0;
+  let standardDeduction = 0;
+  let grossTaxableIncome = 0;
+  let incomeTaxPayable = 0;
+  let cess = 0;
+  let totalIncomeTaxPayable = 0;
+  let rebate = 0;
+
+  if (regime === "manual_tds") {
+    const monthlyTds = Number(deductions.find((d) => d.name.toLowerCase().includes("tds"))?.amountForMonth || 0);
+    incomeTaxPayable = Math.round(monthlyTds * 12 * 100) / 100;
+    cess = 0;
+    totalIncomeTaxPayable = incomeTaxPayable;
+    grossTaxableIncome = annualTotalIncome;
+  } else {
+    const cfg = await loadActiveTaxConfig(regime);
+    standardDeduction = Number(cfg.standardDeduction || 0);
+    const computed = calculateAnnualTaxFromConfig(annualTotalIncome, cfg);
+    grossTaxableIncome = Math.round(computed.taxableIncome * 100) / 100;
+    const beforeCess = Math.round(computed.annualTaxBeforeCess * 100) / 100;
+    incomeTaxPayable = beforeCess;
+    totalIncomeTaxPayable = Math.round(computed.annualTax * 100) / 100;
+    cess = Math.round((totalIncomeTaxPayable - incomeTaxPayable) * 100) / 100;
+    if (computed.taxableIncome <= Number(cfg.rebateThreshold || 0)) rebate = incomeTaxPayable;
+  }
+
+  const monthlyTaxDeduction = new Array(12).fill(0) as number[];
+  monthlyTaxDeduction[monthIndex] = Math.round((totalIncomeTaxPayable / 12) * 100) / 100;
+  return {
+    titleMonthLabel: monthLabel,
+    totalIncomeActualYtd,
+    projectedIncomeTillMarch,
+    annualTotalIncome,
+    additionalIncome,
+    totalGrossIncome: annualTotalIncome,
+    actualHraReceived,
+    grossSalaryBeforeStdDeduction: annualTotalIncome,
+    standardDeduction,
+    grossSalaryAfterStdDeduction: Math.max(0, annualTotalIncome - standardDeduction),
+    totalIncomeFromSalary: Math.max(0, annualTotalIncome - standardDeduction),
+    grossTaxableIncome,
+    rebate,
+    totalInvestments,
+    netTaxableIncomeRoundedOff: Math.round(grossTaxableIncome),
+    incomeTaxPayable,
+    cess,
+    totalIncomeTaxPayable,
+    balanceTax: totalIncomeTaxPayable,
+    monthlyTaxDeduction,
+  };
+}
 
 export async function POST(request: Request) {
   try {
@@ -117,6 +188,7 @@ export async function POST(request: Request) {
       year: "numeric",
       timeZone: "Asia/Kolkata",
     });
+    const taxSheetSnapshot = await buildTaxSheetSnapshot(prorated.grossMonthly, deductionsWithLop, input.taxRegime, month, monthLabel);
 
     const pdfBytes = await buildPayslipPdf({
     companyName: "AASTHIX TALENT",
@@ -139,13 +211,14 @@ export async function POST(request: Request) {
     totalDeductions: totalDeductionsWithLop,
     netSalary: netWithLop,
     netSalaryInWords: netSalaryWords,
+    taxSheetSnapshot,
     });
 
     const upsert = await query(
     `
     INSERT INTO payslips
-    (employee_id, salary_structure_id, month, year, paid_days, lop_days, gross_monthly, total_deductions, net_salary, net_salary_words, pdf_blob, generated_at, created_by_user_id, created_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,NOW())
+    (employee_id, salary_structure_id, month, year, paid_days, lop_days, gross_monthly, total_deductions, net_salary, net_salary_words, tax_sheet_snapshot, pdf_blob, generated_at, created_by_user_id, created_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),$13,NOW())
     ON CONFLICT (employee_id, year, month)
     DO UPDATE SET
       salary_structure_id = EXCLUDED.salary_structure_id,
@@ -155,6 +228,7 @@ export async function POST(request: Request) {
       total_deductions = EXCLUDED.total_deductions,
       net_salary = EXCLUDED.net_salary,
       net_salary_words = EXCLUDED.net_salary_words,
+      tax_sheet_snapshot = EXCLUDED.tax_sheet_snapshot,
       pdf_blob = EXCLUDED.pdf_blob,
       generated_at = NOW(),
       created_by_user_id = EXCLUDED.created_by_user_id
@@ -171,6 +245,7 @@ export async function POST(request: Request) {
       totalDeductionsWithLop,
       netWithLop,
       netSalaryWords,
+      JSON.stringify(taxSheetSnapshot),
       pdfBytes,
       auth.access.user_id,
     ]
@@ -200,6 +275,7 @@ export async function POST(request: Request) {
       netSalaryWords,
       lop_days_applied: totalLopDays,
       lop_deduction_amount: lopDeductionAmount,
+      tax_sheet_snapshot: taxSheetSnapshot,
     });
   } catch (error) {
     console.error("POST /api/payslips/generate failed:", error);

@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage } from "pdf-lib";
 import path from "path";
 import { readFile } from "fs/promises";
+import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
 
 export type PayslipPdfPayload = {
   companyName: string;
@@ -23,6 +24,7 @@ export type PayslipPdfPayload = {
   totalDeductions: number;
   netSalary: number;
   netSalaryInWords: string;
+  taxSheetSnapshot?: PayslipTaxSheetSnapshot | null;
 };
 
 const PAGE_W = 595;
@@ -295,23 +297,29 @@ function drawTaxSheetBlock(page: any, bold: PDFFont, font: PDFFont, y: number, p
   drawSectionHeader(page, bold, `Tax Sheet of ${payload.monthLabel}`, x, y, w, s.tableTitleH, s.baseFont + 1);
   const tableTop = y - s.tableTitleH;
   const rowH = s.rowH - 2;
-
-  const tdsMonthly = payload.deductions.find((d) => d.name.toLowerCase().includes("tds"))?.amountForMonth || 0;
-  const annualGross = Math.round(payload.grossSalary * 12 * 100) / 100;
-  const standardDeduction = 75000;
-  const taxable = Math.max(0, annualGross - standardDeduction);
-  const annualTax = Math.max(0, Math.round(tdsMonthly * 12 * 100) / 100);
-
+  const snapshot = payload.taxSheetSnapshot;
+  const tdsMonthly = Number(snapshot?.monthlyTaxDeduction?.[0] ?? payload.deductions.find((d) => d.name.toLowerCase().includes("tds"))?.amountForMonth ?? 0);
   const rows: Array<[string, string, string, string]> = [
     ["Description", "Actual YTD Earnings", "Proj. Earnings till March", "Annual Total"],
-    ["Total Income", inr(payload.grossSalary), inr(annualGross), inr(annualGross)],
-    ["Additional Income", "-", "-", "-"],
-    ["Gross Salary", "", "", inr(annualGross)],
-    ["Standard Deduction", "", "", inr(standardDeduction)],
-    ["Taxable Income", "", "", inr(taxable)],
-    ["Income Tax Payable", "", "", inr(annualTax)],
-    ["Cess", "", "", inr(Math.round((annualTax * 0.04) * 100) / 100)],
-    ["Total Income Tax Payable", "", "", inr(Math.round((annualTax * 1.04) * 100) / 100)],
+    [
+      "Total Income",
+      inr(snapshot?.totalIncomeActualYtd ?? payload.grossSalary),
+      inr(snapshot?.projectedIncomeTillMarch ?? payload.grossSalary * 12),
+      inr(snapshot?.annualTotalIncome ?? payload.grossSalary * 12),
+    ],
+    ["Add :", "Additional Income", "", inr(snapshot?.additionalIncome ?? 0)],
+    ["", "Total Gross Income", "Actual HRA received", inr(snapshot?.actualHraReceived ?? 0)],
+    ["", "Gross Salary", "", inr(snapshot?.grossSalaryBeforeStdDeduction ?? payload.grossSalary * 12)],
+    ["", "Standard Deduction", "", inr(snapshot?.standardDeduction ?? 75000)],
+    ["", "Gross Salary", "", inr(snapshot?.grossSalaryAfterStdDeduction ?? Math.max(0, (payload.grossSalary * 12) - 75000))],
+    ["", "Total Income from Salary", "Gross Taxable Income", inr(snapshot?.grossTaxableIncome ?? Math.max(0, (payload.grossSalary * 12) - 75000))],
+    ["", "", "Rebate", inr(snapshot?.rebate ?? 0)],
+    ["", "", "Total Investments", inr(snapshot?.totalInvestments ?? 0)],
+    ["", "Net Taxable Income(rounded off)", "", inr(snapshot?.netTaxableIncomeRoundedOff ?? Math.round(Math.max(0, (payload.grossSalary * 12) - 75000)))],
+    ["", "Income Tax Payable", "", inr(snapshot?.incomeTaxPayable ?? tdsMonthly * 12)],
+    ["", "Cess", "", inr(snapshot?.cess ?? (tdsMonthly * 12 * 0.04))],
+    ["", "Total Income Tax Payable (I/Tax +E/C+ S/C)", "", inr(snapshot?.totalIncomeTaxPayable ?? (tdsMonthly * 12 * 1.04))],
+    ["", "Balance Tax", "", inr(snapshot?.balanceTax ?? (tdsMonthly * 12 * 1.04))],
   ];
 
   const colX = [x, x + 155, x + 288, x + 420, x + w];
@@ -351,7 +359,7 @@ function drawTaxSheetBlock(page: any, bold: PDFFont, font: PDFFont, y: number, p
     page.drawLine({ start: { x: lx, y: valY + (rowH - 2) }, end: { x: lx, y: valY }, thickness: 1, color: BORDER });
   }
   monthCols.forEach((_, i) => {
-    const value = i === 0 ? inr(tdsMonthly) : "0";
+    const value = inr(Number(snapshot?.monthlyTaxDeduction?.[i] ?? (i === 0 ? tdsMonthly : 0)));
     drawCellText(page, font, value, x + i * mw + s.padX, valY + ((rowH - 2) - s.smallFont) / 2, mw - s.padX * 2, s.smallFont);
   });
 
@@ -367,7 +375,8 @@ function estimateHeight(payload: PayslipPdfPayload, s: ScaleBand) {
   const rows = Math.max(6, Math.max(payload.earnings.length, payload.deductions.length));
   const personal = 24 + s.tableTitleH + 8 * s.rowH + s.sectionGap;
   const earnDed = s.tableTitleH + (rows + 3) * s.rowH + s.sectionGap;
-  const tax = s.tableTitleH + 6 * (s.rowH - 2) + s.sectionGap + (s.rowH + 2) + (s.rowH - 2) + s.sectionGap;
+  const taxRows = 15;
+  const tax = s.tableTitleH + taxRows * (s.rowH - 2) + s.sectionGap + (s.rowH + 2) + (s.rowH - 2) + s.sectionGap;
   const signs = 34;
   const topMeta = 20;
   return personal + earnDed + tax + signs + topMeta;

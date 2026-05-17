@@ -54,6 +54,29 @@ export type SalaryCalcResult = {
   };
 };
 
+export type PayslipTaxSheetSnapshot = {
+  titleMonthLabel: string;
+  totalIncomeActualYtd: number;
+  projectedIncomeTillMarch: number;
+  annualTotalIncome: number;
+  additionalIncome: number;
+  totalGrossIncome: number;
+  actualHraReceived: number;
+  grossSalaryBeforeStdDeduction: number;
+  standardDeduction: number;
+  grossSalaryAfterStdDeduction: number;
+  totalIncomeFromSalary: number;
+  grossTaxableIncome: number;
+  rebate: number;
+  totalInvestments: number;
+  netTaxableIncomeRoundedOff: number;
+  incomeTaxPayable: number;
+  cess: number;
+  totalIncomeTaxPayable: number;
+  balanceTax: number;
+  monthlyTaxDeduction: number[]; // Apr..Mar
+};
+
 export type TaxSlab = {
   minAmount: number;
   maxAmount: number | null;
@@ -68,4 +91,3 @@ export type TaxConfig = {
   cessPercent: number;
   slabs: TaxSlab[];
 };
-

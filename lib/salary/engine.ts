@@ -56,28 +56,6 @@ function deduction(name: string, key: string, annual: number, monthly: number, s
   return { name, key, type: "deduction", annual, monthly, sortOrder };
 }
 
-function calculateSampleModeAnnualTaxFromCtc(ctcAnnual: number) {
-  const slabs = [
-    { min: 0, max: 400000, rate: 0 },
-    { min: 400000, max: 800000, rate: 0.05 },
-    { min: 800000, max: 1200000, rate: 0.1 },
-    { min: 1200000, max: 1600000, rate: 0.15 },
-    { min: 1600000, max: 2000000, rate: 0.2 },
-    { min: 2000000, max: 2400000, rate: 0.25 },
-    { min: 2400000, max: Number.POSITIVE_INFINITY, rate: 0.3 },
-  ] as const;
-  const taxable = Math.max(0, Number(ctcAnnual || 0));
-  let baseTax = 0;
-  for (const slab of slabs) {
-    if (taxable <= slab.min) continue;
-    const upper = Math.min(taxable, slab.max);
-    const width = upper - slab.min;
-    if (width > 0) baseTax += width * slab.rate;
-  }
-  const cess = baseTax * 0.03;
-  return { taxableIncome: taxable, annualTax: baseTax + cess };
-}
-
 export async function calculateSalaryStructure(input: SalaryCalcInput): Promise<SalaryCalcResult> {
   validateInput(input);
   const settings = await loadSalarySettings();
@@ -151,19 +129,11 @@ export async function calculateSalaryStructure(input: SalaryCalcInput): Promise<
     monthlyTds = roundMonthly(annualTax / 12, settings.monthlyRoundingMode);
     taxableIncome = Math.max(0, grossAnnualTaxableSalary);
   } else {
-    // Sample mode parity: spreadsheet computes slab tax from annual CTC and applies 3% cess.
-    if (input.taxRegime === "new_regime") {
-      const tax = calculateSampleModeAnnualTaxFromCtc(ctcAnnual);
-      taxableIncome = roundAnnual(tax.taxableIncome);
-      annualTax = roundAnnual(tax.annualTax);
-      monthlyTds = roundMonthly(annualTax / 12, settings.monthlyRoundingMode);
-    } else {
-      const config = await loadActiveTaxConfig(input.taxRegime);
-      const tax = calculateAnnualTaxFromConfig(grossAnnualTaxableSalary, config);
-      taxableIncome = roundAnnual(tax.taxableIncome);
-      annualTax = roundAnnual(tax.annualTax);
-      monthlyTds = roundMonthly(annualTax / 12, settings.monthlyRoundingMode);
-    }
+    const config = await loadActiveTaxConfig(input.taxRegime);
+    const tax = calculateAnnualTaxFromConfig(grossAnnualTaxableSalary, config);
+    taxableIncome = roundAnnual(tax.taxableIncome);
+    annualTax = roundAnnual(tax.annualTax);
+    monthlyTds = roundMonthly(annualTax / 12, settings.monthlyRoundingMode);
   }
 
   const deductions: SalaryComponent[] = [

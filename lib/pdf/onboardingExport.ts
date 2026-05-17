@@ -43,26 +43,26 @@ type ReferenceRow = {
   association?: string;
 };
 
-const PAGE_W = 842;
-const PAGE_H = 595;
+const PAGE_W = 595;
+const PAGE_H = 842;
 
 // Shared layout constants for every page render.
-const PAGE_MARGIN_X = 32;
-const HEADER_TOP = PAGE_H - 16;
-const LOGO_X = 58;
-const LOGO_Y = PAGE_H - 106;
-const LOGO_WIDTH = 110;
-const LOGO_HEIGHT = 110;
-const BRAND_TEXT_X = LOGO_X + 84;
-const BRAND_TITLE_Y = PAGE_H - 54;
-const BRAND_SUBTITLE_Y = PAGE_H - 70;
-const CONTACT_X = PAGE_W - 198;
-const DIVIDER_Y = PAGE_H - 112;
-const HEADER_HEIGHT = 120;
-const FOOTER_HEIGHT = 80;
-const CONTENT_TOP = DIVIDER_Y - 35;
-const CONTENT_BOTTOM = FOOTER_HEIGHT + 10;
-const FOOTER_DIVIDER_Y = 56;
+const PAGE_MARGIN_X = 24;
+const HEADER_TOP = PAGE_H - 18;
+const LOGO_X = 38;
+const LOGO_Y = PAGE_H - 102;
+const LOGO_WIDTH = 68;
+const LOGO_HEIGHT = 68;
+const BRAND_TEXT_X = LOGO_X + LOGO_WIDTH + 14;
+const BRAND_TITLE_Y = PAGE_H - 44;
+const BRAND_SUBTITLE_Y = PAGE_H - 60;
+const CONTACT_X = PAGE_W - 178;
+const DIVIDER_Y = PAGE_H - 100;
+const HEADER_HEIGHT = 112;
+const FOOTER_HEIGHT = 64;
+const CONTENT_TOP = DIVIDER_Y - 28;
+const CONTENT_BOTTOM = FOOTER_HEIGHT + 14;
+const FOOTER_DIVIDER_Y = 50;
 
 const CYAN = rgb(0.13, 0.71, 0.95);
 const NAVY = rgb(0.2, 0.22, 0.29);
@@ -217,34 +217,34 @@ function drawHeader(page: any, bold: PDFFont, font: PDFFont, logo: PDFImage | nu
     });
   }
 
-  page.drawText("AASTHIX TALENT", { x: BRAND_TEXT_X, y: BRAND_TITLE_Y, size: 20, font: bold, color: rgb(0.2, 0.21, 0.23) });
-  page.drawText("Talent That Drives Success", { x: BRAND_TEXT_X, y: BRAND_SUBTITLE_Y, size: 12, font, color: rgb(0.27, 0.31, 0.36) });
+  page.drawText("AASTHIX TALENT", { x: BRAND_TEXT_X, y: BRAND_TITLE_Y, size: 16, font: bold, color: rgb(0.2, 0.21, 0.23) });
+  page.drawText("Talent That Drives Success", { x: BRAND_TEXT_X, y: BRAND_SUBTITLE_Y, size: 9.8, font, color: rgb(0.27, 0.31, 0.36) });
 
-  const l1 = HEADER_TOP - 30;
-  const l2 = HEADER_TOP - 48;
-  const l3 = HEADER_TOP - 66;
+  const l1 = HEADER_TOP - 24;
+  const l2 = HEADER_TOP - 38;
+  const l3 = HEADER_TOP - 52;
   const contact1 = "+91 9573543933";
   const contact2 = "contact@aasthix.com";
   const contact3 = "www.aasthix.com";
-  page.drawText(contact1, { x: CONTACT_X, y: l1, size: 11, font, color: rgb(0.2, 0.21, 0.23) });
-  page.drawText(contact2, { x: CONTACT_X, y: l2, size: 11, font, color: rgb(0.2, 0.21, 0.23) });
-  page.drawText(contact3, { x: CONTACT_X, y: l3, size: 11, font, color: rgb(0.2, 0.21, 0.23) });
+  page.drawText(contact1, { x: CONTACT_X, y: l1, size: 9.5, font, color: rgb(0.2, 0.21, 0.23) });
+  page.drawText(contact2, { x: CONTACT_X, y: l2, size: 9.5, font, color: rgb(0.2, 0.21, 0.23) });
+  page.drawText(contact3, { x: CONTACT_X, y: l3, size: 9.5, font, color: rgb(0.2, 0.21, 0.23) });
   drawPhoneIcon(page, CONTACT_X + font.widthOfTextAtSize(contact1, 11) + 2, l1 + 2);
   drawMailIcon(page, CONTACT_X + font.widthOfTextAtSize(contact2, 11) + 2, l2 + 3);
   drawWebIcon(page, CONTACT_X + font.widthOfTextAtSize(contact3, 11) + 2, l3 + 2);
 
-  page.drawRectangle({ x: PAGE_MARGIN_X - 16, y: DIVIDER_Y, width: PAGE_W - (PAGE_MARGIN_X - 16) * 2, height: 8, color: NAVY });
-  page.drawRectangle({ x: PAGE_MARGIN_X - 16, y: DIVIDER_Y, width: 430, height: 8, color: CYAN });
+  page.drawRectangle({ x: PAGE_MARGIN_X, y: DIVIDER_Y, width: PAGE_W - PAGE_MARGIN_X * 2, height: 5.6, color: NAVY });
+  page.drawRectangle({ x: PAGE_MARGIN_X, y: DIVIDER_Y, width: Math.round((PAGE_W - PAGE_MARGIN_X * 2) * 0.38), height: 5.6, color: CYAN });
 }
 
 function drawFooter(page: any, font: PDFFont) {
-  page.drawRectangle({ x: PAGE_MARGIN_X - 16, y: FOOTER_DIVIDER_Y, width: PAGE_W - (PAGE_MARGIN_X - 16) * 2, height: 4, color: NAVY });
-  page.drawRectangle({ x: PAGE_MARGIN_X - 16, y: FOOTER_DIVIDER_Y, width: 350, height: 4, color: CYAN });
+  page.drawRectangle({ x: PAGE_MARGIN_X, y: FOOTER_DIVIDER_Y, width: PAGE_W - PAGE_MARGIN_X * 2, height: 4, color: NAVY });
+  page.drawRectangle({ x: PAGE_MARGIN_X, y: FOOTER_DIVIDER_Y, width: Math.round((PAGE_W - PAGE_MARGIN_X * 2) * 0.38), height: 4, color: CYAN });
   const line1 = "Unit.No. 114, Manjeera Trinity Corporate, JNTU - Hitech Road, beside LuLu Mall, Ashok Nagar,";
   const line2 = "Kukatpally Housing Board Colony, Kukatpally, Hyderabad, Telangana 500072.";
-  const s = 8.7;
-  page.drawText(line1, { x: (PAGE_W - font.widthOfTextAtSize(line1, s)) / 2, y: 36, size: s, font, color: rgb(0.2, 0.22, 0.27) });
-  page.drawText(line2, { x: (PAGE_W - font.widthOfTextAtSize(line2, s)) / 2, y: 24, size: s, font, color: rgb(0.2, 0.22, 0.27) });
+  const s = 7.7;
+  page.drawText(line1, { x: (PAGE_W - font.widthOfTextAtSize(line1, s)) / 2, y: 30, size: s, font, color: rgb(0.2, 0.22, 0.27) });
+  page.drawText(line2, { x: (PAGE_W - font.widthOfTextAtSize(line2, s)) / 2, y: 20, size: s, font, color: rgb(0.2, 0.22, 0.27) });
 }
 
 function newPage(pdf: PDFDocument, bold: PDFFont, font: PDFFont, logo: PDFImage | null, templateBg: PDFImage | null) {
@@ -370,12 +370,12 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
     color: TITLE,
   });
 
-  drawFieldRow(page1, font, bold, { label: "Candidate :", value: input.packet.candidateName, x: 40, y: CONTENT_TOP - 56, width: 255, labelWidth: 84 });
-  drawFieldRow(page1, font, bold, { label: "Job Title :", value: input.packet.jobTitle, x: 300, y: CONTENT_TOP - 56, width: 285, labelWidth: 84 });
-  drawFieldRow(page1, font, bold, { label: "Status :", value: input.packet.status, x: 40, y: CONTENT_TOP - 86, width: 255, labelWidth: 84 });
-  drawFieldRow(page1, font, bold, { label: "Submitted At :", value: safeDate(input.packet.submittedAt), x: 300, y: CONTENT_TOP - 86, width: 285, labelWidth: 96 });
+  drawFieldRow(page1, font, bold, { label: "Candidate :", value: input.packet.candidateName, x: 32, y: CONTENT_TOP - 56, width: 248, labelWidth: 84 });
+  drawFieldRow(page1, font, bold, { label: "Job Title :", value: input.packet.jobTitle, x: 286, y: CONTENT_TOP - 56, width: 170, labelWidth: 78 });
+  drawFieldRow(page1, font, bold, { label: "Status :", value: input.packet.status, x: 32, y: CONTENT_TOP - 84, width: 248, labelWidth: 84 });
+  drawFieldRow(page1, font, bold, { label: "Submitted At :", value: safeDate(input.packet.submittedAt), x: 286, y: CONTENT_TOP - 84, width: 170, labelWidth: 96 });
 
-  const photoBox = { x: PAGE_W - 198, y: CONTENT_TOP - 184, w: 134, h: 164 };
+  const photoBox = { x: PAGE_W - 132, y: CONTENT_TOP - 184, w: 94, h: 126 };
   page1.drawRectangle({ x: photoBox.x, y: photoBox.y, width: photoBox.w, height: photoBox.h, borderWidth: 2, borderColor: rgb(0.12, 0.12, 0.12) });
   const photoDoc = input.docs.find((d) => d.doc_type === "passport_photo") || input.docs.find((d) => String(d.doc_type || "").toLowerCase().includes("passport"));
   if (photoDoc) {
@@ -401,7 +401,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   const summaryFieldsBottomY = CONTENT_TOP - 86;
   const profilePhotoBottomY = photoBox.y;
   const personalStartY = Math.min(summaryFieldsBottomY, profilePhotoBottomY) - 30;
-  drawSectionHeader(page1, 40, personalStartY + 10, 752, "Personal & Employment", bold);
+  drawSectionHeader(page1, 32, personalStartY + 10, PAGE_W - 64, "Personal & Employment", bold);
 
   const positionDesignation = firstValue(payload, ["designation", "position", "jobTitle"]);
   const department = firstValue(payload, ["department", "dept"]);
@@ -409,24 +409,24 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   const workLocation = firstValue(payload, ["work_location", "workLocation", "location"]);
   const uan = firstValue(payload, ["uan", "UAN"]) || "-";
 
-  drawFieldRow(page1, font, bold, { label: "Full Name", value: firstValue(payload, ["full_name"]), x: 40, y: personalStartY - 26, width: 250, labelWidth: 84 });
-  drawFieldRow(page1, font, bold, { label: "Date of Birth", value: firstValue(payload, ["date_of_birth"]), x: 300, y: personalStartY - 26, width: 250, labelWidth: 98 });
-  drawFieldRow(page1, font, bold, { label: "Gender", value: firstValue(payload, ["gender"]), x: 560, y: personalStartY - 26, width: 232, labelWidth: 58 });
-  drawFieldRow(page1, font, bold, { label: "Contact Number", value: firstValue(payload, ["contact_number"]), x: 40, y: personalStartY - 54, width: 250, labelWidth: 106 });
-  drawFieldRow(page1, font, bold, { label: "Email", value: firstValue(payload, ["personal_email"]), x: 300, y: personalStartY - 54, width: 250, labelWidth: 56 });
-  drawFieldRow(page1, font, bold, { label: "Joining Date", value: firstValue(payload, ["joining_date"]), x: 560, y: personalStartY - 54, width: 232, labelWidth: 94 });
-  drawFieldRow(page1, font, bold, { label: "Employment Type", value: firstValue(payload, ["employment_type"]), x: 40, y: personalStartY - 82, width: 250, labelWidth: 118 });
-  drawFieldRow(page1, font, bold, { label: "Work Mode", value: firstValue(payload, ["work_mode"]), x: 300, y: personalStartY - 82, width: 250, labelWidth: 80 });
-  drawFieldRow(page1, font, bold, { label: "Work Location", value: workLocation, x: 560, y: personalStartY - 82, width: 232, labelWidth: 96 });
-  drawFieldRow(page1, font, bold, { label: "Position / Designation", value: positionDesignation, x: 40, y: personalStartY - 110, width: 250, labelWidth: 145 });
-  drawFieldRow(page1, font, bold, { label: "Department", value: department, x: 300, y: personalStartY - 110, width: 250, labelWidth: 90 });
-  drawFieldRow(page1, font, bold, { label: "Reporting Manager", value: reportingManager, x: 560, y: personalStartY - 110, width: 232, labelWidth: 120 });
-  drawFieldRow(page1, font, bold, { label: "UAN", value: uan, x: 40, y: personalStartY - 138, width: 250, labelWidth: 58 });
-  drawFieldRow(page1, font, bold, { label: "Declaration Date", value: firstValue(payload, ["declaration_date"]), x: 300, y: personalStartY - 138, width: 250, labelWidth: 118 });
+  drawFieldRow(page1, font, bold, { label: "Full Name", value: firstValue(payload, ["full_name"]), x: 32, y: personalStartY - 26, width: 248, labelWidth: 84 });
+  drawFieldRow(page1, font, bold, { label: "Date of Birth", value: firstValue(payload, ["date_of_birth"]), x: 286, y: personalStartY - 26, width: 134, labelWidth: 98 });
+  drawFieldRow(page1, font, bold, { label: "Gender", value: firstValue(payload, ["gender"]), x: 426, y: personalStartY - 26, width: 136, labelWidth: 58 });
+  drawFieldRow(page1, font, bold, { label: "Contact Number", value: firstValue(payload, ["contact_number"]), x: 32, y: personalStartY - 54, width: 248, labelWidth: 106 });
+  drawFieldRow(page1, font, bold, { label: "Email", value: firstValue(payload, ["personal_email"]), x: 286, y: personalStartY - 54, width: 134, labelWidth: 56 });
+  drawFieldRow(page1, font, bold, { label: "Joining Date", value: firstValue(payload, ["joining_date"]), x: 426, y: personalStartY - 54, width: 136, labelWidth: 88 });
+  drawFieldRow(page1, font, bold, { label: "Employment Type", value: firstValue(payload, ["employment_type"]), x: 32, y: personalStartY - 82, width: 248, labelWidth: 118 });
+  drawFieldRow(page1, font, bold, { label: "Work Mode", value: firstValue(payload, ["work_mode"]), x: 286, y: personalStartY - 82, width: 134, labelWidth: 80 });
+  drawFieldRow(page1, font, bold, { label: "Work Location", value: workLocation, x: 426, y: personalStartY - 82, width: 136, labelWidth: 90 });
+  drawFieldRow(page1, font, bold, { label: "Position / Designation", value: positionDesignation, x: 32, y: personalStartY - 110, width: 248, labelWidth: 145 });
+  drawFieldRow(page1, font, bold, { label: "Department", value: department, x: 286, y: personalStartY - 110, width: 134, labelWidth: 90 });
+  drawFieldRow(page1, font, bold, { label: "Reporting Manager", value: reportingManager, x: 426, y: personalStartY - 110, width: 136, labelWidth: 120 });
+  drawFieldRow(page1, font, bold, { label: "UAN", value: uan, x: 32, y: personalStartY - 138, width: 248, labelWidth: 58 });
+  drawFieldRow(page1, font, bold, { label: "Declaration Date", value: firstValue(payload, ["declaration_date"]), x: 286, y: personalStartY - 138, width: 276, labelWidth: 110 });
 
   const flow: FlowState = { page: newPage(pdf, bold, font, logo, templateBg), cursorY: CONTENT_TOP };
 
-  const eduCols = [40, 210, 430, 514, 598, 710, 800];
+  const eduCols = [32, 122, 302, 362, 422, 492, 562];
   const eduHeaderH = 22;
   const eduRowH = 28;
   const eduData = educationRows.length
@@ -439,7 +439,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
         { education: "Post-Graduation/Equivalent" },
       ];
   ensureSpace(flow, 18 + eduHeaderH + eduData.length * eduRowH + 10, pdf, bold, font, logo, templateBg);
-  drawSectionHeader(flow.page, 40, flow.cursorY, 760, "Education Details", bold);
+  drawSectionHeader(flow.page, 32, flow.cursorY, PAGE_W - 64, "Education Details", bold);
   flow.cursorY -= 24;
   drawTableRow(flow.page, eduCols, flow.cursorY, eduHeaderH, ["Education", "College/University (with Location)", "From", "To", "Specialization", "Percentage"], bold, 9, true);
   flow.cursorY -= eduHeaderH;
@@ -450,12 +450,12 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   }
 
   flow.cursorY -= 16;
-  const empCols = [40, 74, 280, 350, 430, 510, 640, 800];
+  const empCols = [32, 58, 212, 260, 306, 352, 436, 562];
   const empHeaderH = 22;
   const empRowH = 24;
   const empRows = prevRows.length ? prevRows : [{}];
   ensureSpace(flow, 18 + empHeaderH + empRows.length * empRowH + 10, pdf, bold, font, logo, templateBg);
-  drawSectionHeader(flow.page, 40, flow.cursorY, 760, "Previous Employment / Jobs", bold);
+  drawSectionHeader(flow.page, 32, flow.cursorY, PAGE_W - 64, "Previous Employment / Jobs", bold);
   flow.cursorY -= 24;
   drawTableRow(flow.page, empCols, flow.cursorY, empHeaderH, ["S.No", "Employer", "Emp Id", "From", "To", "Designation", "Last Salary"], bold, 8.5, true);
   flow.cursorY -= empHeaderH;
@@ -466,11 +466,11 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   });
 
   flow.cursorY -= 16;
-  const refCols = [40, 240, 426, 612, 800];
+  const refCols = [32, 168, 300, 432, 562];
   const refHeaderH = 22;
   const refRowH = 24;
   ensureSpace(flow, 18 + refHeaderH + 3 * refRowH + 10, pdf, bold, font, logo, templateBg);
-  drawSectionHeader(flow.page, 40, flow.cursorY, 760, "Professional References", bold);
+  drawSectionHeader(flow.page, 32, flow.cursorY, PAGE_W - 64, "Professional References", bold);
   flow.cursorY -= 24;
   drawTableRow(flow.page, refCols, flow.cursorY, refHeaderH, ["Field", "Reference No 1", "Reference No 2", "Reference No 3"], bold, 8.5, true);
   flow.cursorY -= refHeaderH;
@@ -484,9 +484,9 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
 
   flow.page = newPage(pdf, bold, font, logo, templateBg);
   flow.cursorY = CONTENT_TOP;
-  drawSectionHeader(flow.page, 40, flow.cursorY, 760, "Document Manifest", bold);
+  drawSectionHeader(flow.page, 32, flow.cursorY, PAGE_W - 64, "Document Manifest", bold);
   flow.cursorY -= 24;
-  const manCols = [40, 180, 510, 800];
+  const manCols = [32, 142, 402, 562];
   const manHeaderH = 22;
   const manRowH = 20;
   drawTableRow(flow.page, manCols, flow.cursorY, manHeaderH, ["Document Type", "File Name", "Uploaded At"], bold, 8.5, true);
@@ -506,15 +506,15 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   });
 
   if (imageDocs.length > 0) {
-    const cardW = 360;
-    const cardH = 165;
-    const gapX = 26;
-    const gapY = 24;
+      const cardW = 248;
+      const cardH = 154;
+      const gapX = 16;
+      const gapY = 18;
     let index = 0;
     while (index < imageDocs.length) {
       flow.page = newPage(pdf, bold, font, logo, templateBg);
       flow.cursorY = CONTENT_TOP;
-      drawSectionHeader(flow.page, 40, flow.cursorY, 760, "Attachment Preview", bold);
+      drawSectionHeader(flow.page, 32, flow.cursorY, PAGE_W - 64, "Attachment Preview", bold);
       flow.cursorY -= 30;
 
       const cardsPerRow = 2;
@@ -523,7 +523,7 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
         ensureSpace(flow, rowHeight, pdf, bold, font, logo, templateBg);
         const rowY = flow.cursorY - cardH;
         for (let col = 0; col < cardsPerRow && index < imageDocs.length; col++) {
-          const x = 40 + col * (cardW + gapX);
+          const x = 32 + col * (cardW + gapX);
           await drawAttachmentCard(flow.page, pdf, font, bold, { x, y: rowY, w: cardW, h: cardH }, imageDocs[index]);
           index += 1;
         }
