@@ -378,10 +378,14 @@ export async function buildPayslipPdf(payload: PayslipPdfPayload) {
   const bg = await loadPayslipTemplateBackground(pdf);
   const page = pdf.addPage([PAGE_W, PAGE_H]);
 
-  if (!bg) {
-    throw new Error("Payslip template background is required. Add public/payslip-template.png");
+  if (bg) {
+    page.drawImage(bg, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
+  } else {
+    // Fallback renderer so payslip generation never crashes in production
+    // when the template asset is missing from deployment snapshot.
+    drawHeader(page, bold, font, logo);
+    drawFooter(page, font);
   }
-  page.drawImage(bg, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
 
   const availableHeight = CONTENT_TOP - CONTENT_BOTTOM;
   let scale = SCALE_BANDS[SCALE_BANDS.length - 1];

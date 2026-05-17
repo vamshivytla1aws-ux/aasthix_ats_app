@@ -18,6 +18,27 @@ export const BOARD_PERMISSION_KEYS = [
   "leave.apply_self",
   "leave.approve_team",
   "leave.manage_policy",
+  "employee_directory.view_self",
+  "employee_directory.view_team",
+  "employee_directory.view_all",
+  "employee_directory.manage",
+  "documents.view_self",
+  "documents.view_team",
+  "documents.view_all",
+  "documents.manage",
+  "onboarding_exit.view_self",
+  "onboarding_exit.view_team",
+  "onboarding_exit.view_all",
+  "onboarding_exit.manage",
+  "attendance_rules.manage",
+  "attendance_corrections.manage",
+  "wfh.manage",
+  "payroll.run",
+  "payroll.approve",
+  "performance.view_self",
+  "performance.view_team",
+  "performance.view_all",
+  "performance.manage",
   "salary.view",
   "salary.manage",
   "candidates.view",
@@ -92,6 +113,10 @@ const BASELINE_RECRUITER = mergeBaseline({
   "leave.view_self": true,
   "leave.apply_self": true,
   "leave.approve_team": true,
+  "employee_directory.view_team": true,
+  "documents.view_team": true,
+  "onboarding_exit.view_team": true,
+  "performance.view_team": true,
   "salary.view": true,
   "salary.manage": true,
   "candidates.view": true,
@@ -117,6 +142,13 @@ const BASELINE_HIRING_MANAGER = mergeBaseline({
   "leave.view_self": true,
   "leave.apply_self": true,
   "leave.approve_team": true,
+  "employee_directory.view_team": true,
+  "documents.view_team": true,
+  "onboarding_exit.view_team": true,
+  "attendance_corrections.manage": true,
+  "wfh.manage": true,
+  "performance.view_team": true,
+  "performance.manage": true,
   "candidates.view": true,
   "jobs.view": true,
   "pipeline.view": true,
@@ -141,6 +173,17 @@ const BASELINE_COORDINATOR = mergeBaseline({
   "leave.apply_self": true,
   "leave.approve_team": true,
   "leave.manage_policy": true,
+  "employee_directory.view_all": true,
+  "documents.view_all": true,
+  "documents.manage": true,
+  "onboarding_exit.view_all": true,
+  "onboarding_exit.manage": true,
+  "attendance_rules.manage": true,
+  "attendance_corrections.manage": true,
+  "wfh.manage": true,
+  "payroll.run": true,
+  "performance.view_all": true,
+  "performance.manage": true,
   "pipeline.view": true,
   "pipeline.manage": true,
   "interviews.view": true,
@@ -158,9 +201,42 @@ const BASELINE_EMPLOYEE = mergeBaseline({
   "timesheet.manage_self": true,
   "leave.view_self": true,
   "leave.apply_self": true,
+  "employee_directory.view_self": true,
+  "documents.view_self": true,
+  "onboarding_exit.view_self": true,
+  "performance.view_self": true,
   "alerts.view": true,
   "chat.view": true,
   "salary.view": true,
+});
+
+const BASELINE_HR = mergeBaseline({
+  "dashboard.view": true,
+  "team_calendar.view": true,
+  "team_calendar.manage": true,
+  "leave.view_self": true,
+  "leave.apply_self": true,
+  "leave.approve_team": true,
+  "leave.manage_policy": true,
+  "employee_directory.view_all": true,
+  "employee_directory.manage": true,
+  "documents.view_all": true,
+  "documents.manage": true,
+  "onboarding_exit.view_all": true,
+  "onboarding_exit.manage": true,
+  "attendance.view_all": true,
+  "attendance.manage_all": true,
+  "attendance_rules.manage": true,
+  "attendance_corrections.manage": true,
+  "wfh.manage": true,
+  "salary.view": true,
+  "salary.manage": true,
+  "payroll.run": true,
+  "payroll.approve": true,
+  "performance.view_all": true,
+  "performance.manage": true,
+  "alerts.view": true,
+  "chat.view": true,
 });
 
 export function baselineForRole(role: string): Record<BoardPermissionKey, boolean> {
@@ -170,6 +246,8 @@ export function baselineForRole(role: string): Record<BoardPermissionKey, boolea
       for (const k of BOARD_PERMISSION_KEYS) b[k] = true;
       return b;
     }
+    case "hr":
+      return BASELINE_HR;
     case "recruiter":
       return BASELINE_RECRUITER;
     case "hiring_manager":
@@ -187,6 +265,7 @@ export function baselineForRole(role: string): Record<BoardPermissionKey, boolea
 export function normalizeRole(role: string | null | undefined): string {
   const r = (role || "user").trim().toLowerCase();
   if (r === "admin" || r === "administrator") return "admin";
+  if (r === "hr") return "hr";
   if (r === "recruiter") return "recruiter";
   if (r === "hiring_manager") return "hiring_manager";
   if (r === "coordinator") return "coordinator";
