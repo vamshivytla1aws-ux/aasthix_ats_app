@@ -34,14 +34,11 @@ export const DASHBOARD_PRIMARY_NAV: DashboardNavItem[] = [
   { id: "interviews", label: "Interviews", href: "/interviews", permissionKey: "interviews.view" },
   { id: "chat", label: "Chat", href: "/chat", permissionKey: "chat.view" },
   { id: "notes", label: "Notes", href: "/notes", permissionKey: "pipeline.view" },
+  { id: "hrms", label: "HRMS", href: "/leave", permissionKey: "leave.view_self" },
 ];
 
 export const DASHBOARD_MORE_NAV: DashboardNavItem[] = [
   { id: "analytics", label: "Analytics", href: "/analytics", permissionKey: "jobs.view" },
-  { id: "team-calendar", label: "Team Calendar", href: "/team-calendar", permissionKey: "team_calendar.view" },
-  { id: "salary", label: "Salary", href: "/salary", permissionKey: "salary.view" },
-  { id: "attendance", label: "Attendance", href: "/attendance", permissionKey: "attendance.view_self" },
-  { id: "timesheet", label: "Timesheet", href: "/timesheet", permissionKey: "timesheet.view_self" },
   { id: "alerts", label: "Alerts", href: "/alerts", permissionKey: "alerts.view" },
   { id: "activity", label: "Activity Center", href: "/activity-center", permissionKey: "dashboard.view" },
   { id: "screening", label: "Screening", href: "/screening", permissionKey: "pipeline.view" },
@@ -57,7 +54,7 @@ export const DASHBOARD_DOMAIN_NAV: DashboardDomainNav[] = [
   { id: "delivery", label: "Delivery", href: "/clients" },
   { id: "collaboration", label: "Collaboration", href: "/chat" },
   { id: "reporting", label: "Reporting", href: "/analytics" },
-  { id: "workforce", label: "Workforce", href: "/attendance" },
+  { id: "workforce", label: "HRMS", href: "/leave" },
   { id: "admin", label: "Admin", href: "/admin/permissions" },
 ];
 
@@ -85,6 +82,7 @@ export const DASHBOARD_DOMAIN_ITEMS: Record<DashboardDomain, DashboardNavItem[]>
     { id: "audit", label: "Audit trail", href: "/audit", permissionKey: "jobs.view" },
   ],
   workforce: [
+    { id: "leave", label: "Leave", href: "/leave", permissionKey: "leave.view_self" },
     { id: "team-calendar", label: "Team Calendar", href: "/team-calendar", permissionKey: "team_calendar.view" },
     { id: "salary", label: "Salary", href: "/salary", permissionKey: "salary.view" },
     { id: "attendance", label: "Attendance", href: "/attendance", permissionKey: "attendance.view_self" },
@@ -118,6 +116,15 @@ export function isDashboardNavHrefActive(pathname: string, href: string): boolea
   if (href === "/analytics") return pathname === "/analytics" || pathname.startsWith("/usage");
   if (href === "/chat") return pathname === "/chat" || pathname.startsWith("/notes");
   if (href === "/attendance") return pathname === "/attendance" || pathname.startsWith("/timesheet");
+  if (href === "/leave") {
+    return (
+      pathname === "/leave" ||
+      pathname.startsWith("/attendance") ||
+      pathname.startsWith("/timesheet") ||
+      pathname.startsWith("/salary") ||
+      pathname.startsWith("/team-calendar")
+    );
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -144,7 +151,7 @@ export function getDomainForPath(pathname: string): DashboardDomain {
   if (pathname.startsWith("/attendance") || pathname.startsWith("/timesheet") || pathname.startsWith("/salary")) {
     return "workforce";
   }
-  if (pathname.startsWith("/team-calendar")) {
+  if (pathname.startsWith("/team-calendar") || pathname.startsWith("/leave")) {
     return "workforce";
   }
   if (pathname.startsWith("/admin") || pathname.startsWith("/settings")) {
