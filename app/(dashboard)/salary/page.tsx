@@ -80,8 +80,39 @@ export default function SalaryPage() {
     dashboardFetcher,
     { revalidateOnFocus: false }
   );
+  const structureSwr = useSWR<{ structure: any }>(
+    employeeId > 0 ? `/api/salary-structures/${employeeId}` : null,
+    dashboardFetcher,
+    { revalidateOnFocus: false }
+  );
 
   const selectedEmployee = (employeesSwr.data?.employees || []).find((e) => e.id === employeeId);
+
+  React.useEffect(() => {
+    const structure = structureSwr.data?.structure;
+    if (!structure || employeeId <= 0) return;
+    setEmployeeCode(String(structure.employee_code || ""));
+    setDepartment(String(structure.department || ""));
+    setDesignation(String(structure.designation || ""));
+    setDateOfJoining(structure.date_of_joining ? String(structure.date_of_joining).slice(0, 10) : "");
+    setPan(String(structure.pan || ""));
+    setUanNumber(String(structure.uan_number || ""));
+    setPfNumber(String(structure.pf_number || ""));
+    setBankAccountNumber(String(structure.bank_account_number || ""));
+    setWorkLocation(String(structure.work_location || ""));
+    setCtcAnnual(String(Number(structure.ctc_annual || 0)));
+    setSalaryMonth(structure.salary_month ? String(structure.salary_month).slice(0, 10) : todayMonthDate());
+    setTotalPaidDays(String(Number(structure.total_paid_days || 30)));
+    setLopDays(String(Number(structure.lop_days || 0)));
+    setTaxRegime((String(structure.tax_regime || "new_regime") as "new_regime" | "old_regime" | "manual_tds"));
+    setManualTdsAnnual(structure.manual_tds_annual == null ? "" : String(Number(structure.manual_tds_annual)));
+    setProfessionalTaxMonthly(String(Number(structure.professional_tax_monthly || 200)));
+    setPfEnabled(Boolean(structure.pf_enabled));
+    setEmployerPfIncludedInCtc(Boolean(structure.employer_pf_included_in_ctc));
+    setEmployeePfEnabled(Boolean(structure.employee_pf_enabled));
+    setHealthInsuranceEnabled(Boolean(structure.health_insurance_enabled));
+    setHealthInsuranceAnnual(String(Number(structure.health_insurance_annual || 0)));
+  }, [employeeId, structureSwr.data?.structure]);
 
   const payload = React.useMemo(
     () => ({

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/rbac";
 import { amountToRupeesWords } from "@/lib/salary/numberToWords";
-import { applyPayslipProration, getLatestSalaryStructure, toCalcInputFromStructure } from "@/lib/salary/service";
+import { applyPayslipProration, getLatestSalaryStructure, getSalaryStructureForMonth, toCalcInputFromStructure } from "@/lib/salary/service";
 import { calculateSalaryStructure } from "@/lib/salary/engine";
 import { query } from "@/lib/db";
 import { buildPayslipPdf } from "@/lib/pdf/payslipExport";
@@ -99,7 +99,8 @@ export async function POST(request: Request) {
     if (!Number.isFinite(employeeId) || employeeId <= 0) return NextResponse.json({ error: "Invalid employeeId" }, { status: 400 });
     if (!(month >= 1 && month <= 12) || !(year >= 2000)) return NextResponse.json({ error: "Invalid month/year" }, { status: 400 });
 
-    const latest = await getLatestSalaryStructure(employeeId);
+    const byMonth = await getSalaryStructureForMonth(employeeId, month, year);
+    const latest = byMonth || (await getLatestSalaryStructure(employeeId));
     if (!latest) {
       return NextResponse.json(
         {
