@@ -250,10 +250,12 @@ function drawFooter(page: any, font: PDFFont) {
 function newPage(pdf: PDFDocument, bold: PDFFont, font: PDFFont, logo: PDFImage | null, templateBg: PDFImage | null) {
   const page = pdf.addPage([PAGE_W, PAGE_H]);
   if (templateBg) {
+    // Template is the single visual source of truth for header/footer branding.
     page.drawImage(templateBg, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
+  } else {
+    drawHeader(page, bold, font, logo);
+    drawFooter(page, font);
   }
-  drawHeader(page, bold, font, logo);
-  drawFooter(page, font);
   return page;
 }
 
@@ -355,6 +357,9 @@ export async function buildOnboardingPdf(input: { packet: PacketMeta; payload: R
   const logoBytes = await loadFileBytes(path.join(process.cwd(), "public", "aasthix-brand.png"));
   const logo = logoBytes ? await embedImage(pdf, logoBytes, "aasthix-brand.png", "image/png") : null;
   const templateBg = await loadTemplateBackground(pdf);
+  if (!templateBg) {
+    throw new Error("Payslip template background is missing. Upload /public/payslip-template.png for onboarding export.");
+  }
 
   const payload = input.payload || {};
   const educationRows = asRows<EducationRow>(payload.education_rows);
