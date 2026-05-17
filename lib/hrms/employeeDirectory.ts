@@ -41,6 +41,25 @@ const COMPLETENESS_FIELDS = [
   "employment_status",
 ] as const;
 
+let hasEmployeeCodeColumnCache: boolean | null = null;
+
+async function hasUsersEmployeeCodeColumn() {
+  if (hasEmployeeCodeColumnCache != null) return hasEmployeeCodeColumnCache;
+  const res = await query(
+    `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'users'
+        AND column_name = 'employee_code'
+      LIMIT 1
+    `,
+    [],
+  );
+  hasEmployeeCodeColumnCache = res.rowCount > 0;
+  return hasEmployeeCodeColumnCache;
+}
+
 export function normalizeEmployeeStatus(value: string): EmployeeStatus {
   const v = (value || "").trim().toLowerCase();
   if (v === "inactive") return "inactive";
@@ -55,6 +74,7 @@ export async function listEmployees(params: {
   department?: string;
   status?: string;
 }) {
+  const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const where: string[] = [];
   const values: Array<string | number> = [];
   let idx = 1;
@@ -71,7 +91,7 @@ export async function listEmployees(params: {
     where.push(`(
       u.full_name ILIKE $${idx}
       OR u.email ILIKE $${idx}
-      OR COALESCE(u.employee_code, '') ILIKE $${idx}
+      OR COALESCE(${hasEmployeeCode ? "u.employee_code" : "''"}, '') ILIKE $${idx}
       OR COALESCE(u.phone, '') ILIKE $${idx}
     )`);
     values.push(`%${params.q.trim()}%`);
@@ -93,7 +113,7 @@ export async function listEmployees(params: {
     `
       SELECT
         u.id,
-        COALESCE(u.employee_code, '') AS employee_code,
+        ${hasEmployeeCode ? "COALESCE(u.employee_code, '')" : "''"} AS employee_code,
         u.full_name,
         u.email,
         COALESCE(u.phone, '') AS phone,
@@ -167,20 +187,30 @@ export function validateImportRows(rows: EmployeeImportRow[]) {
 }
 
 export async function applyImportConflictChecks(results: EmployeeImportRowResult[]) {
+  const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const valid = results.filter((item) => item.status === "valid" && item.normalized);
   if (valid.length === 0) return results;
 
-  const existing = await query(
-    `
-      SELECT LOWER(email) AS email, LOWER(COALESCE(employee_code, '')) AS employee_code
-      FROM users
-      WHERE LOWER(email) = ANY($1::text[]) OR LOWER(COALESCE(employee_code, '')) = ANY($2::text[])
-    `,
-    [
-      valid.map((item) => String(item.normalized?.email || "").toLowerCase()),
-      valid.map((item) => String(item.normalized?.employeeIdCode || "").toLowerCase()),
-    ],
-  );
+  const existing = hasEmployeeCode
+    ? await query(
+        `
+          SELECT LOWER(email) AS email, LOWER(COALESCE(employee_code, '')) AS employee_code
+          FROM users
+          WHERE LOWER(email) = ANY($1::text[]) OR LOWER(COALESCE(employee_code, '')) = ANY($2::text[])
+        `,
+        [
+          valid.map((item) => String(item.normalized?.email || "").toLowerCase()),
+          valid.map((item) => String(item.normalized?.employeeIdCode || "").toLowerCase()),
+        ],
+      )
+    : await query(
+        `
+          SELECT LOWER(email) AS email, ''::text AS employee_code
+          FROM users
+          WHERE LOWER(email) = ANY($1::text[])
+        `,
+        [valid.map((item) => String(item.normalized?.email || "").toLowerCase())],
+      );
   const existingEmails = new Set(existing.rows.map((row: { email?: unknown }) => String(row.email || "")));
   const existingCodes = new Set(existing.rows.map((row: { employee_code?: unknown }) => String(row.employee_code || "")));
 
@@ -212,6 +242,7 @@ export async function applyImportConflictChecks(results: EmployeeImportRowResult
 
 export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserId: number) {
   if (rows.length === 0) return { created: 0 };
+  const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const client = await pool.connect();
   let created = 0;
   try {
@@ -220,23 +251,37 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
       await client.query(
         `
           INSERT INTO users
-          (employee_code, full_name, email, phone, department, designation, employment_type, joining_date, reporting_manager_user_id, work_location, employment_status, role)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12)
+          (${hasEmployeeCode ? "employee_code," : ""} full_name, email, phone, department, designation, employment_type, joining_date, reporting_manager_user_id, work_location, employment_status, role)
+          VALUES (${hasEmployeeCode ? "$1," : ""} ${hasEmployeeCode ? "$2" : "$1"}, ${hasEmployeeCode ? "$3" : "$2"}, ${hasEmployeeCode ? "$4" : "$3"}, ${hasEmployeeCode ? "$5" : "$4"}, ${hasEmployeeCode ? "$6" : "$5"}, ${hasEmployeeCode ? "$7" : "$6"}, ${hasEmployeeCode ? "$8" : "$7"}::date, ${hasEmployeeCode ? "$9" : "$8"}, ${hasEmployeeCode ? "$10" : "$9"}, ${hasEmployeeCode ? "$11" : "$10"}, ${hasEmployeeCode ? "$12" : "$11"})
         `,
-        [
-          row.employeeIdCode,
-          row.fullName,
-          row.email,
-          row.phone,
-          row.department,
-          row.designation,
-          row.employmentType,
-          row.joiningDate,
-          row.reportingManagerUserId || null,
-          row.workLocation,
-          normalizeEmployeeStatus(row.status),
-          (row.role || "employee").toLowerCase(),
-        ],
+        hasEmployeeCode
+          ? [
+              row.employeeIdCode,
+              row.fullName,
+              row.email,
+              row.phone,
+              row.department,
+              row.designation,
+              row.employmentType,
+              row.joiningDate,
+              row.reportingManagerUserId || null,
+              row.workLocation,
+              normalizeEmployeeStatus(row.status),
+              (row.role || "employee").toLowerCase(),
+            ]
+          : [
+              row.fullName,
+              row.email,
+              row.phone,
+              row.department,
+              row.designation,
+              row.employmentType,
+              row.joiningDate,
+              row.reportingManagerUserId || null,
+              row.workLocation,
+              normalizeEmployeeStatus(row.status),
+              (row.role || "employee").toLowerCase(),
+            ],
       );
       created += 1;
     }
@@ -258,29 +303,44 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
 }
 
 export async function createEmployee(input: EmployeeDirectoryInput, actorUserId: number) {
+  const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const normalizedStatus = normalizeEmployeeStatus(input.status);
   const role = (input.role || "employee").trim().toLowerCase();
   const ins = await query(
     `
       INSERT INTO users
-      (employee_code, full_name, email, phone, department, designation, employment_type, joining_date, reporting_manager_user_id, work_location, employment_status, role)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12)
+      (${hasEmployeeCode ? "employee_code," : ""} full_name, email, phone, department, designation, employment_type, joining_date, reporting_manager_user_id, work_location, employment_status, role)
+      VALUES (${hasEmployeeCode ? "$1," : ""} ${hasEmployeeCode ? "$2" : "$1"}, ${hasEmployeeCode ? "$3" : "$2"}, ${hasEmployeeCode ? "$4" : "$3"}, ${hasEmployeeCode ? "$5" : "$4"}, ${hasEmployeeCode ? "$6" : "$5"}, ${hasEmployeeCode ? "$7" : "$6"}, ${hasEmployeeCode ? "$8" : "$7"}::date, ${hasEmployeeCode ? "$9" : "$8"}, ${hasEmployeeCode ? "$10" : "$9"}, ${hasEmployeeCode ? "$11" : "$10"}, ${hasEmployeeCode ? "$12" : "$11"})
       RETURNING id
     `,
-    [
-      input.employeeIdCode.trim(),
-      input.fullName.trim(),
-      input.email.trim().toLowerCase(),
-      input.phone?.trim() || null,
-      input.department?.trim() || null,
-      input.designation?.trim() || null,
-      input.employmentType?.trim() || null,
-      input.joiningDate || null,
-      input.reportingManagerUserId || null,
-      input.workLocation?.trim() || null,
-      normalizedStatus,
-      role,
-    ],
+    hasEmployeeCode
+      ? [
+          input.employeeIdCode.trim(),
+          input.fullName.trim(),
+          input.email.trim().toLowerCase(),
+          input.phone?.trim() || null,
+          input.department?.trim() || null,
+          input.designation?.trim() || null,
+          input.employmentType?.trim() || null,
+          input.joiningDate || null,
+          input.reportingManagerUserId || null,
+          input.workLocation?.trim() || null,
+          normalizedStatus,
+          role,
+        ]
+      : [
+          input.fullName.trim(),
+          input.email.trim().toLowerCase(),
+          input.phone?.trim() || null,
+          input.department?.trim() || null,
+          input.designation?.trim() || null,
+          input.employmentType?.trim() || null,
+          input.joiningDate || null,
+          input.reportingManagerUserId || null,
+          input.workLocation?.trim() || null,
+          normalizedStatus,
+          role,
+        ],
   );
   const id = Number(ins.rows[0]?.id || 0);
   await writeAuditLog({
@@ -292,40 +352,56 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
 }
 
 export async function updateEmployee(id: number, input: EmployeeDirectoryInput, actorUserId: number) {
+  const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const normalizedStatus = normalizeEmployeeStatus(input.status);
   await query(
     `
       UPDATE users
       SET
-        employee_code = $2,
-        full_name = $3,
-        email = $4,
-        phone = $5,
-        department = $6,
-        designation = $7,
-        employment_type = $8,
-        joining_date = $9::date,
-        reporting_manager_user_id = $10,
-        work_location = $11,
-        employment_status = $12,
-        role = $13
+        ${hasEmployeeCode ? "employee_code = $2," : ""}
+        full_name = ${hasEmployeeCode ? "$3" : "$2"},
+        email = ${hasEmployeeCode ? "$4" : "$3"},
+        phone = ${hasEmployeeCode ? "$5" : "$4"},
+        department = ${hasEmployeeCode ? "$6" : "$5"},
+        designation = ${hasEmployeeCode ? "$7" : "$6"},
+        employment_type = ${hasEmployeeCode ? "$8" : "$7"},
+        joining_date = ${hasEmployeeCode ? "$9" : "$8"}::date,
+        reporting_manager_user_id = ${hasEmployeeCode ? "$10" : "$9"},
+        work_location = ${hasEmployeeCode ? "$11" : "$10"},
+        employment_status = ${hasEmployeeCode ? "$12" : "$11"},
+        role = ${hasEmployeeCode ? "$13" : "$12"}
       WHERE id = $1
     `,
-    [
-      id,
-      input.employeeIdCode.trim(),
-      input.fullName.trim(),
-      input.email.trim().toLowerCase(),
-      input.phone?.trim() || null,
-      input.department?.trim() || null,
-      input.designation?.trim() || null,
-      input.employmentType?.trim() || null,
-      input.joiningDate || null,
-      input.reportingManagerUserId || null,
-      input.workLocation?.trim() || null,
-      normalizedStatus,
-      (input.role || "employee").trim().toLowerCase(),
-    ],
+    hasEmployeeCode
+      ? [
+          id,
+          input.employeeIdCode.trim(),
+          input.fullName.trim(),
+          input.email.trim().toLowerCase(),
+          input.phone?.trim() || null,
+          input.department?.trim() || null,
+          input.designation?.trim() || null,
+          input.employmentType?.trim() || null,
+          input.joiningDate || null,
+          input.reportingManagerUserId || null,
+          input.workLocation?.trim() || null,
+          normalizedStatus,
+          (input.role || "employee").trim().toLowerCase(),
+        ]
+      : [
+          id,
+          input.fullName.trim(),
+          input.email.trim().toLowerCase(),
+          input.phone?.trim() || null,
+          input.department?.trim() || null,
+          input.designation?.trim() || null,
+          input.employmentType?.trim() || null,
+          input.joiningDate || null,
+          input.reportingManagerUserId || null,
+          input.workLocation?.trim() || null,
+          normalizedStatus,
+          (input.role || "employee").trim().toLowerCase(),
+        ],
   );
   await writeAuditLog({
     actorUserId,
