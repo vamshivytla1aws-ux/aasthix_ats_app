@@ -13,6 +13,7 @@ export type EmployeeDirectoryInput = {
   employmentType?: string | null;
   joiningDate?: string | null;
   reportingManagerUserId?: number | null;
+  reportingManagerEmail?: string | null;
   workLocation?: string | null;
   status: EmployeeStatus;
   role?: string | null;
@@ -40,6 +41,44 @@ const COMPLETENESS_FIELDS = [
   "work_location",
   "employment_status",
 ] as const;
+
+async function resolveReportingManagerUserId(
+  managerUserId: number | null | undefined,
+  managerEmail: string | null | undefined,
+) {
+  if (managerUserId && Number.isFinite(Number(managerUserId))) {
+    const res = await query(
+      `
+        SELECT id
+        FROM users
+        WHERE id = $1
+          AND COALESCE(employment_status, 'active') = 'active'
+        LIMIT 1
+      `,
+      [Number(managerUserId)],
+    );
+    if (res.rowCount === 0) throw new Error("Reporting manager must be an active employee.");
+    return Number(res.rows[0].id);
+  }
+
+  const email = String(managerEmail || "").trim().toLowerCase();
+  if (email) {
+    const res = await query(
+      `
+        SELECT id
+        FROM users
+        WHERE LOWER(email) = $1
+          AND COALESCE(employment_status, 'active') = 'active'
+        LIMIT 1
+      `,
+      [email],
+    );
+    if (res.rowCount === 0) throw new Error("Reporting manager email not found in active employees.");
+    return Number(res.rows[0].id);
+  }
+
+  return null;
+}
 
 let hasEmployeeCodeColumnCache: boolean | null = null;
 
@@ -136,7 +175,8 @@ export async function listEmployees(params: {
         COALESCE(u.work_location, '') AS work_location,
         COALESCE(u.employment_status, 'active') AS employment_status,
         u.reporting_manager_user_id,
-        COALESCE(m.full_name, '') AS reporting_manager_name
+        COALESCE(m.full_name, '') AS reporting_manager_name,
+        COALESCE(m.email, '') AS reporting_manager_email
       FROM users u
       LEFT JOIN users m ON m.id = u.reporting_manager_user_id
       ${whereSql}
@@ -179,6 +219,7 @@ function normalizeEmployeeInput(input: Partial<EmployeeDirectoryInput>): Employe
     employmentType: (input.employmentType || "").trim() || null,
     joiningDate: input.joiningDate || null,
     reportingManagerUserId: input.reportingManagerUserId || null,
+    reportingManagerEmail: (input.reportingManagerEmail || "").trim() || null,
     workLocation: (input.workLocation || "").trim() || null,
     status: normalizeEmployeeStatus(String(input.status || "active")),
     role: (input.role || "employee").trim().toLowerCase(),
@@ -280,25 +321,6 @@ export async function applyImportConflictChecks(results: EmployeeImportRowResult
   });
 }
 
-async function validateReportingManagerUser(managerUserId: number | null | undefined) {
-  if (!managerUserId || !Number.isFinite(Number(managerUserId))) {
-    throw new Error("Reporting manager is required.");
-  }
-  const res = await query(
-    `
-      SELECT id
-      FROM users
-      WHERE id = $1
-        AND COALESCE(employment_status, 'active') = 'active'
-      LIMIT 1
-    `,
-    [Number(managerUserId)],
-  );
-  if (res.rowCount === 0) {
-    throw new Error("Reporting manager must be an active employee.");
-  }
-}
-
 export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserId: number) {
   if (rows.length === 0) return { created: 0 };
   const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
@@ -307,7 +329,7 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
   try {
     await client.query("BEGIN");
     for (const row of rows) {
-      await validateReportingManagerUser(row.reportingManagerUserId || null);
+      const managerId = await resolveReportingManagerUserId(row.reportingManagerUserId || null, row.reportingManagerEmail || null);
       await client.query(
         `
           INSERT INTO users
@@ -324,7 +346,7 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
               row.designation,
               row.employmentType,
               row.joiningDate,
-              row.reportingManagerUserId || null,
+              managerId,
               row.workLocation,
               normalizeEmployeeStatus(row.status),
               (row.role || "employee").toLowerCase(),
@@ -337,7 +359,7 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
               row.designation,
               row.employmentType,
               row.joiningDate,
-              row.reportingManagerUserId || null,
+              managerId,
               row.workLocation,
               normalizeEmployeeStatus(row.status),
               (row.role || "employee").toLowerCase(),
@@ -366,7 +388,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
   const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const normalizedStatus = normalizeEmployeeStatus(input.status);
   const role = (input.role || "employee").trim().toLowerCase();
-  await validateReportingManagerUser(input.reportingManagerUserId || null);
+  const managerId = await resolveReportingManagerUserId(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
   const ins = await query(
     `
       INSERT INTO users
@@ -384,7 +406,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
           input.designation?.trim() || null,
           input.employmentType?.trim() || null,
           input.joiningDate || null,
-          input.reportingManagerUserId || null,
+          managerId,
           input.workLocation?.trim() || null,
           normalizedStatus,
           role,
@@ -397,7 +419,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
           input.designation?.trim() || null,
           input.employmentType?.trim() || null,
           input.joiningDate || null,
-          input.reportingManagerUserId || null,
+          managerId,
           input.workLocation?.trim() || null,
           normalizedStatus,
           role,
@@ -415,7 +437,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
 export async function updateEmployee(id: number, input: EmployeeDirectoryInput, actorUserId: number) {
   const hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const normalizedStatus = normalizeEmployeeStatus(input.status);
-  await validateReportingManagerUser(input.reportingManagerUserId || null);
+  const managerId = await resolveReportingManagerUserId(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
   await query(
     `
       UPDATE users
@@ -445,7 +467,7 @@ export async function updateEmployee(id: number, input: EmployeeDirectoryInput, 
           input.designation?.trim() || null,
           input.employmentType?.trim() || null,
           input.joiningDate || null,
-          input.reportingManagerUserId || null,
+          managerId,
           input.workLocation?.trim() || null,
           normalizedStatus,
           (input.role || "employee").trim().toLowerCase(),
@@ -459,7 +481,7 @@ export async function updateEmployee(id: number, input: EmployeeDirectoryInput, 
           input.designation?.trim() || null,
           input.employmentType?.trim() || null,
           input.joiningDate || null,
-          input.reportingManagerUserId || null,
+          managerId,
           input.workLocation?.trim() || null,
           normalizedStatus,
           (input.role || "employee").trim().toLowerCase(),

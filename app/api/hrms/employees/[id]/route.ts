@@ -17,8 +17,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (!body.employeeIdCode?.trim()) return NextResponse.json({ error: "Employee ID is required." }, { status: 400 });
     if (!body.fullName?.trim()) return NextResponse.json({ error: "Full name is required." }, { status: 400 });
     if (!body.email?.trim()) return NextResponse.json({ error: "Email is required." }, { status: 400 });
-    if (!Number(body.reportingManagerUserId)) {
-      return NextResponse.json({ error: "Reporting manager is required." }, { status: 400 });
+    if (!Number(body.reportingManagerUserId) && !String(body.reportingManagerEmail || "").trim()) {
+      return NextResponse.json({ error: "Select reporting manager or enter manager email." }, { status: 400 });
     }
     await updateEmployee(
       id,
@@ -32,6 +32,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         employmentType: body.employmentType || null,
         joiningDate: body.joiningDate || null,
         reportingManagerUserId: body.reportingManagerUserId || null,
+        reportingManagerEmail: body.reportingManagerEmail || null,
         workLocation: body.workLocation || null,
         status: (body.status || "active") as "active" | "inactive" | "resigned",
         role: body.role || "employee",

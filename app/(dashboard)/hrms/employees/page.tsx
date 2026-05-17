@@ -23,6 +23,7 @@ type Employee = {
   employment_status: "active" | "inactive" | "resigned";
   reporting_manager_user_id: number | null;
   reporting_manager_name: string;
+  reporting_manager_email?: string;
   role: string;
   profile_completeness: number;
 };
@@ -44,6 +45,7 @@ const EMPTY_FORM = {
   employmentType: "",
   joiningDate: "",
   reportingManagerUserId: "",
+  reportingManagerEmail: "",
   workLocation: "",
   status: "active",
   role: "employee",
@@ -81,6 +83,7 @@ export default function EmployeeDirectoryPage() {
       employmentType: employee.employment_type || "",
       joiningDate: employee.joining_date ? String(employee.joining_date).slice(0, 10) : "",
       reportingManagerUserId: employee.reporting_manager_user_id ? String(employee.reporting_manager_user_id) : "",
+      reportingManagerEmail: employee.reporting_manager_email || "",
       workLocation: employee.work_location || "",
       status: employee.employment_status || "active",
       role: employee.role || "employee",
@@ -92,8 +95,8 @@ export default function EmployeeDirectoryPage() {
       setToast({ message: "Employee ID, full name, and email are required.", variant: "blocked" });
       return;
     }
-    if (!form.reportingManagerUserId) {
-      setToast({ message: "Reporting manager is required.", variant: "blocked" });
+    if (!form.reportingManagerUserId && !form.reportingManagerEmail.trim()) {
+      setToast({ message: "Select reporting manager or enter manager email.", variant: "blocked" });
       return;
     }
     setBusy(true);
@@ -105,6 +108,7 @@ export default function EmployeeDirectoryPage() {
           body: JSON.stringify({
             ...form,
             reportingManagerUserId: form.reportingManagerUserId ? Number(form.reportingManagerUserId) : null,
+            reportingManagerEmail: form.reportingManagerEmail.trim() || null,
           }),
         });
       } else {
@@ -114,6 +118,7 @@ export default function EmployeeDirectoryPage() {
           body: JSON.stringify({
             ...form,
             reportingManagerUserId: form.reportingManagerUserId ? Number(form.reportingManagerUserId) : null,
+            reportingManagerEmail: form.reportingManagerEmail.trim() || null,
           }),
         });
       }
@@ -214,15 +219,33 @@ export default function EmployeeDirectoryPage() {
             <select
               className={UI.select}
               value={form.reportingManagerUserId}
-              onChange={(e) => setForm((s) => ({ ...s, reportingManagerUserId: e.target.value }))}
+              onChange={(e) =>
+                setForm((s) => ({
+                  ...s,
+                  reportingManagerUserId: e.target.value,
+                  reportingManagerEmail: e.target.value ? "" : s.reportingManagerEmail,
+                }))
+              }
             >
               <option value="">Select reporting manager</option>
               {employees.map((employee) => (
                 <option key={employee.id} value={String(employee.id)}>
-                  {employee.full_name}
+                  {employee.full_name} ({employee.email})
                 </option>
               ))}
             </select>
+            <input
+              className={UI.input}
+              placeholder="Or enter manager email (e.g. manager@aasthix.com)"
+              value={form.reportingManagerEmail}
+              onChange={(e) =>
+                setForm((s) => ({
+                  ...s,
+                  reportingManagerEmail: e.target.value,
+                  reportingManagerUserId: e.target.value.trim() ? "" : s.reportingManagerUserId,
+                }))
+              }
+            />
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void submitForm()} disabled={busy}>
