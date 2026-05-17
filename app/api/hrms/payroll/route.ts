@@ -3,8 +3,11 @@ import { requirePermission } from "@/lib/rbac";
 import {
   approvePayrollRun,
   createOrUpdatePayrollRun,
+  listPayrollVariance,
+  lockPayrollRun,
   listPayrollHistoryForEmployee,
   listPayrollRuns,
+  unlockPayrollRun,
 } from "@/lib/hrms/payroll";
 
 export const runtime = "nodejs";
@@ -33,7 +36,17 @@ export async function GET(request: Request) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const url = new URL(request.url);
   const employeeId = Number(url.searchParams.get("employeeId") || 0);
+  const month = Number(url.searchParams.get("month") || 0);
+  const year = Number(url.searchParams.get("year") || 0);
+  const view = (url.searchParams.get("view") || "").toLowerCase();
   const format = (url.searchParams.get("format") || "").toLowerCase();
+  if (view === "variance") {
+    if (!(month >= 1 && month <= 12) || !(year >= 2000)) {
+      return NextResponse.json({ error: "Valid month and year are required for variance." }, { status: 400 });
+    }
+    const variance = await listPayrollVariance(month, year);
+    return NextResponse.json({ variance, month, year });
+  }
   const [runs, history] = await Promise.all([
     listPayrollRuns(),
     employeeId > 0 ? listPayrollHistoryForEmployee(employeeId) : Promise.resolve([]),
@@ -61,33 +74,92 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requirePermission("payroll.run");
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const body = (await request.json().catch(() => null)) as
-    | { month?: number; year?: number; status?: "draft" | "generated" | "approved"; notes?: string | null }
-    | null;
-  if (!body) return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
-  const month = Number(body.month);
-  const year = Number(body.year);
-  if (!(month >= 1 && month <= 12) || !(year >= 2000)) {
-    return NextResponse.json({ error: "Valid month and year are required." }, { status: 400 });
+  try {
+    const auth = await requirePermission("payroll.run");
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    const body = (await request.json().catch(() => null)) as
+      | { month?: number; year?: number; status?: "draft" | "generated"; notes?: string | null }
+      | null;
+    if (!body) return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
+    const month = Number(body.month);
+    const year = Number(body.year);
+    if (!(month >= 1 && month <= 12) || !(year >= 2000)) {
+      return NextResponse.json({ error: "Valid month and year are required." }, { status: 400 });
+    }
+    const id = await createOrUpdatePayrollRun({
+      month,
+      year,
+      status: body.status || "generated",
+      notes: body.notes || null,
+      actorUserId: auth.access.user_id,
+    });
+    return NextResponse.json({ id, operation_status: "success", user_message: "Payroll run generated." });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to generate payroll run.";
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code || "") : "";
+    return NextResponse.json(
+      {
+        operation_status: code === "PAYROLL_LOCKED" ? "blocked" : "error",
+        error: message,
+        user_message: message,
+        hint: code === "PAYROLL_LOCKED" ? "Unlock the payroll month to regenerate." : undefined,
+      },
+      { status: code === "PAYROLL_LOCKED" ? 409 : 500 },
+    );
   }
-  const id = await createOrUpdatePayrollRun({
-    month,
-    year,
-    status: body.status || "generated",
-    notes: body.notes || null,
-    actorUserId: auth.access.user_id,
-  });
-  return NextResponse.json({ id, operation_status: "success", user_message: "Payroll run generated." });
 }
 
 export async function PATCH(request: Request) {
-  const auth = await requirePermission("payroll.approve");
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const body = (await request.json().catch(() => null)) as { id?: number; action?: "approve" } | null;
-  if (!body || !Number(body.id)) return NextResponse.json({ error: "Payroll run id is required." }, { status: 400 });
-  if (body.action !== "approve") return NextResponse.json({ error: "Only approve action is supported." }, { status: 400 });
-  await approvePayrollRun(Number(body.id), auth.access.user_id);
-  return NextResponse.json({ operation_status: "success", user_message: "Payroll run approved." });
+  try {
+    const auth = await requirePermission("payroll.approve");
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    const body = (await request.json().catch(() => null)) as { id?: number; action?: "approve" | "lock" | "unlock"; reason?: string } | null;
+    if (!body || !Number(body.id)) return NextResponse.json({ error: "Payroll run id is required." }, { status: 400 });
+    if (body.action !== "approve" && body.action !== "lock" && body.action !== "unlock") {
+      return NextResponse.json({ error: "Supported actions are approve, lock, and unlock." }, { status: 400 });
+    }
+    if (body.action === "approve") {
+      await approvePayrollRun(Number(body.id), auth.access.user_id);
+      return NextResponse.json({ operation_status: "success", user_message: "Payroll run approved." });
+    }
+    if (body.action === "unlock") {
+      if (auth.access.role !== "admin") {
+        return NextResponse.json(
+          {
+            operation_status: "blocked",
+            error: "Only admin can unlock payroll months.",
+            user_message: "Only admin can unlock payroll months.",
+          },
+          { status: 403 },
+        );
+      }
+      const reason = String(body.reason || "").trim();
+      if (!reason) {
+        return NextResponse.json(
+          {
+            operation_status: "blocked",
+            error: "Unlock reason is required.",
+            user_message: "Unlock reason is required.",
+          },
+          { status: 400 },
+        );
+      }
+      await unlockPayrollRun(Number(body.id), auth.access.user_id, reason);
+      return NextResponse.json({ operation_status: "success", user_message: "Payroll run unlocked." });
+    }
+    await lockPayrollRun(Number(body.id), auth.access.user_id);
+    return NextResponse.json({ operation_status: "success", user_message: "Payroll run locked." });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Payroll action failed.";
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code || "") : "";
+    const blockedCodes = new Set(["PAYROLL_LOCKED", "MAKER_CHECKER_BLOCKED", "PAYROLL_NOT_APPROVED"]);
+    return NextResponse.json(
+      {
+        operation_status: blockedCodes.has(code) ? "blocked" : "error",
+        error: message,
+        user_message: message,
+      },
+      { status: blockedCodes.has(code) ? 409 : 500 },
+    );
+  }
 }

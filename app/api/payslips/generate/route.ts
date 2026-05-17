@@ -6,6 +6,7 @@ import { calculateSalaryStructure } from "@/lib/salary/engine";
 import { query } from "@/lib/db";
 import { buildPayslipPdf } from "@/lib/pdf/payslipExport";
 import { getMonthlyApprovedLopDays } from "@/lib/leave";
+import { getPayrollRunByMonthYear } from "@/lib/hrms/payroll";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,12 +29,45 @@ export async function POST(request: Request) {
     if (!(month >= 1 && month <= 12) || !(year >= 2000)) return NextResponse.json({ error: "Invalid month/year" }, { status: 400 });
 
     const latest = await getLatestSalaryStructure(employeeId);
-    if (!latest) return NextResponse.json({ error: "Salary structure not found for employee" }, { status: 404 });
+    if (!latest) {
+      return NextResponse.json(
+        {
+          operation_status: "blocked",
+          error: "Salary structure not found for employee.",
+          user_message: "Salary structure not found for employee.",
+          hint: "Create salary structure before generating payslip.",
+        },
+        { status: 404 },
+      );
+    }
+
+    const payrollRun = await getPayrollRunByMonthYear(month, year);
+    if (payrollRun?.status === "locked") {
+      return NextResponse.json(
+        {
+          operation_status: "blocked",
+          error: "Payroll month is locked. Payslip regeneration is blocked.",
+          user_message: "Payroll month is locked. Payslip regeneration is blocked.",
+          hint: "Unlock payroll month from Payroll Control to regenerate.",
+        },
+        { status: 409 },
+      );
+    }
 
     const input = toCalcInputFromStructure(latest.structure);
     const calc = await calculateSalaryStructure(input);
     const paidDaysResolved = Number.isFinite(paidDays) && paidDays > 0 ? paidDays : Number(latest.structure.total_paid_days || 30);
     const manualLopDays = Number.isFinite(lopDays) && lopDays >= 0 ? lopDays : Number(latest.structure.lop_days || 0);
+    if (paidDaysResolved <= 0) {
+      return NextResponse.json(
+        {
+          operation_status: "blocked",
+          error: "Paid days must be greater than zero.",
+          user_message: "Paid days must be greater than zero.",
+        },
+        { status: 400 },
+      );
+    }
     let leaveLopDays = 0;
     try {
       leaveLopDays = await getMonthlyApprovedLopDays(employeeId, year, month);
@@ -42,6 +76,16 @@ export async function POST(request: Request) {
       if (code !== "42P01") throw error;
     }
     const totalLopDays = Math.max(0, manualLopDays + leaveLopDays);
+    if (totalLopDays > paidDaysResolved) {
+      return NextResponse.json(
+        {
+          operation_status: "blocked",
+          error: "LOP days cannot exceed paid days for the selected month.",
+          user_message: "LOP days cannot exceed paid days for the selected month.",
+        },
+        { status: 400 },
+      );
+    }
 
     const prorated = applyPayslipProration(
       calc,
@@ -145,7 +189,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      ok: true,
+      operation_status: "success",
+      user_message: "Payslip generated successfully.",
       payslipId,
       month,
       year,
@@ -160,7 +205,12 @@ export async function POST(request: Request) {
     console.error("POST /api/payslips/generate failed:", error);
     return NextResponse.json(
       {
+        operation_status: "error",
         error:
+          error instanceof Error
+            ? error.message
+            : "Payslip generation failed. Please verify salary structure and template assets.",
+        user_message:
           error instanceof Error
             ? error.message
             : "Payslip generation failed. Please verify salary structure and template assets.",

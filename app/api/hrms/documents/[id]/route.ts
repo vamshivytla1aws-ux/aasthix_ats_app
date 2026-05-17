@@ -34,12 +34,22 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 }
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requirePermission("documents.manage");
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const { id: idRaw } = await context.params;
-  const id = Number(idRaw);
-  if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "Invalid document id." }, { status: 400 });
-  const ok = await deleteDocument(id, auth.access.user_id);
-  if (!ok) return NextResponse.json({ error: "Not found." }, { status: 404 });
-  return NextResponse.json({ operation_status: "success", user_message: "Document deleted." });
+  try {
+    const auth = await requirePermission("documents.manage");
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    const { id: idRaw } = await context.params;
+    const id = Number(idRaw);
+    if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "Invalid document id." }, { status: 400 });
+    const ok = await deleteDocument(id, auth.access.user_id);
+    if (!ok) return NextResponse.json({ error: "Not found." }, { status: 404 });
+    return NextResponse.json({ operation_status: "success", user_message: "Document deleted." });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        operation_status: "error",
+        user_message: error instanceof Error ? error.message : "Failed to delete document.",
+      },
+      { status: 500 },
+    );
+  }
 }

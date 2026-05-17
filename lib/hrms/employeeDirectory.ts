@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
 import { writeAuditLog } from "@/lib/auditLog";
 
 export type EmployeeStatus = "active" | "inactive" | "resigned";
@@ -17,6 +17,29 @@ export type EmployeeDirectoryInput = {
   status: EmployeeStatus;
   role?: string | null;
 };
+
+export type EmployeeImportRow = EmployeeDirectoryInput & {
+  rowNumber: number;
+};
+
+export type EmployeeImportRowResult = {
+  rowNumber: number;
+  status: "valid" | "invalid" | "conflict";
+  message: string;
+  normalized?: EmployeeDirectoryInput;
+};
+
+const COMPLETENESS_FIELDS = [
+  "employee_code",
+  "email",
+  "phone",
+  "department",
+  "designation",
+  "joining_date",
+  "reporting_manager_user_id",
+  "work_location",
+  "employment_status",
+] as const;
 
 export function normalizeEmployeeStatus(value: string): EmployeeStatus {
   const v = (value || "").trim().toLowerCase();
@@ -90,7 +113,148 @@ export async function listEmployees(params: {
     `,
     values,
   );
-  return res.rows;
+  return res.rows.map((row: Record<string, unknown>) => {
+    const filled = COMPLETENESS_FIELDS.reduce((acc, key) => {
+      const value = row[key];
+      const present = value !== null && value !== undefined && String(value).trim() !== "";
+      return acc + (present ? 1 : 0);
+    }, 0);
+    const completenessPercent = Math.round((filled / COMPLETENESS_FIELDS.length) * 100);
+    return {
+      ...row,
+      profile_completeness: completenessPercent,
+    };
+  });
+}
+
+function normalizeEmployeeInput(input: Partial<EmployeeDirectoryInput>): EmployeeDirectoryInput {
+  return {
+    employeeIdCode: String(input.employeeIdCode || "").trim(),
+    fullName: String(input.fullName || "").trim(),
+    email: String(input.email || "").trim().toLowerCase(),
+    phone: (input.phone || "").trim() || null,
+    department: (input.department || "").trim() || null,
+    designation: (input.designation || "").trim() || null,
+    employmentType: (input.employmentType || "").trim() || null,
+    joiningDate: input.joiningDate || null,
+    reportingManagerUserId: input.reportingManagerUserId || null,
+    workLocation: (input.workLocation || "").trim() || null,
+    status: normalizeEmployeeStatus(String(input.status || "active")),
+    role: (input.role || "employee").trim().toLowerCase(),
+  };
+}
+
+export function validateImportRows(rows: EmployeeImportRow[]) {
+  const results: EmployeeImportRowResult[] = [];
+  for (const row of rows) {
+    const normalized = normalizeEmployeeInput(row);
+    if (!normalized.employeeIdCode || !normalized.fullName || !normalized.email) {
+      results.push({
+        rowNumber: row.rowNumber,
+        status: "invalid",
+        message: "employeeIdCode, fullName, and email are required.",
+      });
+      continue;
+    }
+    results.push({
+      rowNumber: row.rowNumber,
+      status: "valid",
+      message: "Ready to import",
+      normalized,
+    });
+  }
+  return results;
+}
+
+export async function applyImportConflictChecks(results: EmployeeImportRowResult[]) {
+  const valid = results.filter((item) => item.status === "valid" && item.normalized);
+  if (valid.length === 0) return results;
+
+  const existing = await query(
+    `
+      SELECT LOWER(email) AS email, LOWER(COALESCE(employee_code, '')) AS employee_code
+      FROM users
+      WHERE LOWER(email) = ANY($1::text[]) OR LOWER(COALESCE(employee_code, '')) = ANY($2::text[])
+    `,
+    [
+      valid.map((item) => String(item.normalized?.email || "").toLowerCase()),
+      valid.map((item) => String(item.normalized?.employeeIdCode || "").toLowerCase()),
+    ],
+  );
+  const existingEmails = new Set(existing.rows.map((row: { email?: unknown }) => String(row.email || "")));
+  const existingCodes = new Set(existing.rows.map((row: { employee_code?: unknown }) => String(row.employee_code || "")));
+
+  const seenEmails = new Set<string>();
+  const seenCodes = new Set<string>();
+
+  return results.map((item) => {
+    if (item.status !== "valid" || !item.normalized) return item;
+    const email = item.normalized.email.toLowerCase();
+    const code = item.normalized.employeeIdCode.toLowerCase();
+
+    if (existingEmails.has(email)) {
+      return { ...item, status: "conflict", message: "Email already exists." };
+    }
+    if (existingCodes.has(code)) {
+      return { ...item, status: "conflict", message: "Employee code already exists." };
+    }
+    if (seenEmails.has(email)) {
+      return { ...item, status: "conflict", message: "Duplicate email in CSV file." };
+    }
+    if (seenCodes.has(code)) {
+      return { ...item, status: "conflict", message: "Duplicate employee code in CSV file." };
+    }
+    seenEmails.add(email);
+    seenCodes.add(code);
+    return item;
+  });
+}
+
+export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserId: number) {
+  if (rows.length === 0) return { created: 0 };
+  const client = await pool.connect();
+  let created = 0;
+  try {
+    await client.query("BEGIN");
+    for (const row of rows) {
+      await client.query(
+        `
+          INSERT INTO users
+          (employee_code, full_name, email, phone, department, designation, employment_type, joining_date, reporting_manager_user_id, work_location, employment_status, role)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12)
+        `,
+        [
+          row.employeeIdCode,
+          row.fullName,
+          row.email,
+          row.phone,
+          row.department,
+          row.designation,
+          row.employmentType,
+          row.joiningDate,
+          row.reportingManagerUserId || null,
+          row.workLocation,
+          normalizeEmployeeStatus(row.status),
+          (row.role || "employee").toLowerCase(),
+        ],
+      );
+      created += 1;
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  await writeAuditLog({
+    actorUserId,
+    action: "hrms.employee.bulk_imported",
+    metadata: { created_count: created },
+  });
+
+  return { created };
 }
 
 export async function createEmployee(input: EmployeeDirectoryInput, actorUserId: number) {

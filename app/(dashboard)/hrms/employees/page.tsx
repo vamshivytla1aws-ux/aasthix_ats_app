@@ -24,6 +24,14 @@ type Employee = {
   reporting_manager_user_id: number | null;
   reporting_manager_name: string;
   role: string;
+  profile_completeness: number;
+};
+
+type EmployeeImportRowResult = {
+  rowNumber: number;
+  status: "valid" | "invalid" | "conflict";
+  message: string;
+  normalized?: Record<string, unknown>;
 };
 
 const EMPTY_FORM = {
@@ -47,6 +55,8 @@ export default function EmployeeDirectoryPage() {
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [toast, setToast] = React.useState<{ message: string; variant: "success" | "error" | "blocked" } | null>(null);
+  const [importRows, setImportRows] = React.useState<EmployeeImportRowResult[]>([]);
+  const [importSummary, setImportSummary] = React.useState<{ valid: number; invalid: number; conflict: number } | null>(null);
 
   const { data, mutate } = useSWR<{ employees: Employee[] }>(`/api/hrms/employees?q=${encodeURIComponent(q)}`, dashboardFetcher, {
     revalidateOnFocus: false,
@@ -126,6 +136,50 @@ export default function EmployeeDirectoryPage() {
     }
   }
 
+  async function previewImport(file: File | null) {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      const response = await apiFetchJson<{
+        rows: EmployeeImportRowResult[];
+        summary: { valid: number; invalid: number; conflict: number };
+        user_message?: string;
+      }>("/api/hrms/employees/import-csv", { method: "POST", body: formData });
+      setImportRows(response.rows || []);
+      setImportSummary(response.summary || { valid: 0, invalid: 0, conflict: 0 });
+      setToast({ message: response.user_message || "CSV preview ready.", variant: "success" });
+    } catch (error) {
+      setToast({ message: error instanceof Error ? error.message : "Failed to parse CSV.", variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function commitImport() {
+    if (!importSummary || importSummary.valid === 0) {
+      setToast({ message: "No valid rows available to import.", variant: "blocked" });
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await apiFetchJson<{ user_message?: string }>("/api/hrms/employees/import-csv/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: importRows }),
+      });
+      setToast({ message: response.user_message || "Employees imported successfully.", variant: "success" });
+      setImportRows([]);
+      setImportSummary(null);
+      await mutate();
+    } catch (error) {
+      setToast({ message: error instanceof Error ? error.message : "Failed to import employees.", variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <AccessGate permissionKey="employee_directory.view_self">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={1800} /> : null}
@@ -178,9 +232,64 @@ export default function EmployeeDirectoryPage() {
 
         <section className={UI.card + " mt-4 p-4 sm:p-5"}>
           <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-[var(--ats-text)]">Bulk import (CSV)</h2>
+            <a className={UI.secondaryButton + " py-2 text-sm"} href={`/api/hrms/employees/export-csv?q=${encodeURIComponent(q)}`}>
+              Export directory CSV
+            </a>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <a className={UI.secondaryButton + " py-2 text-sm"} href="/assets/hrms/employee-import-template.csv" download>
+              Download template
+            </a>
+            <input
+              className={UI.input}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => void previewImport(e.target.files?.[0] || null)}
+            />
+            <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void commitImport()} disabled={busy || !importSummary || importSummary.valid === 0}>
+              Commit valid rows
+            </button>
+          </div>
+          {importSummary ? (
+            <div className="mt-3 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-fill-1)] px-3 py-2 text-xs text-[var(--ats-text-muted)]">
+              Valid: {importSummary.valid} · Invalid: {importSummary.invalid} · Conflict: {importSummary.conflict}
+            </div>
+          ) : null}
+          {importRows.length > 0 ? (
+            <div className="mt-3 max-h-48 overflow-auto rounded-lg border border-[var(--ats-border)]">
+              <table className="min-w-full text-xs">
+                <thead>
+                  <tr className="text-left text-[var(--ats-text-muted)]">
+                    <th className="px-2 py-1.5">Row</th>
+                    <th className="px-2 py-1.5">Status</th>
+                    <th className="px-2 py-1.5">Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importRows.map((row) => (
+                    <tr key={row.rowNumber} className="border-t border-[var(--ats-border)]">
+                      <td className="px-2 py-1.5">{row.rowNumber}</td>
+                      <td className="px-2 py-1.5 capitalize">{row.status}</td>
+                      <td className="px-2 py-1.5">{row.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+
+        <section className={UI.card + " mt-4 p-4 sm:p-5"}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-[var(--ats-text)]">Employees</h2>
             <input className={UI.input + " w-full sm:w-72"} placeholder="Search by name, email, phone, employee ID..." value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
+          {toast?.variant === "error" || toast?.variant === "blocked" ? (
+            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              Last failure: {toast.message}
+            </div>
+          ) : null}
           <div className="mt-3 overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
@@ -190,6 +299,7 @@ export default function EmployeeDirectoryPage() {
                   <th className="px-2 py-2">Designation</th>
                   <th className="px-2 py-2">Manager</th>
                   <th className="px-2 py-2">Status</th>
+                  <th className="px-2 py-2">Profile</th>
                   <th className="px-2 py-2">Actions</th>
                 </tr>
               </thead>
@@ -207,6 +317,11 @@ export default function EmployeeDirectoryPage() {
                     <td className="px-2 py-2">{employee.reporting_manager_name || "-"}</td>
                     <td className="px-2 py-2 capitalize">{employee.employment_status}</td>
                     <td className="px-2 py-2">
+                      <span className="rounded-full border border-[var(--ats-border)] px-2 py-0.5 text-xs">
+                        {employee.profile_completeness || 0}%
+                      </span>
+                    </td>
+                    <td className="px-2 py-2">
                       <div className="flex gap-2">
                         <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => startEdit(employee)}>
                           Edit
@@ -222,7 +337,7 @@ export default function EmployeeDirectoryPage() {
                 ))}
                 {employees.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-2 py-4 text-center text-[var(--ats-text-muted)]">
+                    <td colSpan={7} className="px-2 py-4 text-center text-[var(--ats-text-muted)]">
                       No employees found.
                     </td>
                   </tr>

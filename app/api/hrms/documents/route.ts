@@ -29,30 +29,42 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requirePermission("documents.manage");
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const form = await request.formData().catch(() => null);
-  if (!form) return NextResponse.json({ error: "Invalid form data." }, { status: 400 });
-  const employeeId = Number(form.get("employeeId") || 0);
-  const category = String(form.get("category") || "");
-  const file = form.get("file");
-  if (!Number.isFinite(employeeId) || employeeId <= 0) return NextResponse.json({ error: "Employee is required." }, { status: 400 });
-  if (!isDocumentCategory(category)) return NextResponse.json({ error: "Invalid document category." }, { status: 400 });
-  if (!(file instanceof File)) return NextResponse.json({ error: "File is required." }, { status: 400 });
+  try {
+    const auth = await requirePermission("documents.manage");
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    const form = await request.formData().catch(() => null);
+    if (!form) return NextResponse.json({ error: "Invalid form data." }, { status: 400 });
+    const employeeId = Number(form.get("employeeId") || 0);
+    const category = String(form.get("category") || "");
+    const expiryDateRaw = String(form.get("expiryDate") || "").trim();
+    const file = form.get("file");
+    if (!Number.isFinite(employeeId) || employeeId <= 0) return NextResponse.json({ error: "Employee is required." }, { status: 400 });
+    if (!isDocumentCategory(category)) return NextResponse.json({ error: "Invalid document category." }, { status: 400 });
+    if (!(file instanceof File)) return NextResponse.json({ error: "File is required." }, { status: 400 });
 
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  await storeEmployeeDocument({
-    employeeId,
-    category,
-    fileName: file.name || "document",
-    fileType: file.type || "application/octet-stream",
-    fileSize: Number(file.size || buffer.length || 0),
-    fileBuffer: buffer,
-    uploadedByUserId: auth.access.user_id,
-  });
-  return NextResponse.json({
-    operation_status: "success",
-    user_message: "Document uploaded successfully.",
-  });
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    await storeEmployeeDocument({
+      employeeId,
+      category,
+      fileName: file.name || "document",
+      fileType: file.type || "application/octet-stream",
+      fileSize: Number(file.size || buffer.length || 0),
+      fileBuffer: buffer,
+      expiryDate: expiryDateRaw || null,
+      uploadedByUserId: auth.access.user_id,
+    });
+    return NextResponse.json({
+      operation_status: "success",
+      user_message: "Document uploaded successfully.",
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        operation_status: "error",
+        user_message: error instanceof Error ? error.message : "Failed to upload document.",
+      },
+      { status: 500 },
+    );
+  }
 }

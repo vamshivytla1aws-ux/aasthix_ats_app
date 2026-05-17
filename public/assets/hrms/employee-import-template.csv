@@ -1,0 +1,2 @@
+employeeIdCode,fullName,email,phone,department,designation,employmentType,joiningDate,reportingManagerUserId,workLocation,status,role
+EMP-1001,Sample Employee,sample.employee@example.com,9876543210,Engineering,Software Engineer,Full Time,2026-05-01,,Hyderabad,active,employee

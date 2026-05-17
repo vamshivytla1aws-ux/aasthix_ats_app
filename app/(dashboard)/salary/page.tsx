@@ -176,7 +176,7 @@ export default function SalaryPage() {
     setBusy(true);
     try {
       const d = new Date(salaryMonth);
-      await apiFetchJson("/api/payslips/generate", {
+      const response = await apiFetchJson<{ operation_status?: "success" | "partial" | "blocked" | "error"; user_message?: string }>("/api/payslips/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -187,7 +187,10 @@ export default function SalaryPage() {
           lopDays: Number(lopDays || 0),
         }),
       });
-      setToast({ message: "Payslip generated successfully.", variant: "success" });
+      setToast({
+        message: response.user_message || "Payslip generated successfully.",
+        variant: response.operation_status === "blocked" ? "blocked" : response.operation_status === "error" ? "error" : "success",
+      });
       await payslipsSwr.mutate();
     } catch (error) {
       setToast({ message: error instanceof Error ? error.message : "Failed to generate payslip", variant: "error" });
