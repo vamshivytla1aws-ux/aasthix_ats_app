@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { Calendar as CalendarIcon, Download, EyeOff, SlidersHorizontal, Trash2, UserX, XCircle } from "lucide-react";
@@ -274,25 +274,6 @@ export default function InterviewsPage() {
   }, [searchQ]);
 
   useEffect(() => {
-    if (!rescheduleOpen || !selectedInterview || !rescheduleDate || !rescheduleTime) return;
-    const timer = window.setTimeout(() => {
-      void generateRescheduleInviteDraft();
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [
-    rescheduleOpen,
-    selectedInterview,
-    rescheduleDate,
-    rescheduleTime,
-    rescheduleDurationMinutes,
-    rescheduleTimezone,
-    rescheduleMeetingMode,
-    rescheduleMeetingLocation,
-    rescheduleAttendees,
-    rescheduleNotes,
-  ]);
-
-  useEffect(() => {
     let alive = true;
     apiFetchJson<CalendarStatusResponse>("/api/settings/calendar")
       .then((data) => {
@@ -557,7 +538,7 @@ export default function InterviewsPage() {
     };
   }
 
-  async function generateRescheduleInviteDraft() {
+  const generateRescheduleInviteDraft = useCallback(async function generateRescheduleInviteDraft() {
     if (!selectedInterview || !rescheduleDate || !rescheduleTime) return;
     setRescheduleDraftBusy(true);
     setRescheduleDraftError(null);
@@ -598,7 +579,36 @@ export default function InterviewsPage() {
     } finally {
       setRescheduleDraftBusy(false);
     }
-  }
+  }, [
+    selectedInterview,
+    rescheduleDate,
+    rescheduleTime,
+    rescheduleDurationMinutes,
+    rescheduleMeetingMode,
+    rescheduleMeetingLocation,
+    rescheduleAttendees,
+    rescheduleNotes,
+  ]);
+
+  useEffect(() => {
+    if (!rescheduleOpen || !selectedInterview || !rescheduleDate || !rescheduleTime) return;
+    const timer = window.setTimeout(() => {
+      void generateRescheduleInviteDraft();
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    rescheduleOpen,
+    selectedInterview,
+    rescheduleDate,
+    rescheduleTime,
+    rescheduleDurationMinutes,
+    rescheduleTimezone,
+    rescheduleMeetingMode,
+    rescheduleMeetingLocation,
+    rescheduleAttendees,
+    rescheduleNotes,
+    generateRescheduleInviteDraft,
+  ]);
 
   async function fetchPacketData(app: ApplicationRow) {
     if (!app.id) return;

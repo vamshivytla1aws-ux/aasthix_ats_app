@@ -290,7 +290,7 @@ export default function JobMatchHubModal({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [job?.id, queueRun?.runId, queueRun?.status, load]);
+  }, [job?.id, queueRun, queueRun?.runId, queueRun?.status, load]);
 
   async function runExtract() {
     if (!job?.id) return;

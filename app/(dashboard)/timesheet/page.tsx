@@ -155,7 +155,7 @@ export default function TimesheetPage() {
       setNotes("");
       setStatus("draft");
     }
-  }, [meSwr.data?.header?.id, meSwr.data?.header?.notes, meSwr.data?.header?.status]);
+  }, [meSwr.data?.header, meSwr.data?.header?.id, meSwr.data?.header?.notes, meSwr.data?.header?.status]);
 
   React.useEffect(() => {
     setDate((prev) => toDateInput(prev));

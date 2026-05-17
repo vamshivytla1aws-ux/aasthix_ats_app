@@ -603,6 +603,7 @@ export default function PipelineBoard({
     scheduleMeetingLocation,
     scheduleAttendees,
     scheduleNotes,
+    generateScheduleInviteDraft,
   ]);
 
   useEffect(() => {
@@ -622,6 +623,7 @@ export default function PipelineBoard({
     rescheduleMeetingLocation,
     rescheduleAttendees,
     rescheduleNotes,
+    generateRescheduleInviteDraft,
   ]);
 
   useEffect(() => {
@@ -739,6 +741,7 @@ export default function PipelineBoard({
     void loadChecklist(app.id);
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   async function generateScheduleInviteDraft() {
     if (!scheduleApp || !scheduleDate || !scheduleTime) return;
     setScheduleDraftBusy(true);
@@ -1126,6 +1129,7 @@ export default function PipelineBoard({
     void loadChecklist(app.id);
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   async function generateRescheduleInviteDraft() {
     if (!rescheduleApp || !rescheduleDate || !rescheduleTime) return;
     setRescheduleDraftBusy(true);

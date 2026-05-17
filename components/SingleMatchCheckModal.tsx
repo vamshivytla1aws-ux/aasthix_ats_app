@@ -295,7 +295,7 @@ export default function SingleMatchCheckModal({
                     aria-label="Search results"
                   >
                     {candidates.map((c) => (
-                      <li key={c.id} role="option">
+                      <li key={c.id} role="option" aria-selected={selectedId === c.id}>
                         <button
                           type="button"
                           onClick={() => {

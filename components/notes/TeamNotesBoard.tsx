@@ -204,7 +204,7 @@ export default function TeamNotesBoard({ canManage }: { canManage: boolean }) {
     revalidateOnFocus: true,
   });
 
-  const notes = data?.notes ?? [];
+  const notes = useMemo(() => data?.notes ?? [], [data?.notes]);
 
   const byColumn = useMemo(() => {
     const m: Record<BoardColumn, TeamNoteDto[]> = {

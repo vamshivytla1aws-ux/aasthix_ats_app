@@ -78,13 +78,25 @@ export default function GovernancePage() {
   const workspaceRows = Array.isArray((workspaces as any)?.workspaces) ? (workspaces as any).workspaces : [];
   const accessRows = Array.isArray((accessPolicies as any)?.policies) ? (accessPolicies as any).policies : [];
   const retentionRows = Array.isArray((retention as any)?.policies) ? (retention as any).policies : [];
-  const connectorRows = Array.isArray((connectors as any)?.connectors) ? (connectors as any).connectors : [];
-  const integrationRunRows = Array.isArray((integrationRuns as any)?.runs) ? (integrationRuns as any).runs : [];
+  const connectorRows = useMemo(
+    () => (Array.isArray((connectors as any)?.connectors) ? (connectors as any).connectors : []),
+    [connectors],
+  );
+  const integrationRunRows = useMemo(
+    () => (Array.isArray((integrationRuns as any)?.runs) ? (integrationRuns as any).runs : []),
+    [integrationRuns],
+  );
   const aiPolicyRows = Array.isArray((aiPolicies as any)?.policies) ? (aiPolicies as any).policies : [];
   const aiModelRows = Array.isArray((aiModels as any)?.models) ? (aiModels as any).models : [];
   const aiAuditRows = Array.isArray((aiAudit as any)?.records) ? (aiAudit as any).records : [];
-  const automationRules = Array.isArray((rules as any)?.rules) ? (rules as any).rules : [];
-  const automationRuns = Array.isArray((runs as any)?.runs) ? (runs as any).runs : [];
+  const automationRules = useMemo(
+    () => (Array.isArray((rules as any)?.rules) ? (rules as any).rules : []),
+    [rules],
+  );
+  const automationRuns = useMemo(
+    () => (Array.isArray((runs as any)?.runs) ? (runs as any).runs : []),
+    [runs],
+  );
   const sloRows = Array.isArray((sloMetrics as any)?.metrics) ? (sloMetrics as any).metrics : [];
 
   const missingRetention = EXPECTED_RETENTION.filter(

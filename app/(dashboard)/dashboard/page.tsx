@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetchJson } from "@/lib/apiClient";
 import { APP_CONFIG } from "@/lib/config";
 import { UI } from "@/lib/ui";
@@ -219,7 +219,7 @@ export default function DashboardPage() {
     return a.length === b.length && a.every((item, index) => item === b[index]);
   }
 
-  function syncActivePreset(order: string[]) {
+  const syncActivePreset = useCallback((order: string[]) => {
     if (arraysEqual(order, presetLayouts.admin)) {
       setActivePreset("admin");
       return;
@@ -233,7 +233,7 @@ export default function DashboardPage() {
       return;
     }
     setActivePreset("custom");
-  }
+  }, [presetLayouts.admin, presetLayouts.employee, presetLayouts.recruiter]);
 
   async function applyPreset(preset: "admin" | "recruiter" | "employee") {
     setActivePreset(preset);
@@ -242,7 +242,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     syncActivePreset(activeWidgets);
-  }, [role, widgetOrder]);
+  }, [role, widgetOrder, activeWidgets, syncActivePreset]);
 
   const sections: Record<string, React.ReactNode> = {
     kpi: (

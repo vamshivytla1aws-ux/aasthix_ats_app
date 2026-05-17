@@ -270,6 +270,7 @@ export default function OnboardingPublicPage() {
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="bg-slate-900 px-5 py-4 text-white">
           <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/aasthix-brand.png" alt="Aasthix Talent logo" className="h-12 w-auto shrink-0" />
             <div>
               <div className="text-2xl font-bold tracking-wide">AASTHIX TALENT</div>
