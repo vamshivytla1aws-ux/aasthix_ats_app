@@ -81,6 +81,24 @@ async function loadLogo(pdf: PDFDocument): Promise<PDFImage | null> {
   return null;
 }
 
+async function loadPayslipTemplateBackground(pdf: PDFDocument): Promise<PDFImage | null> {
+  const candidates = [
+    path.join(process.cwd(), "public", "payslip-template.png"),
+    path.join(process.cwd(), "public", "payslip-background.png"),
+    path.join(process.cwd(), "public", "payslip-bg.png"),
+  ];
+  for (const file of candidates) {
+    try {
+      const bytes = await readFile(file);
+      if (file.endsWith(".png")) return await pdf.embedPng(bytes);
+      return await pdf.embedJpg(bytes);
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 function drawHeader(page: any, bold: PDFFont, font: PDFFont, logo: PDFImage | null) {
   const boxTop = PAGE_H - PAGE_MARGIN_TOP;
   const logoX = PAGE_MARGIN_X + 8;
@@ -357,9 +375,13 @@ export async function buildPayslipPdf(payload: PayslipPdfPayload) {
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const logo = await loadLogo(pdf);
+  const bg = await loadPayslipTemplateBackground(pdf);
   const page = pdf.addPage([PAGE_W, PAGE_H]);
-  drawHeader(page, bold, font, logo);
-  drawFooter(page, font);
+
+  if (!bg) {
+    throw new Error("Payslip template background is required. Add public/payslip-template.png");
+  }
+  page.drawImage(bg, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
 
   const availableHeight = CONTENT_TOP - CONTENT_BOTTOM;
   let scale = SCALE_BANDS[SCALE_BANDS.length - 1];
@@ -371,11 +393,12 @@ export async function buildPayslipPdf(payload: PayslipPdfPayload) {
   }
 
   ensureSpace(0);
-  let cursorY = CONTENT_TOP;
+  // Keep body safely within template white content area.
+  let cursorY = PAGE_H - 162;
   cursorY = drawPersonalDetailsBlock(page, bold, font, cursorY, payload, scale);
   cursorY = drawEarningsDeductionsBlock(page, bold, font, cursorY, payload, scale);
   cursorY = drawTaxSheetBlock(page, bold, font, cursorY, payload, scale);
-  drawSignatures(page, bold, font, Math.max(cursorY - 3, CONTENT_BOTTOM + 28), payload, scale);
+  drawSignatures(page, bold, font, Math.max(cursorY - 3, 108), payload, scale);
 
   return Buffer.from(await pdf.save());
 }
