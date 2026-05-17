@@ -30,6 +30,22 @@ type CorrectionRow = {
   status: "pending" | "approved" | "rejected";
 };
 
+type WfhRow = {
+  id: number;
+  user_id: number;
+  user_name: string;
+  from_date: string;
+  to_date: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  decision_note?: string | null;
+};
+
+type OperationFeedback = {
+  operation_status?: "success" | "partial" | "blocked" | "error";
+  user_message?: string;
+};
+
 export default function AttendanceRulesPage() {
   const [userId, setUserId] = React.useState("");
   const [shiftName, setShiftName] = React.useState("General");
@@ -40,6 +56,10 @@ export default function AttendanceRulesPage() {
   const [halfDay, setHalfDay] = React.useState("240");
   const [overtimeAfter, setOvertimeAfter] = React.useState("480");
   const [wfhAllowed, setWfhAllowed] = React.useState(false);
+  const [wfhFromDate, setWfhFromDate] = React.useState("");
+  const [wfhToDate, setWfhToDate] = React.useState("");
+  const [wfhReason, setWfhReason] = React.useState("");
+  const [wfhDecisionNote, setWfhDecisionNote] = React.useState("");
   const [toast, setToast] = React.useState<{ message: string; variant: "success" | "error" | "blocked" } | null>(null);
   const [busy, setBusy] = React.useState(false);
 
@@ -48,12 +68,19 @@ export default function AttendanceRulesPage() {
   });
   const rulesSwr = useSWR<{ rules: RuleRow[] }>("/api/hrms/attendance-rules", dashboardFetcher, { revalidateOnFocus: false });
   const correctionSwr = useSWR<{ requests: CorrectionRow[] }>("/api/hrms/attendance-corrections", dashboardFetcher, { revalidateOnFocus: false });
+  const wfhSwr = useSWR<{ requests: WfhRow[] }>("/api/hrms/wfh-requests", dashboardFetcher, { revalidateOnFocus: false });
+
+  function feedbackToVariant(feedback?: OperationFeedback) {
+    if (feedback?.operation_status === "blocked") return "blocked" as const;
+    if (feedback?.operation_status === "error") return "error" as const;
+    return "success" as const;
+  }
 
   async function saveRule() {
     if (!userId) return setToast({ message: "Select employee.", variant: "blocked" });
     setBusy(true);
     try {
-      await apiFetchJson("/api/hrms/attendance-rules", {
+      const response = await apiFetchJson<OperationFeedback>("/api/hrms/attendance-rules", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -68,7 +95,7 @@ export default function AttendanceRulesPage() {
           wfhAllowed,
         }),
       });
-      setToast({ message: "Attendance rule saved.", variant: "success" });
+      setToast({ message: response.user_message || "Attendance rule saved.", variant: feedbackToVariant(response) });
       await rulesSwr.mutate();
     } catch (error) {
       setToast({ message: error instanceof Error ? error.message : "Failed to save rule.", variant: "error" });
@@ -80,12 +107,12 @@ export default function AttendanceRulesPage() {
   async function decideCorrection(id: number, decision: "approved" | "rejected") {
     setBusy(true);
     try {
-      await apiFetchJson("/api/hrms/attendance-corrections", {
+      const response = await apiFetchJson<OperationFeedback>("/api/hrms/attendance-corrections", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, decision }),
       });
-      setToast({ message: `Correction ${decision}.`, variant: "success" });
+      setToast({ message: response.user_message || `Correction ${decision}.`, variant: feedbackToVariant(response) });
       await correctionSwr.mutate();
     } catch (error) {
       setToast({ message: error instanceof Error ? error.message : "Failed to update correction.", variant: "error" });
@@ -94,13 +121,56 @@ export default function AttendanceRulesPage() {
     }
   }
 
+  async function createWfhRequest() {
+    if (!wfhFromDate || !wfhToDate || !wfhReason.trim()) {
+      setToast({ message: "From date, to date and reason are required.", variant: "blocked" });
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await apiFetchJson<OperationFeedback>("/api/hrms/wfh-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromDate: wfhFromDate, toDate: wfhToDate, reason: wfhReason.trim() }),
+      });
+      setToast({ message: response.user_message || "WFH request submitted.", variant: feedbackToVariant(response) });
+      setWfhFromDate("");
+      setWfhToDate("");
+      setWfhReason("");
+      await wfhSwr.mutate();
+    } catch (error) {
+      setToast({ message: error instanceof Error ? error.message : "Failed to submit WFH request.", variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function decideWfh(id: number, decision: "approved" | "rejected") {
+    setBusy(true);
+    try {
+      const response = await apiFetchJson<OperationFeedback>("/api/hrms/wfh-requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, decision, note: wfhDecisionNote || null }),
+      });
+      setToast({ message: response.user_message || `WFH request ${decision}.`, variant: feedbackToVariant(response) });
+      setWfhDecisionNote("");
+      await wfhSwr.mutate();
+    } catch (error) {
+      setToast({ message: error instanceof Error ? error.message : "Failed to update WFH request.", variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const rules = rulesSwr.data?.rules || [];
   const corrections = correctionSwr.data?.requests || [];
+  const wfhRequests = wfhSwr.data?.requests || [];
 
   return (
     <AccessGate permissionKey="attendance.view_self">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={1800} /> : null}
-      <ModulePageFrame title="Attendance Rules" subtitle="Shift mapping, grace policies, overtime thresholds, and correction approvals.">
+      <ModulePageFrame title="Attendance Rules" subtitle="Shift mapping, grace policies, WFH controls, and correction approvals.">
         <section className={UI.card + " p-4 sm:p-5"}>
           <h2 className="text-base font-semibold text-[var(--ats-text)]">Shift mapping</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
@@ -141,6 +211,7 @@ export default function AttendanceRulesPage() {
                   <th className="px-2 py-2">Grace</th>
                   <th className="px-2 py-2">Half-day</th>
                   <th className="px-2 py-2">Overtime</th>
+                  <th className="px-2 py-2">WFH</th>
                 </tr>
               </thead>
               <tbody>
@@ -156,12 +227,77 @@ export default function AttendanceRulesPage() {
                     </td>
                     <td className="px-2 py-2">{rule.half_day_minutes}m</td>
                     <td className="px-2 py-2">{rule.overtime_after_minutes}m</td>
+                    <td className="px-2 py-2">{rule.wfh_allowed ? "Allowed" : "Not allowed"}</td>
                   </tr>
                 ))}
                 {rules.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-2 py-4 text-center text-[var(--ats-text-muted)]">
+                    <td colSpan={7} className="px-2 py-4 text-center text-[var(--ats-text-muted)]">
                       No shift rules available.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className={UI.card + " mt-4 p-4 sm:p-5"}>
+          <h2 className="text-base font-semibold text-[var(--ats-text)]">Work from home requests</h2>
+          <div className="mt-3 grid gap-3 md:grid-cols-4">
+            <input className={UI.input} type="date" value={wfhFromDate} onChange={(e) => setWfhFromDate(e.target.value)} />
+            <input className={UI.input} type="date" value={wfhToDate} onChange={(e) => setWfhToDate(e.target.value)} />
+            <input className={UI.input} placeholder="Reason" value={wfhReason} onChange={(e) => setWfhReason(e.target.value)} />
+            <button type="button" className={UI.secondaryButton + " py-2 text-sm"} onClick={() => void createWfhRequest()} disabled={busy}>
+              Apply WFH
+            </button>
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-[var(--ats-text-muted)]">
+                  <th className="px-2 py-2">Employee</th>
+                  <th className="px-2 py-2">From</th>
+                  <th className="px-2 py-2">To</th>
+                  <th className="px-2 py-2">Reason</th>
+                  <th className="px-2 py-2">Status</th>
+                  <th className="px-2 py-2">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {wfhRequests.map((row) => (
+                  <tr key={row.id} className="border-t border-[var(--ats-border)]">
+                    <td className="px-2 py-2">{row.user_name}</td>
+                    <td className="px-2 py-2">{String(row.from_date).slice(0, 10)}</td>
+                    <td className="px-2 py-2">{String(row.to_date).slice(0, 10)}</td>
+                    <td className="px-2 py-2">{row.reason}</td>
+                    <td className="px-2 py-2 capitalize">{row.status}</td>
+                    <td className="px-2 py-2">
+                      {row.status === "pending" ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            className={UI.input + " min-w-[180px] py-1.5 text-xs"}
+                            placeholder="Decision note (optional)"
+                            value={wfhDecisionNote}
+                            onChange={(e) => setWfhDecisionNote(e.target.value)}
+                          />
+                          <button type="button" className={UI.primaryButton + " py-1.5 text-xs"} onClick={() => void decideWfh(row.id, "approved")} disabled={busy}>
+                            Approve
+                          </button>
+                          <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => void decideWfh(row.id, "rejected")} disabled={busy}>
+                            Reject
+                          </button>
+                        </div>
+                      ) : (
+                        row.decision_note || "-"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {wfhRequests.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-2 py-4 text-center text-[var(--ats-text-muted)]">
+                      No WFH requests found.
                     </td>
                   </tr>
                 ) : null}
