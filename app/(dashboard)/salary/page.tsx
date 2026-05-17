@@ -230,6 +230,27 @@ export default function SalaryPage() {
     }
   }
 
+  async function deletePayslip(payslipId: number) {
+    const confirmed = window.confirm("Delete this payslip permanently?");
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      const response = await apiFetchJson<{ operation_status?: "success" | "partial" | "blocked" | "error"; user_message?: string }>(
+        `/api/payslips/${payslipId}`,
+        { method: "DELETE" },
+      );
+      setToast({
+        message: response.user_message || "Payslip deleted.",
+        variant: response.operation_status === "blocked" ? "blocked" : response.operation_status === "error" ? "error" : "success",
+      });
+      await payslipsSwr.mutate();
+    } catch (error) {
+      setToast({ message: error instanceof Error ? error.message : "Failed to delete payslip", variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <AccessGate permissionKey="salary.view">
       {toast ? <Toast message={toast.message} variant={toast.variant || "success"} onClose={() => setToast(null)} autoHideMs={1800} /> : null}
@@ -356,7 +377,17 @@ export default function SalaryPage() {
                       <td className="px-3 py-2 text-right">{inr(row.total_deductions)}</td>
                       <td className="px-3 py-2 text-right">{inr(row.net_salary)}</td>
                       <td className="px-3 py-2">
-                        <a className="text-blue-700 hover:underline" href={`/api/payslips/${row.id}/download`}>Download PDF</a>
+                        <div className="flex items-center gap-3">
+                          <a className="text-blue-700 hover:underline" href={`/api/payslips/${row.id}/download`}>Download PDF</a>
+                          <button
+                            type="button"
+                            className="text-red-600 hover:underline disabled:opacity-50"
+                            disabled={busy}
+                            onClick={() => void deletePayslip(row.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

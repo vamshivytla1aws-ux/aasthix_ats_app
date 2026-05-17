@@ -43,3 +43,30 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     })),
   });
 }
+
+export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+  const auth = await requirePermission("salary.manage");
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const payslipId = Number(params.id);
+  if (!Number.isFinite(payslipId) || payslipId <= 0) {
+    return NextResponse.json({ error: "Invalid payslip id" }, { status: 400 });
+  }
+
+  const exists = await query(`SELECT id FROM payslips WHERE id = $1 LIMIT 1`, [payslipId]);
+  if (exists.rowCount === 0) {
+    return NextResponse.json(
+      {
+        operation_status: "blocked",
+        user_message: "Payslip not found.",
+      },
+      { status: 404 },
+    );
+  }
+
+  await query(`DELETE FROM payslip_line_items WHERE payslip_id = $1`, [payslipId]);
+  await query(`DELETE FROM payslips WHERE id = $1`, [payslipId]);
+  return NextResponse.json({
+    operation_status: "success",
+    user_message: "Payslip deleted successfully.",
+  });
+}

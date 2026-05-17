@@ -48,7 +48,7 @@ export async function createSalaryStructure(input: SalaryCalcInput, actorUserId:
     `
     SELECT id
     FROM salary_structures
-    WHERE employee_id = $1
+    WHERE employee_id = $1::bigint
       AND effective_from = $2::date
     ORDER BY id DESC
     LIMIT 1
@@ -74,20 +74,20 @@ export async function createSalaryStructure(input: SalaryCalcInput, actorUserId:
         work_location = $10,
         ctc_annual = $11,
         salary_month = $12::date,
-        total_paid_days = $13,
-        lop_days = $14,
-        tax_regime = $15,
-        manual_tds_annual = $16,
-        professional_tax_monthly = $17,
-        pf_enabled = $18,
-        employer_pf_included_in_ctc = $19,
-        employee_pf_enabled = $20,
-        health_insurance_enabled = $21,
-        health_insurance_annual = $22,
+        total_paid_days = $13::int,
+        lop_days = $14::int,
+        tax_regime = $15::text,
+        manual_tds_annual = $16::numeric,
+        professional_tax_monthly = $17::numeric,
+        pf_enabled = $18::boolean,
+        employer_pf_included_in_ctc = $19::boolean,
+        employee_pf_enabled = $20::boolean,
+        health_insurance_enabled = $21::boolean,
+        health_insurance_annual = $22::numeric,
         effective_from = $23::date,
-        created_by_user_id = $24,
+        created_by_user_id = $24::bigint,
         updated_at = NOW()
-      WHERE id = $25
+      WHERE id = $25::bigint
       `,
       [...structureArgs.slice(0, 24), salaryStructureId],
     );
@@ -102,7 +102,7 @@ export async function createSalaryStructure(input: SalaryCalcInput, actorUserId:
         employer_pf_included_in_ctc, employee_pf_enabled, health_insurance_enabled, health_insurance_annual, effective_from, created_by_user_id, created_at, updated_at
       )
       VALUES
-      ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11,$12::date,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::date,$24,NOW(),NOW())
+      ($1::bigint,$2::text,$3::text,$4::text,$5::date,$6::text,$7::text,$8::text,$9::text,$10::text,$11::numeric,$12::date,$13::int,$14::int,$15::text,$16::numeric,$17::numeric,$18::boolean,$19::boolean,$20::boolean,$21::boolean,$22::numeric,$23::date,$24::bigint,NOW(),NOW())
       RETURNING id
       `,
       structureArgs,
