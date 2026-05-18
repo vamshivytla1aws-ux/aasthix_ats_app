@@ -41,12 +41,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       user_message: "Employee updated successfully.",
     });
   } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code || "") : "";
     return NextResponse.json(
       {
-        operation_status: "error",
+        operation_status: code === "MANAGER_NOT_FOUND" ? "blocked" : "error",
         user_message: error instanceof Error ? error.message : "Failed to update employee.",
       },
-      { status: 500 },
+      { status: code === "MANAGER_NOT_FOUND" ? 400 : 500 },
     );
   }
 }

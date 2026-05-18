@@ -166,6 +166,13 @@ export default function AttendanceRulesPage() {
   const rules = rulesSwr.data?.rules || [];
   const corrections = correctionSwr.data?.requests || [];
   const wfhRequests = wfhSwr.data?.requests || [];
+  const lateCutoffPreview = React.useMemo(() => {
+    const [h, m] = String(startTime || "00:00").split(":").map((v) => Number(v || 0));
+    const total = h * 60 + m + Math.max(0, Number(lateGrace || 0));
+    const hh = String(Math.floor(total / 60) % 24).padStart(2, "0");
+    const mm = String(total % 60).padStart(2, "0");
+    return `${hh}:${mm}`;
+  }, [startTime, lateGrace]);
 
   return (
     <AccessGate permissionKey="attendance.view_self">
@@ -175,6 +182,9 @@ export default function AttendanceRulesPage() {
           <h2 className="text-base font-semibold text-[var(--ats-text)]">Shift mapping</h2>
           <p className="mt-1 text-xs text-[var(--ats-text-muted)]">
             Configure shift boundaries and policy thresholds in minutes. Example: Late grace 15 means check-in up to 15 minutes after shift start is not marked late.
+          </p>
+          <p className="mt-1 text-xs text-[var(--ats-text-muted)]">
+            Rule impact preview: After <span className="font-semibold">{lateCutoffPreview}</span>, check-in is marked late for this shift.
           </p>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
             <label className={UI.label}>

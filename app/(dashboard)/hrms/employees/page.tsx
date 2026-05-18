@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React from "react";
 import useSWR from "swr";
@@ -52,22 +52,39 @@ const EMPTY_FORM = {
 
 export default function EmployeeDirectoryPage() {
   const [q, setQ] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState("all");
+  const [departmentFilter, setDepartmentFilter] = React.useState("all");
   const [form, setForm] = React.useState(EMPTY_FORM);
   const [editingId, setEditingId] = React.useState<number | null>(null);
+  const [assignManagerLater, setAssignManagerLater] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [toast, setToast] = React.useState<{ message: string; variant: "success" | "error" | "blocked" } | null>(null);
   const [importRows, setImportRows] = React.useState<EmployeeImportRowResult[]>([]);
   const [importSummary, setImportSummary] = React.useState<{ valid: number; invalid: number; conflict: number } | null>(null);
 
-  const { data, mutate } = useSWR<{ employees: Employee[] }>(`/api/hrms/employees?q=${encodeURIComponent(q)}`, dashboardFetcher, {
-    revalidateOnFocus: false,
-  });
+  const employeesUrl = React.useMemo(() => {
+    const sp = new URLSearchParams();
+    if (q.trim()) sp.set("q", q.trim());
+    if (statusFilter !== "all") sp.set("status", statusFilter);
+    if (departmentFilter !== "all") sp.set("department", departmentFilter);
+    return `/api/hrms/employees?${sp.toString()}`;
+  }, [q, statusFilter, departmentFilter]);
+  const { data, mutate } = useSWR<{ employees: Employee[] }>(employeesUrl, dashboardFetcher, { revalidateOnFocus: false });
 
-  const employees = data?.employees || [];
+  const employees = React.useMemo(() => data?.employees ?? [], [data?.employees]);
+  const departmentOptions = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const row of employees) {
+      const v = String(row.department || "").trim();
+      if (v) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [employees]);
 
   function resetForm() {
     setForm(EMPTY_FORM);
     setEditingId(null);
+    setAssignManagerLater(false);
   }
 
   function startEdit(employee: Employee) {
@@ -86,6 +103,7 @@ export default function EmployeeDirectoryPage() {
       status: employee.employment_status || "active",
       role: employee.role || "employee",
     });
+    setAssignManagerLater(!employee.reporting_manager_email);
   }
 
   async function submitForm() {
@@ -101,7 +119,7 @@ export default function EmployeeDirectoryPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...form,
-            reportingManagerEmail: form.reportingManagerEmail.trim() || null,
+            reportingManagerEmail: assignManagerLater ? null : form.reportingManagerEmail.trim() || null,
           }),
         });
       } else {
@@ -110,7 +128,7 @@ export default function EmployeeDirectoryPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...form,
-            reportingManagerEmail: form.reportingManagerEmail.trim() || null,
+            reportingManagerEmail: assignManagerLater ? null : form.reportingManagerEmail.trim() || null,
           }),
         });
       }
@@ -187,6 +205,9 @@ export default function EmployeeDirectoryPage() {
       <ModulePageFrame title="Employee Directory" subtitle="Add, update, search, and manage employee lifecycle status.">
         <section className={UI.card + " p-4 sm:p-5"}>
           <h2 className="text-base font-semibold text-[var(--ats-text)]">{editingId ? "Edit employee" : "Add employee"}</h2>
+          <div className="mt-2 text-xs text-[var(--ats-text-muted)]">
+            Sections: Identity, Employment, Reporting, and Access. Use â€œAssign manager laterâ€ if manager/director is not created yet.
+          </div>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <input className={UI.input} placeholder="Employee ID" value={form.employeeIdCode} onChange={(e) => setForm((s) => ({ ...s, employeeIdCode: e.target.value }))} />
             <input className={UI.input} placeholder="Full name" value={form.fullName} onChange={(e) => setForm((s) => ({ ...s, fullName: e.target.value }))} />
@@ -210,10 +231,23 @@ export default function EmployeeDirectoryPage() {
             </select>
             <input
               className={UI.input}
-              placeholder="Reporting manager / director email (optional, assign later)"
+              placeholder="Reporting manager / director email"
+              disabled={assignManagerLater}
               value={form.reportingManagerEmail}
               onChange={(e) => setForm((s) => ({ ...s, reportingManagerEmail: e.target.value }))}
             />
+            <label className={UI.label + " flex items-center gap-2"}>
+              <input
+                type="checkbox"
+                checked={assignManagerLater}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setAssignManagerLater(checked);
+                  if (checked) setForm((s) => ({ ...s, reportingManagerEmail: "" }));
+                }}
+              />
+              Assign manager later
+            </label>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void submitForm()} disabled={busy}>
@@ -276,9 +310,23 @@ export default function EmployeeDirectoryPage() {
         </section>
 
         <section className={UI.card + " mt-4 p-4 sm:p-5"}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="grid gap-2 md:grid-cols-4">
             <h2 className="text-base font-semibold text-[var(--ats-text)]">Employees</h2>
-            <input className={UI.input + " w-full sm:w-72"} placeholder="Search by name, email, phone, employee ID..." value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className={UI.input} placeholder="Search by name, email, phone, employee ID..." value={q} onChange={(e) => setQ(e.target.value)} />
+            <select className={UI.select} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="all">All status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="resigned">Resigned</option>
+            </select>
+            <select className={UI.select} value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)}>
+              <option value="all">All departments</option>
+              {departmentOptions.map((dep) => (
+                <option key={dep} value={dep}>
+                  {dep}
+                </option>
+              ))}
+            </select>
           </div>
           {toast?.variant === "error" || toast?.variant === "blocked" ? (
             <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
@@ -345,3 +393,4 @@ export default function EmployeeDirectoryPage() {
     </AccessGate>
   );
 }
+

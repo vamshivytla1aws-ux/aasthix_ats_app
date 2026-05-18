@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React from "react";
 import useSWR from "swr";
@@ -46,6 +46,10 @@ export default function PayrollControlPage() {
     `/api/hrms/payroll?view=variance&month=${Number(month)}&year=${Number(year)}`,
     dashboardFetcher,
     { revalidateOnFocus: false },
+  );
+  const selectedRun = React.useMemo(
+    () => (runsSwr.data?.runs || []).find((run) => run.month === Number(month) && run.year === Number(year)) || null,
+    [runsSwr.data?.runs, month, year],
   );
 
   async function generateRun() {
@@ -143,6 +147,18 @@ export default function PayrollControlPage() {
     <AccessGate permissionKey="payroll.run">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={1800} /> : null}
       <ModulePageFrame title="Payroll Control" subtitle="Generate payroll runs, approve payroll cycles, and export HRMS payroll reports.">
+        <section className={UI.card + " p-3 mb-4 bg-[var(--ats-fill-1)]"}>
+          <div className="text-sm text-[var(--ats-text)]">
+            CTC-first flow: <span className="font-semibold">1) Set CTC</span> in <a className="underline" href="/hrms/ctc">CTC Management</a>,{" "}
+            <span className="font-semibold">2) Generate/Approve/Lock payroll</span> here, <span className="font-semibold">3) Generate/download payslips</span> in{" "}
+            <a className="underline" href="/salary">Salary</a>.
+          </div>
+          {selectedRun?.status === "locked" ? (
+            <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+              Selected month is locked. Next action: unlock with reason (admin), then regenerate if needed.
+            </div>
+          ) : null}
+        </section>
         <section className={UI.card + " p-4 sm:p-5"}>
           <h2 className="text-base font-semibold text-[var(--ats-text)]">Monthly payroll generation</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
@@ -173,9 +189,9 @@ export default function PayrollControlPage() {
               <thead>
                 <tr className="text-left text-[var(--ats-text-muted)]">
                   <th className="px-2 py-2">Employee</th>
-                  <th className="px-2 py-2 text-right">Gross Δ</th>
-                  <th className="px-2 py-2 text-right">Deductions Δ</th>
-                  <th className="px-2 py-2 text-right">Net Δ</th>
+                  <th className="px-2 py-2 text-right">Gross Î”</th>
+                  <th className="px-2 py-2 text-right">Deductions Î”</th>
+                  <th className="px-2 py-2 text-right">Net Î”</th>
                 </tr>
               </thead>
               <tbody>
@@ -287,3 +303,4 @@ export default function PayrollControlPage() {
     </AccessGate>
   );
 }
+

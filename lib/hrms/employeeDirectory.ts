@@ -80,6 +80,20 @@ async function resolveReportingManagerUserId(
   return null;
 }
 
+async function requireResolvableReportingManager(
+  managerUserId: number | null | undefined,
+  managerEmail: string | null | undefined,
+) {
+  const hasUserId = Boolean(managerUserId && Number.isFinite(Number(managerUserId)));
+  const hasEmail = Boolean(String(managerEmail || "").trim());
+  if (!hasUserId && !hasEmail) return null;
+  const managerId = await resolveReportingManagerUserId(managerUserId, managerEmail);
+  if (managerId) return managerId;
+  const error = new Error("Reporting manager email/user was not found as an active employee.");
+  (error as Error & { code?: string }).code = "MANAGER_NOT_FOUND";
+  throw error;
+}
+
 let hasEmployeeCodeColumnCache: boolean | null = null;
 
 async function hasUsersEmployeeCodeColumn() {
@@ -323,7 +337,7 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
   try {
     await client.query("BEGIN");
     for (const row of rows) {
-      const managerId = await resolveReportingManagerUserId(
+      const managerId = await requireResolvableReportingManager(
         row.reportingManagerUserId || null,
         row.reportingManagerEmail || null,
       );
@@ -395,7 +409,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
   let hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const normalizedStatus = normalizeEmployeeStatus(input.status);
   const role = (input.role || "employee").trim().toLowerCase();
-  const managerId = await resolveReportingManagerUserId(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
+  const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
   const buildInsert = (withEmployeeCode: boolean) => ({
     sql: `
       INSERT INTO users
@@ -455,7 +469,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
 export async function updateEmployee(id: number, input: EmployeeDirectoryInput, actorUserId: number) {
   let hasEmployeeCode = await hasUsersEmployeeCodeColumn();
   const normalizedStatus = normalizeEmployeeStatus(input.status);
-  const managerId = await resolveReportingManagerUserId(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
+  const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
   const buildUpdate = (withEmployeeCode: boolean) => ({
     sql: `
       UPDATE users

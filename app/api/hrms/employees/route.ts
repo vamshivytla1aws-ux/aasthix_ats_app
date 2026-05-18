@@ -66,12 +66,13 @@ export async function POST(request: Request) {
       user_message: "Employee created successfully.",
     });
   } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code || "") : "";
     return NextResponse.json(
       {
-        operation_status: "error",
+        operation_status: code === "MANAGER_NOT_FOUND" ? "blocked" : "error",
         user_message: error instanceof Error ? error.message : "Failed to create employee.",
       },
-      { status: 500 },
+      { status: code === "MANAGER_NOT_FOUND" ? 400 : 500 },
     );
   }
 }

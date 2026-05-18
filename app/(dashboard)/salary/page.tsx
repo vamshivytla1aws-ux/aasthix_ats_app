@@ -76,6 +76,9 @@ export default function SalaryPage() {
   const [healthInsuranceAnnual, setHealthInsuranceAnnual] = React.useState("0");
 
   const employeesSwr = useSWR<{ employees: EmployeeOption[] }>("/api/salary-structures", dashboardFetcher, { revalidateOnFocus: false });
+  const hrmsSummarySwr = useSWR<{ summary: { payroll?: { status?: string } } }>("/api/hrms/summary", dashboardFetcher, {
+    revalidateOnFocus: false,
+  });
   const payslipsSwr = useSWR<{ payslips: PayslipRow[] }>(
     employeeId > 0 ? `/api/payslips/${employeeId}` : null,
     dashboardFetcher,
@@ -261,6 +264,17 @@ export default function SalaryPage() {
         subtitle="Configure employee CTC, calculate salary components, and generate branded monthly payslips."
         metrics={<StatusBadge status="IST payroll context" />}
       >
+        <section className={UI.card + " p-3 mb-4 bg-[var(--ats-fill-1)]"}>
+          <div className="text-sm text-[var(--ats-text)]">
+            Guided path: set month-effective CTC in <a className="underline" href="/hrms/ctc">CTC Management</a>, then run payroll in{" "}
+            <a className="underline" href="/hrms/payroll">Payroll Control</a>, then generate/download payslips here.
+          </div>
+          {hrmsSummarySwr.data?.summary?.payroll?.status === "locked" ? (
+            <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+              Current payroll month is locked. Payslip regenerate will be blocked until unlock.
+            </div>
+          ) : null}
+        </section>
         <section className={UI.card + " p-4 sm:p-5"}>
           <div className="grid gap-3 md:grid-cols-3">
             <label className={UI.label}>
