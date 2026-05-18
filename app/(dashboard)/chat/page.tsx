@@ -200,24 +200,24 @@ export default function ChatPage() {
 
   return (
     <AccessGate permissionKey="chat.view">
-      <div className="font-['Inter','Segoe_UI',sans-serif] flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="font-['Inter','Segoe_UI',sans-serif] flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-slate-300 bg-[#f8fafc] shadow-[0_12px_30px_rgba(2,6,23,0.10)]">
         <aside
           className={[
-            "w-80 shrink-0 border-r border-slate-200 bg-slate-50/80",
+            "w-80 shrink-0 border-r border-slate-700 bg-[#1f2430] text-slate-100",
             activeConversation ? "hidden md:flex md:flex-col" : "flex flex-col",
           ].join(" ")}
         >
-          <div className="border-b border-slate-200 px-4 py-3">
+          <div className="border-b border-slate-700 px-4 py-3">
             <div className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-indigo-600" />
-              <h2 className="text-sm font-semibold text-slate-900">Messages</h2>
+              <MessageSquare className="h-4 w-4 text-indigo-300" />
+              <h2 className="text-sm font-semibold tracking-wide text-slate-100">Messages</h2>
               {unreadTotal > 0 ? (
-                <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-semibold text-white">{unreadTotal}</span>
+                <span className="rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-semibold text-white">{unreadTotal}</span>
               ) : null}
               <button
                 type="button"
                 onClick={() => setShowNewChat(true)}
-                className="ml-auto rounded-md bg-indigo-600 p-1.5 text-white hover:bg-indigo-700"
+                className="ml-auto rounded-md bg-indigo-500 p-1.5 text-white hover:bg-indigo-400"
                 title="New chat"
               >
                 <Plus className="h-4 w-4" />
@@ -229,33 +229,33 @@ export default function ChatPage() {
                 value={sidebarSearch}
                 onChange={(e) => setSidebarSearch(e.target.value)}
                 placeholder="Search conversations"
-                className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                className="w-full rounded-lg border border-slate-700 bg-[#151922] py-2 pl-8 pr-3 text-xs text-slate-200 outline-none placeholder:text-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
               />
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
             {threadInbox.length > 0 ? (
-              <div className="border-b border-slate-200 px-3 py-2">
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Thread inbox</p>
+              <div className="border-b border-slate-700 px-3 py-2">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Thread inbox</p>
                 <div className="space-y-1">
                   {threadInbox.slice(0, 3).map((item) => (
                     <button
                       key={`${item.conversation_id}-${item.parent_message_id}`}
                       type="button"
                       onClick={() => setActiveConvId(item.conversation_id)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left hover:bg-slate-50"
+                      className="w-full rounded-md border border-slate-700 bg-[#151922] px-2 py-1.5 text-left hover:bg-[#1b2230]"
                     >
-                      <p className="truncate text-[11px] font-medium text-slate-800">
+                      <p className="truncate text-[11px] font-medium text-slate-100">
                         {(item.conversation_name || "Conversation").trim()} • {item.reply_count} replies
                       </p>
-                      <p className="truncate text-[10px] text-slate-500">{item.parent_content || "Thread update"}</p>
+                      <p className="truncate text-[10px] text-slate-400">{item.parent_content || "Thread update"}</p>
                     </button>
                   ))}
                 </div>
               </div>
             ) : null}
             {filteredConversations.length === 0 ? (
-              <div className="px-4 py-8 text-center text-xs text-slate-500">No conversations found</div>
+              <div className="px-4 py-8 text-center text-xs text-slate-400">No conversations found</div>
             ) : null}
             {filteredConversations.map((conv) => (
               <ConversationRow
@@ -326,7 +326,7 @@ function ConversationRow({
       onClick={onClick}
       className={[
         "w-full border-l-2 px-4 py-2.5 text-left transition",
-        isActive ? "border-indigo-600 bg-indigo-50/80" : "border-transparent hover:bg-slate-100/80",
+        isActive ? "border-indigo-400 bg-[#2a3142]" : "border-transparent hover:bg-[#262c3c]",
       ].join(" ")}
     >
       <div className="flex items-start gap-2.5">
@@ -335,11 +335,11 @@ function ConversationRow({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className={`truncate text-sm ${unread > 0 ? "font-semibold text-slate-900" : "font-medium text-slate-800"}`}>{label}</span>
+            <span className={`truncate text-sm ${unread > 0 ? "font-semibold text-white" : "font-medium text-slate-200"}`}>{label}</span>
             {last ? <span className="text-[10px] text-slate-400">{formatTime(last.created_at)}</span> : null}
           </div>
           <div className="mt-0.5 flex items-center gap-2">
-            <span className="truncate text-xs text-slate-500">
+            <span className="truncate text-xs text-slate-400">
               {last ? (last.is_system ? last.content : `${last.sender_name.split(" ")[0]}: ${last.content}`) : "No messages yet"}
             </span>
             {unread > 0 ? (
@@ -637,7 +637,7 @@ function ChatWorkspace({
               {conversation.type === "group" ? <Users className="h-3.5 w-3.5" /> : initials(convLabel(conversation, currentUserId))}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900">{convLabel(conversation, currentUserId)}</p>
+              <p className="truncate text-sm font-semibold tracking-wide text-slate-900">{convLabel(conversation, currentUserId)}</p>
               <p className="text-[11px] text-slate-500">
                 {conversation.type === "group" ? `${conversation.members.length} members` : "Direct message"}
               </p>
@@ -650,7 +650,7 @@ function ChatWorkspace({
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
                 placeholder="Search in chat"
-                className="w-full rounded-md border border-slate-200 bg-white py-1.5 pl-8 pr-2 text-xs outline-none focus:border-indigo-300 focus:ring-1 focus:ring-indigo-100"
+                className="w-full rounded-md border border-slate-300 bg-white py-1.5 pl-8 pr-2 text-xs outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
               />
             </div>
             <select
@@ -684,7 +684,7 @@ function ChatWorkspace({
           ) : null}
         </header>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="flex-1 overflow-y-auto bg-[#f6f8fc] px-4 py-3">
           {grouped.length === 0 ? (
             <div className="grid h-full place-items-center text-sm text-slate-500">No messages yet. Start the conversation.</div>
           ) : null}
@@ -693,7 +693,7 @@ function ChatWorkspace({
               item.type === "divider" ? (
                 <div key={`day-${idx}`} className="my-3 flex items-center gap-2">
                   <div className="h-px flex-1 bg-slate-200" />
-                  <span className="text-[11px] font-medium text-slate-500">{item.label}</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 shadow-sm">{item.label}</span>
                   <div className="h-px flex-1 bg-slate-200" />
                 </div>
               ) : (
@@ -715,11 +715,11 @@ function ChatWorkspace({
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="border-t border-slate-200 px-4 py-3">
+        <div className="border-t border-slate-200 bg-white px-4 py-3">
           {uploadQueue.length > 0 ? (
             <div className="mb-2 space-y-1">
               {uploadQueue.map((item) => (
-                <div key={item.id} className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
+                <div key={item.id} className="flex items-center justify-between rounded-md border border-slate-300 bg-slate-50 px-2 py-1">
                   <div className="min-w-0">
                     <p className="truncate text-xs font-medium text-slate-700">{item.name}</p>
                     <p className="text-[10px] text-slate-500">
@@ -742,7 +742,7 @@ function ChatWorkspace({
                   setShowEmoji((v) => !v);
                   setShowGif(false);
                 }}
-                className="rounded p-2 text-slate-500 hover:bg-slate-100"
+                className="rounded p-2 text-slate-500 hover:bg-slate-200"
               >
                 <Smile className="h-4 w-4" />
               </button>
@@ -755,7 +755,7 @@ function ChatWorkspace({
                   setShowGif((v) => !v);
                   setShowEmoji(false);
                 }}
-                className="rounded px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                className="rounded px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
               >
                 GIF
               </button>
@@ -769,7 +769,7 @@ function ChatWorkspace({
                 />
               ) : null}
             </div>
-            <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded p-2 text-slate-500 hover:bg-slate-100">
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded p-2 text-slate-500 hover:bg-slate-200">
               <Paperclip className="h-4 w-4" />
             </button>
             <input
@@ -797,7 +797,7 @@ function ChatWorkspace({
                 }
               }}
               placeholder="Type a message"
-              className="max-h-40 min-h-[40px] flex-1 resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm leading-5 text-slate-800 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              className="max-h-40 min-h-[40px] flex-1 resize-none rounded-lg border border-slate-300 bg-[#fbfcff] px-3 py-2 text-sm leading-5 text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
             <button
               type="button"
@@ -930,7 +930,7 @@ function MessageBubble({
           </a>
         ) : null}
         {message.content ? (
-          <div className={`mt-1 rounded-xl px-3 py-2 text-sm leading-5 ${isMe ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-800"}`}>
+          <div className={`mt-1 rounded-xl px-3 py-2 text-sm leading-5 shadow-sm ${isMe ? "bg-[#3f46d8] text-white" : "border border-slate-200 bg-white text-slate-800"}`}>
             {editing ? (
               <div className="space-y-2">
                 <textarea
@@ -967,7 +967,7 @@ function MessageBubble({
                   if (hasMe) await removeReaction(reaction.emoji);
                   else await addReaction(reaction.emoji);
                 }}
-                className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+                className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-100"
                 title={reaction.users.map((u) => u.full_name).join(", ")}
               >
                 {reaction.emoji} {reaction.count}
@@ -1041,14 +1041,14 @@ function ThreadPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   return (
-    <aside className="w-[360px] shrink-0 border-l border-slate-200 bg-slate-50/60">
-      <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Thread</p>
+    <aside className="w-[380px] shrink-0 border-l border-slate-700 bg-[#212735] text-slate-100">
+      <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-200">Thread</p>
         <button type="button" onClick={onClose} className="rounded p-1 hover:bg-slate-200">
-          <X className="h-4 w-4 text-slate-600" />
+          <X className="h-4 w-4 text-slate-100" />
         </button>
       </div>
-      <div className="h-[calc(100%-112px)] overflow-y-auto px-3 py-2">
+      <div className="h-[calc(100%-112px)] overflow-y-auto bg-[#1b2030] px-3 py-2">
         <MessageBubble
           message={parent}
           isMe={parent.sender_id === currentUserId}
@@ -1073,13 +1073,13 @@ function ThreadPanel({
           {replies.length === 0 ? <p className="text-xs text-slate-500">No replies yet.</p> : null}
         </div>
       </div>
-      <div className="border-t border-slate-200 p-3">
+      <div className="border-t border-slate-700 bg-[#212735] p-3">
         <textarea
           rows={2}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Reply in thread"
-          className="w-full resize-none rounded-md border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none focus:border-indigo-300 focus:ring-1 focus:ring-indigo-100"
+          className="w-full resize-none rounded-md border border-slate-600 bg-[#131828] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300/30"
         />
         <button
           type="button"
@@ -1094,11 +1094,11 @@ function ThreadPanel({
               setSending(false);
             }
           }}
-          className="mt-2 w-full rounded-md bg-indigo-600 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+          className="mt-2 w-full rounded-md bg-indigo-500 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400 disabled:opacity-60"
         >
           Send reply
         </button>
-        <p className="mt-1 text-[10px] text-slate-500">Conversation #{conversationId}</p>
+        <p className="mt-1 text-[10px] text-slate-400">Conversation #{conversationId}</p>
       </div>
     </aside>
   );
