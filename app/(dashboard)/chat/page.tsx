@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
@@ -58,8 +58,14 @@ type Message = {
   attachment_name: string | null;
   attachment_size: number | null;
   parent_message_id: number | null;
+  delivery_state?: "queued" | "sent" | "delivered" | "read" | "failed";
+  edited_at?: string | null;
+  edited_by?: number | null;
+  deleted_at?: string | null;
+  deleted_by?: number | null;
   thread_reply_count?: number;
   thread_last_reply_at?: string | null;
+  reactions?: Array<{ emoji: string; count: number; users: Array<{ user_id: number; full_name: string }> }>;
 };
 type ChatUser = { id: number; full_name: string; email: string; role: string };
 type SearchResult = {
@@ -69,6 +75,16 @@ type SearchResult = {
   created_at: string;
   sender_name: string;
   conversation_name: string | null;
+};
+type ThreadInboxItem = {
+  parent_message_id: number;
+  conversation_id: number;
+  conversation_name: string | null;
+  parent_content: string;
+  parent_sender_name: string;
+  reply_count: number;
+  unread_replies: number;
+  last_reply_at: string;
 };
 type UploadItemState = {
   id: string;
@@ -163,6 +179,12 @@ export default function ChatPage() {
   );
 
   const conversations = useMemo(() => convData?.conversations ?? [], [convData]);
+  const { data: threadInboxData } = useSWR<{ inbox: ThreadInboxItem[] }>(
+    "/api/chat/threads/inbox",
+    dashboardFetcher,
+    { refreshInterval: 7000 }
+  );
+  const threadInbox = useMemo(() => threadInboxData?.inbox ?? [], [threadInboxData]);
   const filteredConversations = useMemo(() => {
     const q = sidebarSearch.trim().toLowerCase();
     if (!q) return conversations;
@@ -212,6 +234,26 @@ export default function ChatPage() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
+            {threadInbox.length > 0 ? (
+              <div className="border-b border-slate-200 px-3 py-2">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Thread inbox</p>
+                <div className="space-y-1">
+                  {threadInbox.slice(0, 3).map((item) => (
+                    <button
+                      key={`${item.conversation_id}-${item.parent_message_id}`}
+                      type="button"
+                      onClick={() => setActiveConvId(item.conversation_id)}
+                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left hover:bg-slate-50"
+                    >
+                      <p className="truncate text-[11px] font-medium text-slate-800">
+                        {(item.conversation_name || "Conversation").trim()} • {item.reply_count} replies
+                      </p>
+                      <p className="truncate text-[10px] text-slate-500">{item.parent_content || "Thread update"}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {filteredConversations.length === 0 ? (
               <div className="px-4 py-8 text-center text-xs text-slate-500">No conversations found</div>
             ) : null}
@@ -343,6 +385,26 @@ function ChatWorkspace({
     { refreshInterval: messageRefreshInterval }
   );
   const messages = useMemo(() => messageData?.messages ?? [], [messageData]);
+
+  useEffect(() => {
+    const stream = new EventSource(`/api/chat/realtime?conversation_id=${conversation.id}`);
+    const onEvent = () => {
+      void mutateMessages();
+      onMutateConversations();
+    };
+    stream.addEventListener("message.created", onEvent);
+    stream.addEventListener("message.updated", onEvent);
+    stream.addEventListener("message.deleted", onEvent);
+    stream.addEventListener("thread.reply", onEvent);
+    stream.addEventListener("error", () => {});
+    return () => {
+      stream.removeEventListener("message.created", onEvent);
+      stream.removeEventListener("message.updated", onEvent);
+      stream.removeEventListener("message.deleted", onEvent);
+      stream.removeEventListener("thread.reply", onEvent);
+      stream.close();
+    };
+  }, [conversation.id, mutateMessages, onMutateConversations]);
 
   const { data: searchData } = useSWR<{ results: SearchResult[] }>(
     searchQ.trim().length < 2
@@ -639,8 +701,13 @@ function ChatWorkspace({
                   key={item.message.id}
                   message={item.message}
                   isMe={item.message.sender_id === currentUserId}
+                  currentUserId={currentUserId}
                   showSender={item.showSender}
                   onOpenThread={() => setThreadParent(item.message)}
+                  onMutateMessages={() => {
+                    void mutateMessages();
+                    onMutateConversations();
+                  }}
                 />
               )
             )}
@@ -656,8 +723,7 @@ function ChatWorkspace({
                   <div className="min-w-0">
                     <p className="truncate text-xs font-medium text-slate-700">{item.name}</p>
                     <p className="text-[10px] text-slate-500">
-                      {formatFileSize(item.size)} •{" "}
-                      {item.status === "uploading" ? "Uploading…" : item.status === "ready" ? "Ready" : item.error || "Failed"}
+                      {formatFileSize(item.size)} • {item.status === "uploading" ? "Uploading…" : item.status === "ready" ? "Ready" : item.error || "Failed"}
                     </p>
                   </div>
                   <button type="button" onClick={() => removeUploadItem(item.id)} className="rounded p-1 text-slate-500 hover:bg-slate-200">
@@ -771,14 +837,62 @@ function ChatWorkspace({
 function MessageBubble({
   message,
   isMe,
+  currentUserId,
   showSender,
   onOpenThread,
+  onMutateMessages,
 }: {
   message: Message;
   isMe: boolean;
+  currentUserId: number | null;
   showSender: boolean;
   onOpenThread: () => void;
+  onMutateMessages: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editInput, setEditInput] = useState(message.content || "");
+
+  async function addReaction(emoji: string) {
+    try {
+      await apiFetchJson(`/api/chat/messages/${message.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji }),
+      });
+      onMutateMessages();
+    } catch {}
+  }
+
+  async function removeReaction(emoji: string) {
+    try {
+      await apiFetchJson(`/api/chat/messages/${message.id}/reactions?emoji=${encodeURIComponent(emoji)}`, {
+        method: "DELETE",
+      });
+      onMutateMessages();
+    } catch {}
+  }
+
+  async function saveEdit() {
+    if (!editInput.trim()) return;
+    try {
+      await apiFetchJson(`/api/chat/messages/${message.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: editInput.trim() }),
+      });
+      setEditing(false);
+      onMutateMessages();
+    } catch {}
+  }
+
+  async function deleteMessage() {
+    try {
+      await apiFetchJson(`/api/chat/messages/${message.id}`, { method: "DELETE" });
+      onMutateMessages();
+    } catch {}
+  }
+
   return (
     <div id={`message-${message.id}`} className={`group flex gap-2 ${isMe ? "justify-end" : ""}`}>
       {!isMe ? (
@@ -817,15 +931,86 @@ function MessageBubble({
         ) : null}
         {message.content ? (
           <div className={`mt-1 rounded-xl px-3 py-2 text-sm leading-5 ${isMe ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-800"}`}>
-            {message.content}
+            {editing ? (
+              <div className="space-y-2">
+                <textarea
+                  rows={2}
+                  value={editInput}
+                  onChange={(e) => setEditInput(e.target.value)}
+                  className={`w-full resize-none rounded border px-2 py-1 text-xs ${isMe ? "border-indigo-300 text-slate-900" : "border-slate-300 text-slate-900"}`}
+                />
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={saveEdit} className="rounded bg-slate-900/15 px-2 py-1 text-[11px] font-medium">
+                    Save
+                  </button>
+                  <button type="button" onClick={() => setEditing(false)} className="rounded bg-slate-900/10 px-2 py-1 text-[11px] font-medium">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {message.content}
+                {message.edited_at ? <span className={`ml-1 text-[10px] ${isMe ? "text-indigo-100" : "text-slate-500"}`}>(edited)</span> : null}
+              </>
+            )}
+          </div>
+        ) : null}
+        {message.reactions && message.reactions.length > 0 ? (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {message.reactions.map((reaction) => (
+              <button
+                key={`${message.id}-${reaction.emoji}`}
+                type="button"
+                onClick={async () => {
+                  const hasMe = reaction.users.some((u) => u.user_id === currentUserId);
+                  if (hasMe) await removeReaction(reaction.emoji);
+                  else await addReaction(reaction.emoji);
+                }}
+                className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+                title={reaction.users.map((u) => u.full_name).join(", ")}
+              >
+                {reaction.emoji} {reaction.count}
+              </button>
+            ))}
           </div>
         ) : null}
         <div className={`mt-0.5 flex items-center gap-2 text-[10px] text-slate-500 ${isMe ? "justify-end" : ""}`}>
           <span>{formatTime(message.created_at)}</span>
+          <button type="button" onClick={() => addReaction("👍")} className="opacity-0 transition group-hover:opacity-100 hover:text-indigo-600">
+            👍
+          </button>
           <button type="button" onClick={onOpenThread} className="opacity-0 transition group-hover:opacity-100 hover:text-indigo-600">
             Reply thread{message.thread_reply_count ? ` (${message.thread_reply_count})` : ""}
           </button>
+          <button type="button" onClick={() => setMenuOpen((v) => !v)} className="opacity-0 transition group-hover:opacity-100 hover:text-indigo-600">
+            •••
+          </button>
         </div>
+        {menuOpen ? (
+          <div className={`mt-1 inline-flex rounded border border-slate-200 bg-white shadow-sm ${isMe ? "ml-auto" : ""}`}>
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(true);
+                setMenuOpen(false);
+              }}
+              className="px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                setMenuOpen(false);
+                await deleteMessage();
+              }}
+              className="border-l border-slate-200 px-2 py-1 text-[11px] text-rose-600 hover:bg-rose-50"
+            >
+              Delete
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -864,11 +1049,26 @@ function ThreadPanel({
         </button>
       </div>
       <div className="h-[calc(100%-112px)] overflow-y-auto px-3 py-2">
-        <MessageBubble message={parent} isMe={parent.sender_id === currentUserId} showSender onOpenThread={() => {}} />
+        <MessageBubble
+          message={parent}
+          isMe={parent.sender_id === currentUserId}
+          currentUserId={currentUserId}
+          showSender
+          onOpenThread={() => {}}
+          onMutateMessages={() => {}}
+        />
         <div className="my-3 h-px bg-slate-200" />
         <div className="space-y-2">
           {replies.map((reply) => (
-            <MessageBubble key={reply.id} message={reply} isMe={reply.sender_id === currentUserId} showSender onOpenThread={() => {}} />
+            <MessageBubble
+              key={reply.id}
+              message={reply}
+              isMe={reply.sender_id === currentUserId}
+              currentUserId={currentUserId}
+              showSender
+              onOpenThread={() => {}}
+              onMutateMessages={() => {}}
+            />
           ))}
           {replies.length === 0 ? <p className="text-xs text-slate-500">No replies yet.</p> : null}
         </div>
@@ -1035,3 +1235,4 @@ function NewChatModal({
     </div>
   );
 }
+

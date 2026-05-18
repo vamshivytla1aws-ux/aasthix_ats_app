@@ -3,12 +3,13 @@ import { requirePermission } from "@/lib/rbac";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { query } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "chat");
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // default 10 MB
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"];
 const ALLOWED_DOC_TYPES = [
   "application/pdf",
@@ -34,8 +35,14 @@ export async function POST(request: Request) {
     const file = formData.get("file") as File | null;
     if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
 
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "File too large (max 10 MB)" }, { status: 400 });
+    const policyRes = await query(
+      `SELECT max_file_size_mb FROM chat_policies ORDER BY id DESC LIMIT 1`
+    ).catch(() => ({ rows: [] as Array<{ max_file_size_mb?: number }> }));
+    const maxMb = Number((policyRes.rows?.[0] as { max_file_size_mb?: number } | undefined)?.max_file_size_mb ?? 10);
+    const maxBytes = Math.max(1, maxMb) * 1024 * 1024;
+
+    if (file.size > maxBytes) {
+      return NextResponse.json({ error: `File too large (max ${maxMb} MB)` }, { status: 400 });
     }
 
     if (!ALL_ALLOWED.includes(file.type)) {

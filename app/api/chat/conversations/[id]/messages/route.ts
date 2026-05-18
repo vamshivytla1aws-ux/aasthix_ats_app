@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
+import { reactionAggregateSql } from "@/lib/chat/v2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,7 +66,10 @@ export async function GET(
          m.id,
          m.conversation_id,
          m.sender_id,
-         m.content,
+         CASE
+           WHEN m.deleted_at IS NOT NULL THEN '[message deleted]'
+           ELSE m.content
+         END AS content,
          m.is_system,
          m.created_at,
          m.attachment_type,
@@ -73,6 +77,11 @@ export async function GET(
          m.attachment_name,
          m.attachment_size,
          m.parent_message_id,
+         m.delivery_state,
+         m.edited_at,
+         m.edited_by,
+         m.deleted_at,
+         m.deleted_by,
          (
            SELECT COUNT(*)::int
            FROM messages mr
@@ -83,6 +92,7 @@ export async function GET(
            FROM messages mr
            WHERE mr.parent_message_id = m.id
          ) AS thread_last_reply_at,
+         ${reactionAggregateSql},
          u.full_name AS sender_name,
          u.email AS sender_email
        FROM messages m
@@ -133,6 +143,8 @@ export async function POST(
     const attachmentUrl = body.attachment_url || null;
     const attachmentName = body.attachment_name || null;
     const attachmentSize = body.attachment_size || null;
+    const idempotencyKeyRaw = typeof body.idempotency_key === "string" ? body.idempotency_key.trim() : "";
+    const idempotencyKey = idempotencyKeyRaw || null;
     const parentMessageIdRaw = body.parent_message_id;
     const parentMessageId =
       parentMessageIdRaw == null || parentMessageIdRaw === ""
@@ -159,11 +171,44 @@ export async function POST(
       }
     }
 
+    if (idempotencyKey) {
+      const dup = await query(
+        `SELECT
+           m.id,
+           m.conversation_id,
+           m.sender_id,
+           m.content,
+           m.is_system,
+           m.created_at,
+           m.attachment_type,
+           m.attachment_url,
+           m.attachment_name,
+           m.attachment_size,
+           m.parent_message_id,
+           m.delivery_state,
+           m.edited_at,
+           m.edited_by,
+           m.deleted_at,
+           m.deleted_by
+         FROM messages m
+         WHERE m.conversation_id = $1 AND m.sender_id = $2 AND m.idempotency_key = $3
+         LIMIT 1`,
+        [convId, access.user_id, idempotencyKey]
+      );
+      if (dup.rowCount) {
+        const userRes = await query(`SELECT full_name, email FROM users WHERE id = $1`, [access.user_id]);
+        const user = userRes.rows[0] as { full_name: string; email: string };
+        return NextResponse.json({
+          message: { ...(dup.rows[0] as Record<string, unknown>), sender_name: user.full_name, sender_email: user.email },
+        });
+      }
+    }
+
     const msgRes = await query(
       `INSERT INTO messages (conversation_id, sender_id, content, attachment_type, attachment_url, attachment_name, attachment_size, parent_message_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, conversation_id, sender_id, content, is_system, created_at,
-                 attachment_type, attachment_url, attachment_name, attachment_size, parent_message_id`,
+                 attachment_type, attachment_url, attachment_name, attachment_size, parent_message_id, delivery_state, edited_at, edited_by, deleted_at, deleted_by`,
       [
         convId,
         access.user_id,
@@ -175,6 +220,10 @@ export async function POST(
         parentMessageId,
       ]
     );
+
+    if (idempotencyKey) {
+      await query(`UPDATE messages SET idempotency_key = $1 WHERE id = $2`, [idempotencyKey, (msgRes.rows[0] as { id: number }).id]);
+    }
 
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [convId]);
     await query(

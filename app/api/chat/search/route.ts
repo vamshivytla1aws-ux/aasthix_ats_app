@@ -15,6 +15,10 @@ export async function GET(request: Request) {
     const q = (searchParams.get("q") || "").trim();
     const scope = (searchParams.get("scope") || "all").trim();
     const conversationId = Number(searchParams.get("conversation_id"));
+    const senderId = Number(searchParams.get("sender_id"));
+    const hasAttachment = searchParams.get("has_attachment");
+    const fromDate = searchParams.get("from");
+    const toDate = searchParams.get("to");
 
     if (!q) return NextResponse.json({ results: [] });
     if (scope === "conversation" && !Number.isFinite(conversationId)) {
@@ -22,10 +26,27 @@ export async function GET(request: Request) {
     }
 
     const params: Array<string | number> = [access.user_id, `%${q}%`];
-    let conversationFilter = "";
+    let filter = "";
     if (scope === "conversation") {
       params.push(conversationId);
-      conversationFilter = ` AND m.conversation_id = $${params.length}`;
+      filter += ` AND m.conversation_id = $${params.length}`;
+    }
+    if (Number.isFinite(senderId)) {
+      params.push(senderId);
+      filter += ` AND m.sender_id = $${params.length}`;
+    }
+    if (hasAttachment === "true") {
+      filter += ` AND m.attachment_url IS NOT NULL`;
+    } else if (hasAttachment === "false") {
+      filter += ` AND m.attachment_url IS NULL`;
+    }
+    if (fromDate) {
+      params.push(fromDate);
+      filter += ` AND m.created_at >= $${params.length}::timestamptz`;
+    }
+    if (toDate) {
+      params.push(toDate);
+      filter += ` AND m.created_at <= $${params.length}::timestamptz`;
     }
 
     const res = await query(
@@ -44,7 +65,7 @@ export async function GET(request: Request) {
        JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = $1
        WHERE m.content ILIKE $2
          AND m.parent_message_id IS NULL
-         ${conversationFilter}
+         ${filter}
        ORDER BY m.created_at DESC
        LIMIT 60`,
       params
@@ -56,4 +77,3 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Failed to search chat messages" }, { status: 500 });
   }
 }
-

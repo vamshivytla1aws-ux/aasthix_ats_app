@@ -30,10 +30,16 @@ export async function GET(request: Request) {
          c.created_at,
          c.updated_at,
          cm.last_read_at,
+         COALESCE(ccp.muted, FALSE) AS muted,
+         COALESCE(ccp.mention_only, FALSE) AS mention_only,
          (
            SELECT COUNT(*)::int FROM messages m
            WHERE m.conversation_id = c.id AND m.created_at > cm.last_read_at
          ) AS unread_count,
+         (
+           SELECT COUNT(*)::int FROM conversation_pins cp
+           WHERE cp.conversation_id = c.id
+         ) AS pin_count,
          (
            SELECT jsonb_build_object(
              'id', m.id,
@@ -61,6 +67,9 @@ export async function GET(request: Request) {
          ) AS members
        FROM conversations c
        JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = $1
+       LEFT JOIN chat_conversation_preferences ccp
+         ON ccp.conversation_id = c.id
+        AND ccp.user_id = $1
        ORDER BY c.updated_at DESC`,
       [access.user_id]
     );
