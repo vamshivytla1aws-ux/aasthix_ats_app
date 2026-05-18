@@ -33,9 +33,20 @@ export async function GET(
     const limit = Math.min(Number(searchParams.get("limit")) || 50, 100);
     const before = searchParams.get("before");
     const search = searchParams.get("search")?.trim() || "";
+    const parentMessageIdParam = searchParams.get("parent_message_id");
+    const parentMessageId = parentMessageIdParam == null ? null : Number(parentMessageIdParam);
 
     const qParams: (string | number)[] = [convId];
     let whereExtra = "";
+    if (parentMessageIdParam != null) {
+      if (!Number.isFinite(parentMessageId)) {
+        return NextResponse.json({ error: "Invalid parent_message_id" }, { status: 400 });
+      }
+      qParams.push(parentMessageId as number);
+      whereExtra += ` AND m.parent_message_id = $${qParams.length}`;
+    } else {
+      whereExtra += ` AND m.parent_message_id IS NULL`;
+    }
 
     if (before && Number.isFinite(Number(before))) {
       qParams.push(Number(before));
@@ -61,6 +72,17 @@ export async function GET(
          m.attachment_url,
          m.attachment_name,
          m.attachment_size,
+         m.parent_message_id,
+         (
+           SELECT COUNT(*)::int
+           FROM messages mr
+           WHERE mr.parent_message_id = m.id
+         ) AS thread_reply_count,
+         (
+           SELECT MAX(mr.created_at)
+           FROM messages mr
+           WHERE mr.parent_message_id = m.id
+         ) AS thread_last_reply_at,
          u.full_name AS sender_name,
          u.email AS sender_email
        FROM messages m
@@ -111,6 +133,11 @@ export async function POST(
     const attachmentUrl = body.attachment_url || null;
     const attachmentName = body.attachment_name || null;
     const attachmentSize = body.attachment_size || null;
+    const parentMessageIdRaw = body.parent_message_id;
+    const parentMessageId =
+      parentMessageIdRaw == null || parentMessageIdRaw === ""
+        ? null
+        : Number(parentMessageIdRaw);
 
     if (!content && !attachmentUrl) {
       return NextResponse.json({ error: "Content or attachment required" }, { status: 400 });
@@ -118,13 +145,35 @@ export async function POST(
     if (content.length > 4000) {
       return NextResponse.json({ error: "Message too long (max 4000 chars)" }, { status: 400 });
     }
+    if (parentMessageIdRaw != null && !Number.isFinite(parentMessageId)) {
+      return NextResponse.json({ error: "Invalid parent_message_id" }, { status: 400 });
+    }
+
+    if (parentMessageId != null) {
+      const parentCheck = await query(
+        `SELECT 1 FROM messages WHERE id = $1 AND conversation_id = $2`,
+        [parentMessageId, convId]
+      );
+      if (!parentCheck.rowCount) {
+        return NextResponse.json({ error: "Parent message not found in conversation" }, { status: 400 });
+      }
+    }
 
     const msgRes = await query(
-      `INSERT INTO messages (conversation_id, sender_id, content, attachment_type, attachment_url, attachment_name, attachment_size)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO messages (conversation_id, sender_id, content, attachment_type, attachment_url, attachment_name, attachment_size, parent_message_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, conversation_id, sender_id, content, is_system, created_at,
-                 attachment_type, attachment_url, attachment_name, attachment_size`,
-      [convId, access.user_id, content || "", attachmentType, attachmentUrl, attachmentName, attachmentSize]
+                 attachment_type, attachment_url, attachment_name, attachment_size, parent_message_id`,
+      [
+        convId,
+        access.user_id,
+        content || "",
+        attachmentType,
+        attachmentUrl,
+        attachmentName,
+        attachmentSize,
+        parentMessageId,
+      ]
     );
 
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [convId]);
