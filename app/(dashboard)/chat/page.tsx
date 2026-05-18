@@ -200,7 +200,7 @@ export default function ChatPage() {
 
   return (
     <AccessGate permissionKey="chat.view">
-      <div className="font-['Inter','Segoe_UI',sans-serif] flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-slate-300 bg-[#f8fafc] shadow-[0_12px_30px_rgba(2,6,23,0.10)]">
+      <div className="font-['Manrope','Inter','Segoe_UI',sans-serif] flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-slate-300 bg-[#f8fafc] shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
         <aside
           className={[
             "w-80 shrink-0 border-r border-slate-700 bg-[#1f2430] text-slate-100",
@@ -269,7 +269,12 @@ export default function ChatPage() {
           </div>
         </aside>
 
-        <main className={["min-w-0 flex-1", activeConversation ? "flex" : "hidden md:flex"].join(" ")}>
+        <main
+          className={[
+            "min-w-0 flex-1 bg-[radial-gradient(circle_at_20%_0%,#eef2ff_0%,#f7f9fc_35%,#f8fafc_100%)]",
+            activeConversation ? "flex" : "hidden md:flex",
+          ].join(" ")}
+        >
           {activeConversation ? (
             <ChatWorkspace
               conversation={activeConversation}
@@ -281,9 +286,9 @@ export default function ChatPage() {
           ) : (
             <div className="flex w-full items-center justify-center">
               <div className="text-center">
-                <MessageSquare className="mx-auto h-8 w-8 text-indigo-400" />
-                <p className="mt-3 text-sm font-medium text-slate-800">Start a conversation</p>
-                <p className="text-xs text-slate-500">Pick a chat from the left or create a new one.</p>
+                <MessageSquare className="mx-auto h-10 w-10 text-indigo-500" />
+                <p className="mt-3 text-base font-semibold text-slate-900">Start a conversation</p>
+                <p className="text-sm text-slate-500">Pick a chat from the left or create a new one.</p>
               </div>
             </div>
           )}
@@ -628,7 +633,7 @@ function ChatWorkspace({
       onDrop={onDropZone}
     >
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-slate-200 px-4 py-3">
+        <header className="border-b border-slate-200/80 bg-white/85 px-5 py-3 backdrop-blur">
           <div className="flex items-center gap-2">
             <button type="button" onClick={onBack} className="rounded p-1 hover:bg-slate-100 md:hidden">
               <ChevronLeft className="h-4 w-4 text-slate-600" />
@@ -637,7 +642,7 @@ function ChatWorkspace({
               {conversation.type === "group" ? <Users className="h-3.5 w-3.5" /> : initials(convLabel(conversation, currentUserId))}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold tracking-wide text-slate-900">{convLabel(conversation, currentUserId)}</p>
+              <p className="truncate text-base font-bold tracking-tight text-slate-900">{convLabel(conversation, currentUserId)}</p>
               <p className="text-[11px] text-slate-500">
                 {conversation.type === "group" ? `${conversation.members.length} members` : "Direct message"}
               </p>
@@ -650,13 +655,13 @@ function ChatWorkspace({
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
                 placeholder="Search in chat"
-                className="w-full rounded-md border border-slate-300 bg-white py-1.5 pl-8 pr-2 text-xs outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2 pl-9 pr-3 text-xs outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
               />
             </div>
             <select
               value={searchScope}
               onChange={(e) => setSearchScope(e.target.value as "all" | "conversation")}
-              className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"
+              className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700"
             >
               <option value="conversation">This chat</option>
               <option value="all">All chats</option>
@@ -684,7 +689,7 @@ function ChatWorkspace({
           ) : null}
         </header>
 
-        <div className="flex-1 overflow-y-auto bg-[#f6f8fc] px-4 py-3">
+        <div className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,#f7f9fd_0%,#f3f6fb_100%)] px-5 py-4">
           {grouped.length === 0 ? (
             <div className="grid h-full place-items-center text-sm text-slate-500">No messages yet. Start the conversation.</div>
           ) : null}
@@ -693,7 +698,7 @@ function ChatWorkspace({
               item.type === "divider" ? (
                 <div key={`day-${idx}`} className="my-3 flex items-center gap-2">
                   <div className="h-px flex-1 bg-slate-200" />
-                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 shadow-sm">{item.label}</span>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-500 shadow-sm">{item.label}</span>
                   <div className="h-px flex-1 bg-slate-200" />
                 </div>
               ) : (
@@ -715,7 +720,7 @@ function ChatWorkspace({
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="border-t border-slate-200 bg-white px-4 py-3">
+        <div className="border-t border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur">
           {uploadQueue.length > 0 ? (
             <div className="mb-2 space-y-1">
               {uploadQueue.map((item) => (
@@ -726,7 +731,7 @@ function ChatWorkspace({
                       {formatFileSize(item.size)} • {item.status === "uploading" ? "Uploading…" : item.status === "ready" ? "Ready" : item.error || "Failed"}
                     </p>
                   </div>
-                  <button type="button" onClick={() => removeUploadItem(item.id)} className="rounded p-1 text-slate-500 hover:bg-slate-200">
+                  <button type="button" onClick={() => removeUploadItem(item.id)} className="rounded-lg p-1 text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600">
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -742,7 +747,7 @@ function ChatWorkspace({
                   setShowEmoji((v) => !v);
                   setShowGif(false);
                 }}
-                className="rounded p-2 text-slate-500 hover:bg-slate-200"
+                className="rounded-lg p-2 text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600"
               >
                 <Smile className="h-4 w-4" />
               </button>
@@ -755,7 +760,7 @@ function ChatWorkspace({
                   setShowGif((v) => !v);
                   setShowEmoji(false);
                 }}
-                className="rounded px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+                className="rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-indigo-50 hover:text-indigo-600"
               >
                 GIF
               </button>
@@ -769,7 +774,7 @@ function ChatWorkspace({
                 />
               ) : null}
             </div>
-            <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded p-2 text-slate-500 hover:bg-slate-200">
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg p-2 text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600">
               <Paperclip className="h-4 w-4" />
             </button>
             <input
@@ -797,13 +802,13 @@ function ChatWorkspace({
                 }
               }}
               placeholder="Type a message"
-              className="max-h-40 min-h-[40px] flex-1 resize-none rounded-lg border border-slate-300 bg-[#fbfcff] px-3 py-2 text-sm leading-5 text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="max-h-40 min-h-[44px] flex-1 resize-none rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm leading-5 text-slate-800 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
             <button
               type="button"
               onClick={async () => sendComposer()}
               disabled={sending}
-              className="rounded-lg bg-indigo-600 p-2 text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-2.5 text-white shadow-md transition hover:from-indigo-500 hover:to-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Send className="h-4 w-4" />
             </button>
@@ -917,8 +922,8 @@ function MessageBubble({
             href={message.attachment_url}
             target="_blank"
             rel="noopener noreferrer"
-            className={`mt-1 flex items-center gap-2 rounded-lg border px-3 py-2 ${
-              isMe ? "border-indigo-400/30 bg-indigo-600/10" : "border-slate-200 bg-slate-50"
+            className={`mt-1 flex items-center gap-2 rounded-xl border px-3 py-2 ${
+              isMe ? "border-indigo-300/40 bg-indigo-50" : "border-slate-200 bg-slate-50"
             }`}
           >
             <FileBadge name={message.attachment_name || ""} />
@@ -930,7 +935,13 @@ function MessageBubble({
           </a>
         ) : null}
         {message.content ? (
-          <div className={`mt-1 rounded-xl px-3 py-2 text-sm leading-5 shadow-sm ${isMe ? "bg-[#3f46d8] text-white" : "border border-slate-200 bg-white text-slate-800"}`}>
+          <div
+            className={`mt-1 rounded-2xl px-3.5 py-2.5 text-sm leading-5 shadow-sm ${
+              isMe
+                ? "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-[0_8px_24px_rgba(79,70,229,0.35)]"
+                : "border border-slate-200 bg-white text-slate-800 shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
+            }`}
+          >
             {editing ? (
               <div className="space-y-2">
                 <textarea
@@ -1041,14 +1052,14 @@ function ThreadPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   return (
-    <aside className="w-[380px] shrink-0 border-l border-slate-700 bg-[#212735] text-slate-100">
+    <aside className="w-[400px] shrink-0 border-l border-slate-700 bg-[#212735] text-slate-100 shadow-[-12px_0_30px_rgba(2,6,23,0.2)]">
       <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-200">Thread</p>
         <button type="button" onClick={onClose} className="rounded p-1 hover:bg-slate-200">
           <X className="h-4 w-4 text-slate-100" />
         </button>
       </div>
-      <div className="h-[calc(100%-112px)] overflow-y-auto bg-[#1b2030] px-3 py-2">
+      <div className="h-[calc(100%-112px)] overflow-y-auto bg-[#1b2030] px-3 py-3">
         <MessageBubble
           message={parent}
           isMe={parent.sender_id === currentUserId}
@@ -1079,7 +1090,7 @@ function ThreadPanel({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Reply in thread"
-          className="w-full resize-none rounded-md border border-slate-600 bg-[#131828] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300/30"
+          className="w-full resize-none rounded-xl border border-slate-600 bg-[#131828] px-3 py-2.5 text-xs text-slate-100 outline-none transition focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300/30"
         />
         <button
           type="button"
@@ -1094,7 +1105,7 @@ function ThreadPanel({
               setSending(false);
             }
           }}
-          className="mt-2 w-full rounded-md bg-indigo-500 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400 disabled:opacity-60"
+          className="mt-2 w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 py-1.5 text-xs font-semibold text-white hover:from-indigo-400 hover:to-violet-400 disabled:opacity-60"
         >
           Send reply
         </button>
