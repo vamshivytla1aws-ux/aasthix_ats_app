@@ -36,7 +36,7 @@ function safeStore() {
   const fs = require("fs");
   const storePath = path.join(app.getPath("userData"), "desktop-config.json");
   const defaults = {
-    [WINDOW_STATE_KEY]: { width: 1320, height: 860 },
+    [WINDOW_STATE_KEY]: { width: 1320, height: 860, isMaximized: true },
     [SETTINGS_KEY]: { launchAtLogin: false, minimizeToTray: true },
   };
 
@@ -157,12 +157,18 @@ function startHealthChecks() {
 
 function rememberWindowBounds(win) {
   if (!win || win.isDestroyed()) return;
+  if (win.isMaximized()) {
+    const current = safeStore().get(WINDOW_STATE_KEY) || {};
+    safeStore().set(WINDOW_STATE_KEY, { ...current, isMaximized: true });
+    return;
+  }
   const bounds = win.getBounds();
   safeStore().set(WINDOW_STATE_KEY, {
     width: bounds.width,
     height: bounds.height,
     x: bounds.x,
     y: bounds.y,
+    isMaximized: false,
   });
 }
 
@@ -221,9 +227,18 @@ function createMainWindow() {
     },
   });
 
-  mainWindow.once("ready-to-show", () => mainWindow && mainWindow.show());
+  mainWindow.once("ready-to-show", () => {
+    if (!mainWindow) return;
+    const state = safeStore().get(WINDOW_STATE_KEY) || {};
+    if (state.isMaximized || (!state.x && !state.y)) {
+      mainWindow.maximize();
+    }
+    mainWindow.show();
+  });
   mainWindow.on("resize", () => rememberWindowBounds(mainWindow));
   mainWindow.on("move", () => rememberWindowBounds(mainWindow));
+  mainWindow.on("maximize", () => rememberWindowBounds(mainWindow));
+  mainWindow.on("unmaximize", () => rememberWindowBounds(mainWindow));
 
   mainWindow.on("close", (event) => {
     if (didQuit) return;
@@ -281,6 +296,10 @@ function createAppMenu() {
     {
       label: "View",
       submenu: [{ role: "reload" }, { role: "toggledevtools" }, { role: "resetzoom" }, { role: "zoomIn" }, { role: "zoomOut" }],
+    },
+    {
+      label: "Window",
+      submenu: [{ role: "togglefullscreen" }, { role: "minimize" }, { role: "close" }],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
