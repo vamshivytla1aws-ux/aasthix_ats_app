@@ -9,13 +9,17 @@ import Toast, { type ToastTone } from "@/components/Toast";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import {
+  Bell,
   ChevronLeft,
+  Clock3,
   Download,
   File,
   FileText,
   Image as ImageIcon,
+  Info,
   MessageSquare,
   Paperclip,
+  Pin,
   Plus,
   Search,
   Send,
@@ -144,6 +148,16 @@ function dayKey(iso: string) {
 function formatDayLabel(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+}
+
+function formatRelative(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.max(1, Math.floor(diff / 60000));
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 const AVATAR_COLORS = [
@@ -379,6 +393,7 @@ function ChatWorkspace({
   const [dragOver, setDragOver] = useState(false);
   const [uploadQueue, setUploadQueue] = useState<UploadItemState[]>([]);
   const [sending, setSending] = useState(false);
+  const [showChatInfo, setShowChatInfo] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -572,6 +587,16 @@ function ChatWorkspace({
     return result;
   }, [messages]);
 
+  const readyAttachmentCount = useMemo(
+    () => uploadQueue.filter((item) => item.status === "ready" && item.uploaded).length,
+    [uploadQueue]
+  );
+  const failedAttachmentCount = useMemo(
+    () => uploadQueue.filter((item) => item.status === "failed").length,
+    [uploadQueue]
+  );
+  const canSend = (messageInput.trim().length > 0 || readyAttachmentCount > 0) && !sending && failedAttachmentCount === 0;
+
   const threadContext = threadParent
     ? `/api/chat/conversations/${conversation.id}/threads/${threadParent.id}`
     : null;
@@ -647,6 +672,30 @@ function ChatWorkspace({
                 {conversation.type === "group" ? `${conversation.members.length} members` : "Direct message"}
               </p>
             </div>
+            <div className="hidden items-center gap-1 md:flex">
+              <button
+                type="button"
+                onClick={() => setShowChatInfo((v) => !v)}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                <Info className="mr-1 inline h-3.5 w-3.5" />
+                Details
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                <Pin className="mr-1 inline h-3.5 w-3.5" />
+                Pins
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                <Bell className="mr-1 inline h-3.5 w-3.5" />
+                Notify
+              </button>
+            </div>
           </div>
           <div className="mt-3 flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
@@ -669,6 +718,18 @@ function ChatWorkspace({
           </div>
           {searchQ.trim().length >= 2 && searchData ? (
             <div className="mt-2 max-h-32 overflow-y-auto rounded-md border border-slate-200 bg-white p-1.5">
+              <div className="mb-1 flex items-center justify-between px-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  {searchData.results?.length ?? 0} matches
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSearchQ("")}
+                  className="text-[10px] font-medium text-indigo-600 hover:underline"
+                >
+                  Clear
+                </button>
+              </div>
               {(searchData.results ?? []).slice(0, 8).map((row) => (
                 <button
                   key={`${row.conversation_id}-${row.id}`}
@@ -690,6 +751,15 @@ function ChatWorkspace({
         </header>
 
         <div className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,#f7f9fd_0%,#f3f6fb_100%)] px-5 py-4">
+          {showChatInfo ? (
+            <div className="mb-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
+              <span className="font-semibold text-slate-800">{conversation.type === "group" ? "Group chat" : "Direct chat"}</span>
+              <span className="mx-2 text-slate-300">•</span>
+              Last update {conversation.last_message?.created_at ? formatRelative(conversation.last_message.created_at) : "just now"}
+              <span className="mx-2 text-slate-300">•</span>
+              {conversation.members.length} participant{conversation.members.length === 1 ? "" : "s"}
+            </div>
+          ) : null}
           {grouped.length === 0 ? (
             <div className="grid h-full place-items-center text-sm text-slate-500">No messages yet. Start the conversation.</div>
           ) : null}
@@ -793,6 +863,7 @@ function ChatWorkspace({
             <textarea
               ref={textareaRef}
               rows={1}
+              maxLength={2000}
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
               onKeyDown={async (e) => {
@@ -807,13 +878,20 @@ function ChatWorkspace({
             <button
               type="button"
               onClick={async () => sendComposer()}
-              disabled={sending}
+              disabled={!canSend}
               className="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-2.5 text-white shadow-md transition hover:from-indigo-500 hover:to-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Send className="h-4 w-4" />
             </button>
           </div>
-          <p className="mt-1 text-[10px] text-slate-500">Enter to send • Shift+Enter for new line • Drag files to upload</p>
+          <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500">
+            <p>Enter to send • Shift+Enter for new line • Drag files to upload</p>
+            <p className="hidden sm:block">
+              {messageInput.length}/2000
+              {readyAttachmentCount > 0 ? ` • ${readyAttachmentCount} file(s) ready` : ""}
+              {failedAttachmentCount > 0 ? ` • ${failedAttachmentCount} failed` : ""}
+            </p>
+          </div>
         </div>
       </section>
 
@@ -1060,6 +1138,9 @@ function ThreadPanel({
         </button>
       </div>
       <div className="h-[calc(100%-112px)] overflow-y-auto bg-[#1b2030] px-3 py-3">
+        <div className="mb-2 rounded-lg border border-slate-700 bg-[#212735] px-2 py-1 text-[11px] text-slate-300">
+          {replies.length} repl{replies.length === 1 ? "y" : "ies"} • started {formatRelative(parent.created_at)}
+        </div>
         <MessageBubble
           message={parent}
           isMe={parent.sender_id === currentUserId}
