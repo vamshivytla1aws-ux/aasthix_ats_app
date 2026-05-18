@@ -63,7 +63,15 @@ export async function GET(request: Request) {
        JOIN users u ON u.id = m.sender_id
        JOIN conversations c ON c.id = m.conversation_id
        JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = $1
-       WHERE m.content ILIKE $2
+       WHERE (
+         m.content ILIKE $2
+         OR EXISTS (
+           SELECT 1
+           FROM message_mentions mm
+           WHERE mm.message_id = m.id
+             AND mm.label ILIKE $2
+         )
+       )
          AND m.parent_message_id IS NULL
          ${filter}
        ORDER BY m.created_at DESC

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
+import Link from "next/link";
 import AccessGate from "@/components/AccessGate";
 import EmojiPicker from "@/components/chat/EmojiPicker";
 import GifPicker from "@/components/chat/GifPicker";
@@ -38,6 +39,9 @@ type Conversation = {
   updated_at: string;
   last_read_at: string;
   unread_count: number;
+  pin_count?: number;
+  muted?: boolean;
+  mention_only?: boolean;
   last_message: {
     id: number;
     content: string;
@@ -70,7 +74,22 @@ type Message = {
   thread_reply_count?: number;
   thread_last_reply_at?: string | null;
   reactions?: Array<{ emoji: string; count: number; users: Array<{ user_id: number; full_name: string }> }>;
+  mentions?: ChatMention[];
 };
+type ChatMention = { type: "user" | "candidate"; id: number; label: string; sublabel?: string };
+type ConversationDetails = {
+  conversation: {
+    id: number;
+    name: string | null;
+    type: "direct" | "group";
+    created_at: string;
+    updated_at: string;
+  };
+  members: Member[];
+  stats: { shared_files: number; shared_images: number };
+};
+type PinnedMessageItem = Message & { pin_id: number; pinned_at: string; pinned_by: number; pinned_by_name: string };
+type DrawerView = "details" | "pins" | "notify";
 type ChatUser = { id: number; full_name: string; email: string; role: string };
 type SearchResult = {
   id: number;
@@ -158,6 +177,65 @@ function formatRelative(iso: string) {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+function extractMentionQuery(value: string) {
+  const idx = value.lastIndexOf("@");
+  if (idx < 0) return null;
+  const segment = value.slice(idx + 1);
+  if (!segment || /\s/.test(segment)) return null;
+  return { index: idx, query: segment };
+}
+
+function injectMentionToken(value: string, mention: ChatMention) {
+  const q = extractMentionQuery(value);
+  if (!q) return value;
+  const before = value.slice(0, q.index);
+  const token = `@[${mention.label}](${mention.type}:${mention.id})`;
+  return `${before}${token} `;
+}
+
+function parseMentionsFromText(value: string): ChatMention[] {
+  const regex = /@\[(.+?)\]\((user|candidate):(\d+)\)/g;
+  const mentions: ChatMention[] = [];
+  let m: RegExpExecArray | null = regex.exec(value);
+  while (m) {
+    mentions.push({ label: m[1], type: m[2] as "user" | "candidate", id: Number(m[3]) });
+    m = regex.exec(value);
+  }
+  return mentions;
+}
+
+function stripMentionTokens(value: string) {
+  return value.replace(/@\[(.+?)\]\((user|candidate):(\d+)\)/g, "@$1");
+}
+
+function renderMessageWithMentions(content: string, mentions: ChatMention[] | undefined) {
+  if (!content) return content;
+  const byLabel = new Map((mentions ?? []).map((m) => [m.label.toLowerCase(), m]));
+  const parts = content.split(/(@[A-Za-z0-9._ -]+)/g);
+  return parts.map((part, idx) => {
+    if (!part.startsWith("@")) return <React.Fragment key={`txt-${idx}`}>{part}</React.Fragment>;
+    const label = part.slice(1).trim().toLowerCase();
+    const mention = byLabel.get(label);
+    if (!mention) return <React.Fragment key={`raw-${idx}`}>{part}</React.Fragment>;
+    if (mention.type === "candidate") {
+      return (
+        <Link
+          key={`chip-${idx}`}
+          href={`/candidates/${mention.id}`}
+          className="mx-0.5 inline-flex items-center rounded-md bg-emerald-100 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700"
+        >
+          @{mention.label}
+        </Link>
+      );
+    }
+    return (
+      <span key={`chip-${idx}`} className="mx-0.5 inline-flex items-center rounded-md bg-indigo-100 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+        @{mention.label}
+      </span>
+    );
+  });
 }
 
 const AVATAR_COLORS = [
@@ -438,6 +516,9 @@ function ChatWorkspace({
   const [uploadQueue, setUploadQueue] = useState<UploadItemState[]>([]);
   const [sending, setSending] = useState(false);
   const [showChatInfo, setShowChatInfo] = useState(false);
+  const [drawerView, setDrawerView] = useState<DrawerView | null>(null);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -476,6 +557,30 @@ function ChatWorkspace({
       : `/api/chat/search?q=${encodeURIComponent(searchQ)}&scope=${searchScope}${searchScope === "conversation" ? `&conversation_id=${conversation.id}` : ""}`,
     dashboardFetcher
   );
+
+  const mentionCtx = useMemo(() => extractMentionQuery(messageInput), [messageInput]);
+  const mentionQuery = mentionCtx?.query || "";
+  const { data: mentionData } = useSWR<{ users: ChatMention[]; candidates: ChatMention[] }>(
+    mentionQuery.length > 0 ? `/api/chat/mentions?q=${encodeURIComponent(mentionQuery)}&limit=6` : null,
+    dashboardFetcher
+  );
+  const mentionOptions = useMemo(
+    () => [...(mentionData?.users ?? []), ...(mentionData?.candidates ?? [])],
+    [mentionData]
+  );
+
+  const { data: detailsData } = useSWR<ConversationDetails>(
+    drawerView === "details" ? `/api/chat/conversations/${conversation.id}/details` : null,
+    dashboardFetcher
+  );
+  const { data: pinData, mutate: mutatePins } = useSWR<{ pins: PinnedMessageItem[] }>(
+    drawerView === "pins" || (conversation.pin_count ?? 0) > 0 ? `/api/chat/conversations/${conversation.id}/pins` : null,
+    dashboardFetcher
+  );
+  const { data: prefData, mutate: mutatePrefs } = useSWR<{
+    user: { mention_only: boolean; desktop_sound: boolean; desktop_toast: boolean; email_digest: boolean; email_digest_frequency: string };
+    conversations: Array<{ conversation_id: number; muted: boolean; mention_only: boolean }>;
+  }>(drawerView === "notify" ? "/api/chat/preferences" : null, dashboardFetcher);
 
   useEffect(() => {
     if (conversation.unread_count > 0) {
@@ -560,6 +665,8 @@ function ChatWorkspace({
     async (content: string, attachment?: UploadItemState["uploaded"], parentMessageId?: number) => {
       if (sending) return;
       const trimmed = content.trim();
+      const mentions = parseMentionsFromText(trimmed);
+      const plainText = stripMentionTokens(trimmed);
       if (!trimmed && !attachment) return;
       setSending(true);
       try {
@@ -567,7 +674,8 @@ function ChatWorkspace({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            content: trimmed,
+            content: plainText,
+            mentions,
             attachment_type: attachment?.type ?? null,
             attachment_url: attachment?.url ?? null,
             attachment_name: attachment?.name ?? null,
@@ -654,12 +762,15 @@ function ChatWorkspace({
     async (content: string, attachment?: UploadItemState["uploaded"]) => {
       if (!threadParent) return;
       const trimmed = content.trim();
+      const mentions = parseMentionsFromText(trimmed);
+      const plainText = stripMentionTokens(trimmed);
       if (!trimmed && !attachment) return;
       await apiFetchJson(`/api/chat/conversations/${conversation.id}/threads/${threadParent.id}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: trimmed,
+          content: plainText,
+          mentions,
           attachment_type: attachment?.type ?? null,
           attachment_url: attachment?.url ?? null,
           attachment_name: attachment?.name ?? null,
@@ -719,22 +830,24 @@ function ChatWorkspace({
             <div className="hidden items-center gap-1 md:flex">
               <button
                 type="button"
-                onClick={() => setShowChatInfo((v) => !v)}
-                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                onClick={() => setDrawerView((v) => (v === "details" ? null : "details"))}
+                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold hover:bg-slate-50", drawerView === "details" ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-600"].join(" ")}
               >
                 <Info className="mr-1 inline h-3.5 w-3.5" />
                 Details
               </button>
               <button
                 type="button"
-                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                onClick={() => setDrawerView((v) => (v === "pins" ? null : "pins"))}
+                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold hover:bg-slate-50", drawerView === "pins" ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-600"].join(" ")}
               >
                 <Pin className="mr-1 inline h-3.5 w-3.5" />
                 Pins
               </button>
               <button
                 type="button"
-                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                onClick={() => setDrawerView((v) => (v === "notify" ? null : "notify"))}
+                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold hover:bg-slate-50", drawerView === "notify" ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-600"].join(" ")}
               >
                 <Bell className="mr-1 inline h-3.5 w-3.5" />
                 Notify
@@ -795,6 +908,22 @@ function ChatWorkspace({
         </header>
 
         <div className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,#f7f9fd_0%,#f3f6fb_100%)] px-5 py-4">
+          {(pinData?.pins?.length ?? 0) > 0 ? (
+            <div className="mb-3 flex items-center gap-2 overflow-x-auto rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2">
+              <Pin className="h-3.5 w-3.5 text-amber-700" />
+              {pinData!.pins.slice(0, 4).map((pin) => (
+                <button
+                  key={pin.pin_id}
+                  type="button"
+                  onClick={() => document.getElementById(`message-${pin.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                  className="max-w-56 truncate rounded-md bg-white px-2 py-1 text-xs text-amber-900 shadow-sm hover:bg-amber-100"
+                  title={pin.content}
+                >
+                  {pin.content || pin.attachment_name || "Pinned message"}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {showChatInfo ? (
             <div className="mb-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
               <span className="font-semibold text-slate-800">{conversation.type === "group" ? "Group chat" : "Direct chat"}</span>
@@ -909,8 +1038,40 @@ function ChatWorkspace({
               rows={1}
               maxLength={2000}
               value={messageInput}
-              onChange={(e) => setMessageInput(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setMessageInput(next);
+                const mention = extractMentionQuery(next);
+                setMentionOpen(!!mention);
+                setMentionIndex(0);
+              }}
               onKeyDown={async (e) => {
+                if (mentionOpen && mentionOptions.length > 0) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setMentionIndex((prev) => (prev + 1) % mentionOptions.length);
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setMentionIndex((prev) => (prev - 1 + mentionOptions.length) % mentionOptions.length);
+                    return;
+                  }
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    const selected = mentionOptions[mentionIndex];
+                    if (selected) {
+                      setMessageInput((prev) => injectMentionToken(prev, selected));
+                      setMentionOpen(false);
+                    }
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setMentionOpen(false);
+                    return;
+                  }
+                }
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   await sendComposer();
@@ -928,6 +1089,31 @@ function ChatWorkspace({
               <Send className="h-4 w-4" />
             </button>
           </div>
+          {mentionOpen && mentionOptions.length > 0 ? (
+            <div className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-slate-300 bg-white p-1 shadow-lg">
+              <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Mention users or candidates</p>
+              {mentionOptions.map((option, idx) => (
+                <button
+                  key={`${option.type}-${option.id}`}
+                  type="button"
+                  onClick={() => {
+                    setMessageInput((prev) => injectMentionToken(prev, option));
+                    setMentionOpen(false);
+                    textareaRef.current?.focus();
+                  }}
+                  className={[
+                    "flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left",
+                    idx === mentionIndex ? "bg-indigo-50 text-indigo-900" : "hover:bg-slate-100",
+                  ].join(" ")}
+                >
+                  <span className="truncate text-xs font-medium">{option.label}</span>
+                  <span className={["rounded px-1.5 py-0.5 text-[10px]", option.type === "candidate" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"].join(" ")}>
+                    {option.type}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500">
             <p>Enter to send • Shift+Enter for new line • Drag files to upload</p>
             <p className="hidden sm:block">
@@ -947,6 +1133,26 @@ function ChatWorkspace({
           currentUserId={currentUserId}
           onClose={() => setThreadParent(null)}
           onSendReply={sendThreadReply}
+        />
+      ) : null}
+
+      {drawerView ? (
+        <ChatContextDrawer
+          view={drawerView}
+          onClose={() => setDrawerView(null)}
+          details={detailsData}
+          pins={pinData?.pins ?? []}
+          conversationId={conversation.id}
+          preferences={prefData}
+          onPinnedChanged={() => {
+            void mutatePins();
+            onMutateConversations();
+            void mutateMessages();
+          }}
+          onPreferencesSaved={() => {
+            void mutatePrefs();
+            onMutateConversations();
+          }}
         />
       ) : null}
 
@@ -1083,7 +1289,7 @@ function MessageBubble({
               </div>
             ) : (
               <>
-                {message.content}
+                {renderMessageWithMentions(message.content, message.mentions)}
                 {message.edited_at ? <span className={`ml-1 text-[10px] ${isMe ? "text-indigo-100" : "text-slate-500"}`}>(edited)</span> : null}
               </>
             )}
@@ -1142,10 +1348,207 @@ function MessageBubble({
             >
               Delete
             </button>
+            <button
+              type="button"
+              onClick={async () => {
+                setMenuOpen(false);
+                await apiFetchJson(`/api/chat/conversations/${message.conversation_id}/pin`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ message_id: message.id }),
+                });
+                onMutateMessages();
+              }}
+              className="border-l border-slate-200 px-2 py-1 text-[11px] text-amber-700 hover:bg-amber-50"
+            >
+              Pin
+            </button>
           </div>
         ) : null}
       </div>
     </div>
+  );
+}
+
+function ChatContextDrawer({
+  view,
+  onClose,
+  details,
+  pins,
+  conversationId,
+  preferences,
+  onPinnedChanged,
+  onPreferencesSaved,
+}: {
+  view: DrawerView;
+  onClose: () => void;
+  details?: ConversationDetails;
+  pins: PinnedMessageItem[];
+  conversationId: number;
+  preferences?: {
+    user: { mention_only: boolean; desktop_sound: boolean; desktop_toast: boolean; email_digest: boolean; email_digest_frequency: string };
+    conversations: Array<{ conversation_id: number; muted: boolean; mention_only: boolean }>;
+  };
+  onPinnedChanged: () => void;
+  onPreferencesSaved: () => void;
+}) {
+  const conversationPreference = preferences?.conversations.find((pref) => pref.conversation_id === conversationId);
+
+  async function togglePin(messageId: number, isPinned: boolean) {
+    if (isPinned) {
+      await apiFetchJson(`/api/chat/conversations/${conversationId}/pin?message_id=${messageId}`, { method: "DELETE" });
+    } else {
+      await apiFetchJson(`/api/chat/conversations/${conversationId}/pin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_id: messageId }),
+      });
+    }
+    onPinnedChanged();
+  }
+
+  async function savePreference(next: {
+    muted?: boolean;
+    mention_only?: boolean;
+    desktop_toast?: boolean;
+    desktop_sound?: boolean;
+    email_digest?: boolean;
+  }) {
+    const existingUser = preferences?.user ?? {
+      mention_only: false,
+      desktop_sound: true,
+      desktop_toast: true,
+      email_digest: false,
+      email_digest_frequency: "daily",
+    };
+    await apiFetchJson("/api/chat/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user: {
+          ...existingUser,
+          desktop_toast: next.desktop_toast ?? existingUser.desktop_toast,
+          desktop_sound: next.desktop_sound ?? existingUser.desktop_sound,
+          email_digest: next.email_digest ?? existingUser.email_digest,
+        },
+        conversations: [
+          {
+            conversation_id: conversationId,
+            muted: next.muted ?? conversationPreference?.muted ?? false,
+            mention_only: next.mention_only ?? conversationPreference?.mention_only ?? false,
+          },
+        ],
+      }),
+    });
+    onPreferencesSaved();
+  }
+
+  return (
+    <aside className="chat-panel-slide w-[340px] shrink-0 border-l border-slate-300 bg-white/95 backdrop-blur">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">{view}</p>
+        <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-100">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="h-[calc(100%-53px)] overflow-y-auto p-4">
+        {view === "details" ? (
+          <div className="space-y-3 text-sm text-slate-700">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Conversation</p>
+              <p className="mt-1 font-semibold text-slate-900">{details?.conversation.name || "Direct chat"}</p>
+              <p className="mt-1 text-xs text-slate-500">Updated {details?.conversation.updated_at ? formatRelative(details.conversation.updated_at) : "-"}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-slate-200 p-2 text-center">
+                <p className="text-lg font-bold text-slate-900">{details?.members.length ?? 0}</p>
+                <p className="text-[11px] text-slate-500">Members</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-2 text-center">
+                <p className="text-lg font-bold text-slate-900">{details?.stats.shared_files ?? 0}</p>
+                <p className="text-[11px] text-slate-500">Files</p>
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Members</p>
+              <div className="space-y-1">
+                {(details?.members ?? []).map((m) => (
+                  <div key={m.user_id} className="rounded-lg border border-slate-200 px-2 py-1.5">
+                    <p className="text-sm font-medium text-slate-900">{m.full_name}</p>
+                    <p className="text-xs text-slate-500">{m.email}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {view === "pins" ? (
+          <div className="space-y-2">
+            {pins.length === 0 ? <p className="text-sm text-slate-500">No pinned messages yet.</p> : null}
+            {pins.map((pin) => (
+              <div key={pin.pin_id} className="rounded-xl border border-slate-200 p-3">
+                <p className="line-clamp-3 text-sm text-slate-800">{pin.content || pin.attachment_name || "Attachment"}</p>
+                <p className="mt-1 text-[11px] text-slate-500">Pinned by {pin.pinned_by_name}</p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await togglePin(pin.id, true);
+                  }}
+                  className="mt-2 rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                >
+                  Unpin
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {view === "notify" ? (
+          <div className="space-y-3 text-sm">
+            <ToggleRow
+              label="Mute this conversation"
+              checked={conversationPreference?.muted ?? false}
+              onChange={async (checked) => savePreference({ muted: checked })}
+            />
+            <ToggleRow
+              label="Mentions only in this chat"
+              checked={conversationPreference?.mention_only ?? false}
+              onChange={async (checked) => savePreference({ mention_only: checked })}
+            />
+            <ToggleRow
+              label="Desktop toast notifications"
+              checked={preferences?.user.desktop_toast ?? true}
+              onChange={async (checked) => savePreference({ desktop_toast: checked })}
+            />
+            <ToggleRow
+              label="Notification sound"
+              checked={preferences?.user.desktop_sound ?? true}
+              onChange={async (checked) => savePreference({ desktop_sound: checked })}
+            />
+            <ToggleRow
+              label="Email digest"
+              checked={preferences?.user.email_digest ?? false}
+              onChange={async (checked) => savePreference({ email_digest: checked })}
+            />
+          </div>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
+function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => Promise<void> }) {
+  return (
+    <label className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+      <span className="text-sm text-slate-700">{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={async (e) => onChange(e.target.checked)}
+        className="h-4 w-4 accent-indigo-600"
+      />
+    </label>
   );
 }
 

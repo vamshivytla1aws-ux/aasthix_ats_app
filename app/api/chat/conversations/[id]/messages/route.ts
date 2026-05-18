@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { reactionAggregateSql } from "@/lib/chat/v2";
+import { mentionAggregateSql, reactionAggregateSql } from "@/lib/chat/v2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+type IncomingMention = { type: "user" | "candidate"; id: number; label: string };
 
 /**
  * GET /api/chat/conversations/[id]/messages
@@ -92,6 +94,7 @@ export async function GET(
            FROM messages mr
            WHERE mr.parent_message_id = m.id
          ) AS thread_last_reply_at,
+         ${mentionAggregateSql},
          ${reactionAggregateSql},
          u.full_name AS sender_name,
          u.email AS sender_email
@@ -115,7 +118,7 @@ export async function GET(
 
 /**
  * POST /api/chat/conversations/[id]/messages
- * Send a message. Body: { content, attachment_type?, attachment_url?, attachment_name?, attachment_size? }
+ * Send a message. Body: { content, attachment_type?, attachment_url?, attachment_name?, attachment_size?, mentions? }
  */
 export async function POST(
   request: Request,
@@ -143,6 +146,7 @@ export async function POST(
     const attachmentUrl = body.attachment_url || null;
     const attachmentName = body.attachment_name || null;
     const attachmentSize = body.attachment_size || null;
+    const mentionsRaw = Array.isArray(body.mentions) ? body.mentions : [];
     const idempotencyKeyRaw = typeof body.idempotency_key === "string" ? body.idempotency_key.trim() : "";
     const idempotencyKey = idempotencyKeyRaw || null;
     const parentMessageIdRaw = body.parent_message_id;
@@ -170,6 +174,19 @@ export async function POST(
         return NextResponse.json({ error: "Parent message not found in conversation" }, { status: 400 });
       }
     }
+
+    const mentions = mentionsRaw
+      .map((item: unknown) => {
+        if (!item || typeof item !== "object") return null;
+        const obj = item as Record<string, unknown>;
+        const type = String(obj.type || "").toLowerCase();
+        const id = Number(obj.id);
+        const label = String(obj.label || "").trim();
+        if (!["user", "candidate"].includes(type)) return null;
+        if (!Number.isFinite(id) || id <= 0 || !label) return null;
+        return { type, id, label: label.slice(0, 120) };
+      })
+      .filter((item: IncomingMention | null): item is IncomingMention => !!item);
 
     if (idempotencyKey) {
       const dup = await query(
@@ -225,6 +242,17 @@ export async function POST(
       await query(`UPDATE messages SET idempotency_key = $1 WHERE id = $2`, [idempotencyKey, (msgRes.rows[0] as { id: number }).id]);
     }
 
+    const messageId = (msgRes.rows[0] as { id: number }).id;
+    if (mentions.length > 0) {
+      for (const mention of mentions) {
+        await query(
+          `INSERT INTO message_mentions (message_id, entity_type, entity_id, label)
+           VALUES ($1, $2, $3, $4)`,
+          [messageId, mention.type, mention.id, mention.label]
+        );
+      }
+    }
+
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [convId]);
     await query(
       `UPDATE conversation_members SET last_read_at = NOW() WHERE conversation_id = $1 AND user_id = $2`,
@@ -237,7 +265,7 @@ export async function POST(
     const user = userRes.rows[0] as { full_name: string; email: string };
 
     return NextResponse.json({
-      message: { ...msg, sender_name: user.full_name, sender_email: user.email },
+      message: { ...msg, mentions, sender_name: user.full_name, sender_email: user.email },
     }, { status: 201 });
   } catch (error) {
     console.error("chat/messages POST", error);

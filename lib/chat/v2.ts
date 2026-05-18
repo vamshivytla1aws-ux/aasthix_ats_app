@@ -34,3 +34,17 @@ export const reactionAggregateSql = `
   ), '[]'::jsonb) AS reactions
 `;
 
+export const mentionAggregateSql = `
+  COALESCE((
+    SELECT jsonb_agg(
+      jsonb_build_object(
+        'type', mm.entity_type,
+        'id', mm.entity_id,
+        'label', mm.label
+      )
+      ORDER BY mm.id
+    )
+    FROM message_mentions mm
+    WHERE mm.message_id = m.id
+  ), '[]'::jsonb) AS mentions
+`;

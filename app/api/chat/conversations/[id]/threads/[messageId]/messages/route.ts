@@ -5,6 +5,8 @@ import { requirePermission } from "@/lib/rbac";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type IncomingMention = { type: "user" | "candidate"; id: number; label: string };
+
 export async function POST(
   request: Request,
   { params }: { params: { id: string; messageId: string } }
@@ -42,6 +44,7 @@ export async function POST(
     const attachmentUrl = body.attachment_url || null;
     const attachmentName = body.attachment_name || null;
     const attachmentSize = body.attachment_size || null;
+    const mentionsRaw = Array.isArray(body.mentions) ? body.mentions : [];
 
     if (!content && !attachmentUrl) {
       return NextResponse.json({ error: "Content or attachment required" }, { status: 400 });
@@ -49,6 +52,19 @@ export async function POST(
     if (content.length > 4000) {
       return NextResponse.json({ error: "Message too long (max 4000 chars)" }, { status: 400 });
     }
+
+    const mentions = mentionsRaw
+      .map((item: unknown) => {
+        if (!item || typeof item !== "object") return null;
+        const obj = item as Record<string, unknown>;
+        const type = String(obj.type || "").toLowerCase();
+        const id = Number(obj.id);
+        const label = String(obj.label || "").trim();
+        if (!["user", "candidate"].includes(type)) return null;
+        if (!Number.isFinite(id) || id <= 0 || !label) return null;
+        return { type, id, label: label.slice(0, 120) };
+      })
+      .filter((item: IncomingMention | null): item is IncomingMention => !!item);
 
     const msgRes = await query(
       `INSERT INTO messages (
@@ -76,6 +92,17 @@ export async function POST(
       ]
     );
 
+    const createdMessageId = (msgRes.rows[0] as { id: number }).id;
+    if (mentions.length > 0) {
+      for (const mention of mentions) {
+        await query(
+          `INSERT INTO message_mentions (message_id, entity_type, entity_id, label)
+           VALUES ($1, $2, $3, $4)`,
+          [createdMessageId, mention.type, mention.id, mention.label]
+        );
+      }
+    }
+
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
     await query(
       `UPDATE conversation_members SET last_read_at = NOW() WHERE conversation_id = $1 AND user_id = $2`,
@@ -85,7 +112,7 @@ export async function POST(
     const userRes = await query(`SELECT full_name, email FROM users WHERE id = $1`, [access.user_id]);
     const user = userRes.rows[0] as { full_name: string; email: string };
     return NextResponse.json(
-      { message: { ...(msgRes.rows[0] as Record<string, unknown>), sender_name: user.full_name, sender_email: user.email } },
+      { message: { ...(msgRes.rows[0] as Record<string, unknown>), mentions, sender_name: user.full_name, sender_email: user.email } },
       { status: 201 }
     );
   } catch (error) {
@@ -93,4 +120,3 @@ export async function POST(
     return NextResponse.json({ error: "Failed to send thread reply" }, { status: 500 });
   }
 }
-

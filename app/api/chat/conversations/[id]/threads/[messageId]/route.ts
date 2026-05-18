@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
+import { mentionAggregateSql, reactionAggregateSql } from "@/lib/chat/v2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,13 @@ export async function GET(
          m.attachment_name,
          m.attachment_size,
          m.parent_message_id,
+         m.delivery_state,
+         m.edited_at,
+         m.edited_by,
+         m.deleted_at,
+         m.deleted_by,
+         ${mentionAggregateSql},
+         ${reactionAggregateSql},
          u.full_name AS sender_name,
          u.email AS sender_email
        FROM messages m
@@ -69,6 +77,13 @@ export async function GET(
          m.attachment_name,
          m.attachment_size,
          m.parent_message_id,
+         m.delivery_state,
+         m.edited_at,
+         m.edited_by,
+         m.deleted_at,
+         m.deleted_by,
+         ${mentionAggregateSql},
+         ${reactionAggregateSql},
          u.full_name AS sender_name,
          u.email AS sender_email
        FROM messages m
@@ -84,4 +99,3 @@ export async function GET(
     return NextResponse.json({ error: "Failed to load thread" }, { status: 500 });
   }
 }
-
