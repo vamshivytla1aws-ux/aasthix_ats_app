@@ -292,7 +292,7 @@ export default function ChatPage() {
 
   return (
     <AccessGate permissionKey="chat.view">
-      <div className="font-['Manrope','Inter','Segoe_UI',sans-serif] flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-slate-300 bg-[#f8fafc] shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
+      <div className="font-['Sora','Manrope','Inter','Segoe_UI',sans-serif] flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-[#2c3342] bg-[#0a0f1f] shadow-[0_20px_60px_rgba(2,6,23,0.55)]">
         <aside
           className={[
             "w-80 shrink-0 border-r border-slate-700 bg-[#1f2430] text-slate-100",
@@ -325,7 +325,7 @@ export default function ChatPage() {
               />
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="chat-scrollbar flex-1 overflow-y-auto">
             {threadInbox.length > 0 ? (
               <div className="border-b border-slate-700 px-3 py-2">
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Thread inbox</p>
@@ -363,7 +363,7 @@ export default function ChatPage() {
 
         <main
           className={[
-            "min-w-0 flex-1 bg-[radial-gradient(circle_at_20%_0%,#eef2ff_0%,#f7f9fc_35%,#f8fafc_100%)]",
+            "min-w-0 flex-1 bg-[radial-gradient(circle_at_20%_0%,#10193a_0%,#0b1126_35%,#080d1d_100%)]",
             activeConversation ? "flex" : "hidden md:flex",
           ].join(" ")}
         >
@@ -379,8 +379,8 @@ export default function ChatPage() {
             <div className="flex w-full items-center justify-center">
               <div className="text-center">
                 <MessageSquare className="mx-auto h-10 w-10 text-indigo-500" />
-                <p className="mt-3 text-base font-semibold text-slate-900">Start a conversation</p>
-                <p className="text-sm text-slate-500">Pick a chat from the left or create a new one.</p>
+                <p className="mt-3 text-base font-semibold text-slate-100">Start a conversation</p>
+                <p className="text-sm text-slate-400">Pick a chat from the left or create a new one.</p>
               </div>
             </div>
           )}
@@ -428,6 +428,25 @@ export default function ChatPage() {
         }
         .chat-unread-pulse {
           animation: unread-pulse 2.2s ease-out infinite;
+        }
+        .chat-scrollbar::-webkit-scrollbar {
+          width: 10px;
+          height: 10px;
+        }
+        .chat-scrollbar::-webkit-scrollbar-thumb {
+          border-radius: 999px;
+          background: rgba(129, 140, 248, 0.35);
+          border: 2px solid rgba(15, 23, 42, 0.8);
+        }
+        .chat-scrollbar::-webkit-scrollbar-track {
+          background: rgba(15, 23, 42, 0.5);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .chat-message-pop,
+          .chat-panel-slide,
+          .chat-unread-pulse {
+            animation: none !important;
+          }
         }
       `}</style>
 
@@ -813,7 +832,7 @@ function ChatWorkspace({
       onDrop={onDropZone}
     >
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-slate-200/80 bg-white/85 px-5 py-3 backdrop-blur">
+        <header className="border-b border-[#2b3346] bg-[#10172b]/95 px-5 py-3 backdrop-blur">
           <div className="flex items-center gap-2">
             <button type="button" onClick={onBack} className="rounded p-1 hover:bg-slate-100 md:hidden">
               <ChevronLeft className="h-4 w-4 text-slate-600" />
@@ -822,8 +841,8 @@ function ChatWorkspace({
               {conversation.type === "group" ? <Users className="h-3.5 w-3.5" /> : initials(convLabel(conversation, currentUserId))}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-base font-bold tracking-tight text-slate-900">{convLabel(conversation, currentUserId)}</p>
-              <p className="text-[11px] text-slate-500">
+              <p className="truncate text-base font-bold tracking-tight text-slate-100">{convLabel(conversation, currentUserId)}</p>
+              <p className="text-[11px] text-slate-400">
                 {conversation.type === "group" ? `${conversation.members.length} members` : "Direct message"}
               </p>
             </div>
@@ -831,7 +850,7 @@ function ChatWorkspace({
               <button
                 type="button"
                 onClick={() => setDrawerView((v) => (v === "details" ? null : "details"))}
-                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold hover:bg-slate-50", drawerView === "details" ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-600"].join(" ")}
+                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition", drawerView === "details" ? "border-indigo-400 bg-indigo-500/20 text-indigo-200" : "border-[#364157] bg-[#0f1629] text-slate-300 hover:bg-[#1a233a]"].join(" ")}
               >
                 <Info className="mr-1 inline h-3.5 w-3.5" />
                 Details
@@ -839,7 +858,7 @@ function ChatWorkspace({
               <button
                 type="button"
                 onClick={() => setDrawerView((v) => (v === "pins" ? null : "pins"))}
-                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold hover:bg-slate-50", drawerView === "pins" ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-600"].join(" ")}
+                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition", drawerView === "pins" ? "border-violet-400 bg-violet-500/20 text-violet-200" : "border-[#364157] bg-[#0f1629] text-slate-300 hover:bg-[#1a233a]"].join(" ")}
               >
                 <Pin className="mr-1 inline h-3.5 w-3.5" />
                 Pins
@@ -847,7 +866,7 @@ function ChatWorkspace({
               <button
                 type="button"
                 onClick={() => setDrawerView((v) => (v === "notify" ? null : "notify"))}
-                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold hover:bg-slate-50", drawerView === "notify" ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-600"].join(" ")}
+                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition", drawerView === "notify" ? "border-cyan-400 bg-cyan-500/20 text-cyan-200" : "border-[#364157] bg-[#0f1629] text-slate-300 hover:bg-[#1a233a]"].join(" ")}
               >
                 <Bell className="mr-1 inline h-3.5 w-3.5" />
                 Notify
@@ -861,22 +880,22 @@ function ChatWorkspace({
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
                 placeholder="Search in chat"
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2 pl-9 pr-3 text-xs outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                className="w-full rounded-xl border border-[#364157] bg-[#0c1324] py-2 pl-9 pr-3 text-xs text-slate-200 outline-none transition placeholder:text-slate-500 focus:border-indigo-400 focus:bg-[#0f1629] focus:ring-2 focus:ring-indigo-500/20"
               />
             </div>
             <select
               value={searchScope}
               onChange={(e) => setSearchScope(e.target.value as "all" | "conversation")}
-              className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+              className="rounded-xl border border-[#364157] bg-[#0c1324] px-3 py-2 text-xs text-slate-200"
             >
               <option value="conversation">This chat</option>
               <option value="all">All chats</option>
             </select>
           </div>
           {searchQ.trim().length >= 2 && searchData ? (
-            <div className="mt-2 max-h-32 overflow-y-auto rounded-md border border-slate-200 bg-white p-1.5">
+            <div className="chat-scrollbar mt-2 max-h-32 overflow-y-auto rounded-md border border-[#364157] bg-[#0b1121] p-1.5">
               <div className="mb-1 flex items-center justify-between px-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                   {searchData.results?.length ?? 0} matches
                 </p>
                 <button
@@ -896,27 +915,27 @@ function ChatWorkspace({
                     const el = document.getElementById(`message-${row.id}`);
                     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
                   }}
-                  className="w-full rounded px-2 py-1 text-left hover:bg-slate-100"
+                  className="w-full rounded px-2 py-1 text-left hover:bg-[#18223a]"
                 >
-                  <p className="truncate text-[11px] font-medium text-slate-700">{row.sender_name}</p>
-                  <p className="truncate text-[11px] text-slate-500">{row.content}</p>
+                  <p className="truncate text-[11px] font-medium text-slate-200">{row.sender_name}</p>
+                  <p className="truncate text-[11px] text-slate-400">{row.content}</p>
                 </button>
               ))}
-              {searchData.results?.length === 0 ? <p className="px-2 py-1 text-xs text-slate-500">No matches</p> : null}
+              {searchData.results?.length === 0 ? <p className="px-2 py-1 text-xs text-slate-400">No matches</p> : null}
             </div>
           ) : null}
         </header>
 
-        <div className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,#f7f9fd_0%,#f3f6fb_100%)] px-5 py-4">
+        <div className="chat-scrollbar flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0d1428_0%,#0a1020_100%)] px-5 py-4">
           {(pinData?.pins?.length ?? 0) > 0 ? (
-            <div className="mb-3 flex items-center gap-2 overflow-x-auto rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2">
-              <Pin className="h-3.5 w-3.5 text-amber-700" />
+            <div className="mb-3 flex items-center gap-2 overflow-x-auto rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+              <Pin className="h-3.5 w-3.5 text-amber-300" />
               {pinData!.pins.slice(0, 4).map((pin) => (
                 <button
                   key={pin.pin_id}
                   type="button"
                   onClick={() => document.getElementById(`message-${pin.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
-                  className="max-w-56 truncate rounded-md bg-white px-2 py-1 text-xs text-amber-900 shadow-sm hover:bg-amber-100"
+                  className="max-w-56 truncate rounded-md bg-[#2e2412] px-2 py-1 text-xs text-amber-100 shadow-sm hover:bg-[#3d3016]"
                   title={pin.content}
                 >
                   {pin.content || pin.attachment_name || "Pinned message"}
@@ -925,8 +944,8 @@ function ChatWorkspace({
             </div>
           ) : null}
           {showChatInfo ? (
-            <div className="mb-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
-              <span className="font-semibold text-slate-800">{conversation.type === "group" ? "Group chat" : "Direct chat"}</span>
+            <div className="mb-3 rounded-xl border border-[#364157] bg-[#111a30] px-3 py-2 text-xs text-slate-300 shadow-sm">
+              <span className="font-semibold text-slate-100">{conversation.type === "group" ? "Group chat" : "Direct chat"}</span>
               <span className="mx-2 text-slate-300">•</span>
               Last update {conversation.last_message?.created_at ? formatRelative(conversation.last_message.created_at) : "just now"}
               <span className="mx-2 text-slate-300">•</span>
@@ -934,14 +953,14 @@ function ChatWorkspace({
             </div>
           ) : null}
           {grouped.length === 0 ? (
-            <div className="grid h-full place-items-center text-sm text-slate-500">No messages yet. Start the conversation.</div>
+            <div className="grid h-full place-items-center text-sm text-slate-400">No messages yet. Start the conversation.</div>
           ) : null}
           <div className="space-y-1">
             {grouped.map((item, idx) =>
               item.type === "divider" ? (
                 <div key={`day-${idx}`} className="my-3 flex items-center gap-2">
                   <div className="h-px flex-1 bg-slate-200" />
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-500 shadow-sm">{item.label}</span>
+                  <span className="rounded-full border border-[#3c4560] bg-[#121b30] px-3 py-1 text-[11px] font-semibold text-slate-300 shadow-sm">{item.label}</span>
                   <div className="h-px flex-1 bg-slate-200" />
                 </div>
               ) : (
@@ -963,18 +982,18 @@ function ChatWorkspace({
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="border-t border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur">
+        <div className="border-t border-[#2b3346] bg-[#10172b]/95 px-4 py-3 backdrop-blur">
           {uploadQueue.length > 0 ? (
             <div className="mb-2 space-y-1">
               {uploadQueue.map((item) => (
-                <div key={item.id} className="flex items-center justify-between rounded-md border border-slate-300 bg-slate-50 px-2 py-1">
+                <div key={item.id} className="flex items-center justify-between rounded-md border border-[#3a4660] bg-[#0d1426] px-2 py-1">
                   <div className="min-w-0">
-                    <p className="truncate text-xs font-medium text-slate-700">{item.name}</p>
-                    <p className="text-[10px] text-slate-500">
+                    <p className="truncate text-xs font-medium text-slate-200">{item.name}</p>
+                    <p className="text-[10px] text-slate-400">
                       {formatFileSize(item.size)} • {item.status === "uploading" ? "Uploading…" : item.status === "ready" ? "Ready" : item.error || "Failed"}
                     </p>
                   </div>
-                  <button type="button" onClick={() => removeUploadItem(item.id)} className="rounded-lg p-1 text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600">
+                  <button type="button" onClick={() => removeUploadItem(item.id)} className="rounded-lg p-1 text-slate-400 transition hover:bg-indigo-500/15 hover:text-indigo-300">
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -990,7 +1009,7 @@ function ChatWorkspace({
                   setShowEmoji((v) => !v);
                   setShowGif(false);
                 }}
-                className="rounded-lg p-2 text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600"
+                className="rounded-lg p-2 text-slate-400 transition hover:bg-indigo-500/15 hover:text-indigo-300"
               >
                 <Smile className="h-4 w-4" />
               </button>
@@ -1003,7 +1022,7 @@ function ChatWorkspace({
                   setShowGif((v) => !v);
                   setShowEmoji(false);
                 }}
-                className="rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-indigo-50 hover:text-indigo-600"
+                className="rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-300 transition hover:bg-indigo-500/15 hover:text-indigo-300"
               >
                 GIF
               </button>
@@ -1017,7 +1036,7 @@ function ChatWorkspace({
                 />
               ) : null}
             </div>
-            <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg p-2 text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600">
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg p-2 text-slate-400 transition hover:bg-indigo-500/15 hover:text-indigo-300">
               <Paperclip className="h-4 w-4" />
             </button>
             <input
@@ -1078,7 +1097,7 @@ function ChatWorkspace({
                 }
               }}
               placeholder="Type a message"
-              className="max-h-40 min-h-[44px] flex-1 resize-none rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm leading-5 text-slate-800 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              className="max-h-40 min-h-[44px] flex-1 resize-none rounded-2xl border border-[#3a4660] bg-[#0a1121] px-4 py-2.5 text-sm leading-5 text-slate-100 shadow-[inset_0_1px_2px_rgba(2,6,23,0.45)] outline-none transition placeholder:text-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/25"
             />
             <button
               type="button"
@@ -1090,8 +1109,8 @@ function ChatWorkspace({
             </button>
           </div>
           {mentionOpen && mentionOptions.length > 0 ? (
-            <div className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-slate-300 bg-white p-1 shadow-lg">
-              <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Mention users or candidates</p>
+            <div className="chat-scrollbar mt-2 max-h-52 overflow-y-auto rounded-xl border border-[#3a4660] bg-[#0a1121] p-1 shadow-lg">
+              <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Mention users or candidates</p>
               {mentionOptions.map((option, idx) => (
                 <button
                   key={`${option.type}-${option.id}`}
@@ -1103,18 +1122,33 @@ function ChatWorkspace({
                   }}
                   className={[
                     "flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left",
-                    idx === mentionIndex ? "bg-indigo-50 text-indigo-900" : "hover:bg-slate-100",
+                    idx === mentionIndex ? "bg-indigo-500/20 text-indigo-200" : "text-slate-200 hover:bg-[#18223a]",
                   ].join(" ")}
                 >
                   <span className="truncate text-xs font-medium">{option.label}</span>
-                  <span className={["rounded px-1.5 py-0.5 text-[10px]", option.type === "candidate" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"].join(" ")}>
+                  <span className={["rounded px-1.5 py-0.5 text-[10px]", option.type === "candidate" ? "bg-emerald-500/20 text-emerald-200" : "bg-indigo-500/20 text-indigo-200"].join(" ")}>
                     {option.type}
                   </span>
                 </button>
               ))}
             </div>
           ) : null}
-          <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500">
+          {parseMentionsFromText(messageInput).length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {parseMentionsFromText(messageInput).map((mention, idx) => (
+                <span
+                  key={`${mention.type}-${mention.id}-${idx}`}
+                  className={[
+                    "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                    mention.type === "candidate" ? "bg-emerald-500/20 text-emerald-200" : "bg-indigo-500/20 text-indigo-200",
+                  ].join(" ")}
+                >
+                  @{mention.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400">
             <p>Enter to send • Shift+Enter for new line • Drag files to upload</p>
             <p className="hidden sm:block">
               {messageInput.length}/2000
@@ -1157,8 +1191,8 @@ function ChatWorkspace({
       ) : null}
 
       {dragOver ? (
-        <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-indigo-500/10 backdrop-blur-[1px]">
-          <div className="rounded-xl border border-indigo-300 bg-white/95 px-5 py-3 text-sm font-medium text-indigo-700 shadow">
+        <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-indigo-900/20 backdrop-blur-[1px]">
+          <div className="rounded-xl border border-indigo-400/70 bg-[#0a1121]/95 px-5 py-3 text-sm font-medium text-indigo-200 shadow">
             Drop files here to upload
           </div>
         </div>
@@ -1238,7 +1272,7 @@ function MessageBubble({
         </div>
       ) : null}
       <div className={`max-w-[76%] ${isMe ? "items-end" : "items-start"}`}>
-        {showSender && !isMe ? <p className="mb-0.5 text-[11px] font-semibold text-slate-600">{message.sender_name}</p> : null}
+        {showSender && !isMe ? <p className="mb-0.5 text-[11px] font-semibold text-slate-300">{message.sender_name}</p> : null}
         {message.attachment_url && isImageAttachment(message) ? (
           <a href={message.attachment_url} target="_blank" rel="noopener noreferrer">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1257,9 +1291,9 @@ function MessageBubble({
             <FileBadge name={message.attachment_name || ""} />
             <div className="min-w-0">
               <p className="truncate text-xs font-medium text-slate-800">{message.attachment_name || "Attachment"}</p>
-              <p className="text-[10px] text-slate-500">{formatFileSize(message.attachment_size)}</p>
+              <p className="text-[10px] text-slate-400">{formatFileSize(message.attachment_size)}</p>
             </div>
-            <Download className="ml-auto h-3.5 w-3.5 text-slate-500" />
+            <Download className="ml-auto h-3.5 w-3.5 text-slate-400" />
           </a>
         ) : null}
         {message.content ? (
@@ -1267,7 +1301,7 @@ function MessageBubble({
             className={`mt-1 rounded-2xl px-3.5 py-2.5 text-sm leading-5 shadow-sm ${
               isMe
                 ? "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-[0_8px_24px_rgba(79,70,229,0.35)]"
-                : "border border-slate-200 bg-white text-slate-800 shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
+                : "border border-[#33405d] bg-[#121a30] text-slate-100 shadow-[0_6px_16px_rgba(2,6,23,0.35)]"
             }`}
           >
             {editing ? (
@@ -1290,7 +1324,7 @@ function MessageBubble({
             ) : (
               <>
                 {renderMessageWithMentions(message.content, message.mentions)}
-                {message.edited_at ? <span className={`ml-1 text-[10px] ${isMe ? "text-indigo-100" : "text-slate-500"}`}>(edited)</span> : null}
+                {message.edited_at ? <span className={`ml-1 text-[10px] ${isMe ? "text-indigo-100" : "text-slate-400"}`}>(edited)</span> : null}
               </>
             )}
           </div>
@@ -1306,7 +1340,7 @@ function MessageBubble({
                   if (hasMe) await removeReaction(reaction.emoji);
                   else await addReaction(reaction.emoji);
                 }}
-                className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-100"
+                className="rounded-full border border-[#3a4660] bg-[#121a30] px-2 py-0.5 text-[11px] text-slate-200 hover:bg-[#1b2540]"
                 title={reaction.users.map((u) => u.full_name).join(", ")}
               >
                 {reaction.emoji} {reaction.count}
@@ -1314,7 +1348,7 @@ function MessageBubble({
             ))}
           </div>
         ) : null}
-        <div className={`mt-0.5 flex items-center gap-2 text-[10px] text-slate-500 ${isMe ? "justify-end" : ""}`}>
+        <div className={`mt-0.5 flex items-center gap-2 text-[10px] text-slate-400 ${isMe ? "justify-end" : ""}`}>
           <span>{formatTime(message.created_at)}</span>
           <button type="button" onClick={() => addReaction("👍")} className="opacity-0 transition group-hover:opacity-100 hover:text-indigo-600">
             👍
@@ -1327,14 +1361,14 @@ function MessageBubble({
           </button>
         </div>
         {menuOpen ? (
-          <div className={`mt-1 inline-flex rounded border border-slate-200 bg-white shadow-sm ${isMe ? "ml-auto" : ""}`}>
+          <div className={`mt-1 inline-flex rounded border border-[#3a4660] bg-[#0f1629] shadow-sm ${isMe ? "ml-auto" : ""}`}>
             <button
               type="button"
               onClick={() => {
                 setEditing(true);
                 setMenuOpen(false);
               }}
-              className="px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50"
+              className="px-2 py-1 text-[11px] text-slate-200 hover:bg-[#1a233a]"
             >
               Edit
             </button>
@@ -1344,7 +1378,7 @@ function MessageBubble({
                 setMenuOpen(false);
                 await deleteMessage();
               }}
-              className="border-l border-slate-200 px-2 py-1 text-[11px] text-rose-600 hover:bg-rose-50"
+              className="border-l border-[#3a4660] px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-500/15"
             >
               Delete
             </button>
@@ -1359,7 +1393,7 @@ function MessageBubble({
                 });
                 onMutateMessages();
               }}
-              className="border-l border-slate-200 px-2 py-1 text-[11px] text-amber-700 hover:bg-amber-50"
+              className="border-l border-[#3a4660] px-2 py-1 text-[11px] text-amber-300 hover:bg-amber-500/15"
             >
               Pin
             </button>
@@ -1444,38 +1478,38 @@ function ChatContextDrawer({
   }
 
   return (
-    <aside className="chat-panel-slide w-[340px] shrink-0 border-l border-slate-300 bg-white/95 backdrop-blur">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">{view}</p>
-        <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-100">
+    <aside className="chat-panel-slide w-[340px] shrink-0 border-l border-[#2e3a56] bg-[#0d1428]/95 backdrop-blur">
+      <div className="flex items-center justify-between border-b border-[#2e3a56] px-4 py-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-200">{view}</p>
+        <button type="button" onClick={onClose} className="rounded p-1 text-slate-300 hover:bg-[#1a233a]">
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="h-[calc(100%-53px)] overflow-y-auto p-4">
+      <div className="chat-scrollbar h-[calc(100%-53px)] overflow-y-auto p-4">
         {view === "details" ? (
-          <div className="space-y-3 text-sm text-slate-700">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Conversation</p>
-              <p className="mt-1 font-semibold text-slate-900">{details?.conversation.name || "Direct chat"}</p>
-              <p className="mt-1 text-xs text-slate-500">Updated {details?.conversation.updated_at ? formatRelative(details.conversation.updated_at) : "-"}</p>
+          <div className="space-y-3 text-sm text-slate-200">
+            <div className="rounded-xl border border-[#33405d] bg-[#121a30] p-3">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Conversation</p>
+              <p className="mt-1 font-semibold text-slate-100">{details?.conversation.name || "Direct chat"}</p>
+              <p className="mt-1 text-xs text-slate-400">Updated {details?.conversation.updated_at ? formatRelative(details.conversation.updated_at) : "-"}</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-slate-200 p-2 text-center">
-                <p className="text-lg font-bold text-slate-900">{details?.members.length ?? 0}</p>
-                <p className="text-[11px] text-slate-500">Members</p>
+              <div className="rounded-lg border border-[#33405d] bg-[#121a30] p-2 text-center">
+                <p className="text-lg font-bold text-slate-100">{details?.members.length ?? 0}</p>
+                <p className="text-[11px] text-slate-400">Members</p>
               </div>
-              <div className="rounded-lg border border-slate-200 p-2 text-center">
-                <p className="text-lg font-bold text-slate-900">{details?.stats.shared_files ?? 0}</p>
-                <p className="text-[11px] text-slate-500">Files</p>
+              <div className="rounded-lg border border-[#33405d] bg-[#121a30] p-2 text-center">
+                <p className="text-lg font-bold text-slate-100">{details?.stats.shared_files ?? 0}</p>
+                <p className="text-[11px] text-slate-400">Files</p>
               </div>
             </div>
             <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Members</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Members</p>
               <div className="space-y-1">
                 {(details?.members ?? []).map((m) => (
-                  <div key={m.user_id} className="rounded-lg border border-slate-200 px-2 py-1.5">
-                    <p className="text-sm font-medium text-slate-900">{m.full_name}</p>
-                    <p className="text-xs text-slate-500">{m.email}</p>
+                  <div key={m.user_id} className="rounded-lg border border-[#33405d] bg-[#121a30] px-2 py-1.5">
+                    <p className="text-sm font-medium text-slate-100">{m.full_name}</p>
+                    <p className="text-xs text-slate-400">{m.email}</p>
                   </div>
                 ))}
               </div>
@@ -1485,17 +1519,17 @@ function ChatContextDrawer({
 
         {view === "pins" ? (
           <div className="space-y-2">
-            {pins.length === 0 ? <p className="text-sm text-slate-500">No pinned messages yet.</p> : null}
+            {pins.length === 0 ? <p className="text-sm text-slate-400">No pinned messages yet.</p> : null}
             {pins.map((pin) => (
-              <div key={pin.pin_id} className="rounded-xl border border-slate-200 p-3">
-                <p className="line-clamp-3 text-sm text-slate-800">{pin.content || pin.attachment_name || "Attachment"}</p>
-                <p className="mt-1 text-[11px] text-slate-500">Pinned by {pin.pinned_by_name}</p>
+              <div key={pin.pin_id} className="rounded-xl border border-[#33405d] bg-[#121a30] p-3">
+                <p className="line-clamp-3 text-sm text-slate-100">{pin.content || pin.attachment_name || "Attachment"}</p>
+                <p className="mt-1 text-[11px] text-slate-400">Pinned by {pin.pinned_by_name}</p>
                 <button
                   type="button"
                   onClick={async () => {
                     await togglePin(pin.id, true);
                   }}
-                  className="mt-2 rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                    className="mt-2 rounded border border-amber-500/50 px-2 py-1 text-xs font-medium text-amber-200 hover:bg-amber-500/15"
                 >
                   Unpin
                 </button>
@@ -1540,8 +1574,8 @@ function ChatContextDrawer({
 
 function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => Promise<void> }) {
   return (
-    <label className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
-      <span className="text-sm text-slate-700">{label}</span>
+    <label className="flex items-center justify-between rounded-lg border border-[#33405d] bg-[#121a30] px-3 py-2">
+      <span className="text-sm text-slate-200">{label}</span>
       <input
         type="checkbox"
         checked={checked}
@@ -1556,7 +1590,7 @@ function FileBadge({ name }: { name: string }) {
   const ext = name.split(".").pop()?.toLowerCase() || "";
   if (ext === "pdf") return <FileText className="h-4 w-4 text-rose-500" />;
   if (["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext)) return <ImageIcon className="h-4 w-4 text-indigo-500" />;
-  return <File className="h-4 w-4 text-slate-500" />;
+  return <File className="h-4 w-4 text-slate-400" />;
 }
 
 function ThreadPanel({
@@ -1577,14 +1611,14 @@ function ThreadPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   return (
-    <aside className="chat-panel-slide w-[400px] shrink-0 border-l border-slate-700 bg-[#212735] text-slate-100 shadow-[-12px_0_30px_rgba(2,6,23,0.2)]">
+    <aside className="chat-panel-slide w-[400px] shrink-0 border-l border-[#2e3a56] bg-[#121a30] text-slate-100 shadow-[-12px_0_30px_rgba(2,6,23,0.35)]">
       <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-200">Thread</p>
-        <button type="button" onClick={onClose} className="rounded p-1 hover:bg-slate-200">
+        <button type="button" onClick={onClose} className="rounded p-1 hover:bg-[#1a233a]">
           <X className="h-4 w-4 text-slate-100" />
         </button>
       </div>
-      <div className="h-[calc(100%-112px)] overflow-y-auto bg-[#1b2030] px-3 py-3">
+      <div className="chat-scrollbar h-[calc(100%-112px)] overflow-y-auto bg-[#0f162a] px-3 py-3">
         <div className="mb-2 rounded-lg border border-slate-700 bg-[#212735] px-2 py-1 text-[11px] text-slate-300">
           {replies.length} repl{replies.length === 1 ? "y" : "ies"} • started {formatRelative(parent.created_at)}
         </div>
@@ -1596,7 +1630,7 @@ function ThreadPanel({
           onOpenThread={() => {}}
           onMutateMessages={() => {}}
         />
-        <div className="my-3 h-px bg-slate-200" />
+        <div className="my-3 h-px bg-[#2f3953]" />
         <div className="space-y-2">
           {replies.map((reply) => (
             <MessageBubble
@@ -1609,10 +1643,10 @@ function ThreadPanel({
               onMutateMessages={() => {}}
             />
           ))}
-          {replies.length === 0 ? <p className="text-xs text-slate-500">No replies yet.</p> : null}
+          {replies.length === 0 ? <p className="text-xs text-slate-400">No replies yet.</p> : null}
         </div>
       </div>
-      <div className="border-t border-slate-700 bg-[#212735] p-3">
+      <div className="border-t border-[#2f3953] bg-[#121a30] p-3">
         <textarea
           rows={2}
           value={input}
@@ -1692,12 +1726,12 @@ function NewChatModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/40" onClick={onClose}>
-      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h3 className="text-sm font-semibold text-slate-900">New conversation</h3>
-          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-slate-100">
-            <X className="h-4 w-4 text-slate-600" />
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-[#35405a] bg-[#0e1529] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-[#35405a] px-4 py-3">
+          <h3 className="text-sm font-semibold text-slate-100">New conversation</h3>
+          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-[#1a233a]">
+            <X className="h-4 w-4 text-slate-300" />
           </button>
         </div>
         <div className="space-y-3 p-4">
@@ -1705,14 +1739,14 @@ function NewChatModal({
             <button
               type="button"
               onClick={() => setChatType("direct")}
-              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold ${chatType === "direct" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}`}
+              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold ${chatType === "direct" ? "bg-indigo-600 text-white" : "bg-[#121a30] text-slate-300"}`}
             >
               Direct
             </button>
             <button
               type="button"
               onClick={() => setChatType("group")}
-              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold ${chatType === "group" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}`}
+              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold ${chatType === "group" ? "bg-indigo-600 text-white" : "bg-[#121a30] text-slate-300"}`}
             >
               Group
             </button>
@@ -1722,7 +1756,7 @@ function NewChatModal({
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
               placeholder="Group name (optional)"
-              className="w-full rounded-md border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-300 focus:ring-1 focus:ring-indigo-100"
+              className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-500/20"
             />
           ) : null}
           <div className="relative">
@@ -1731,10 +1765,10 @@ function NewChatModal({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search users"
-              className="w-full rounded-md border border-slate-200 px-8 py-2 text-xs outline-none focus:border-indigo-300 focus:ring-1 focus:ring-indigo-100"
+              className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-8 py-2 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-500/20"
             />
           </div>
-          <div className="max-h-52 overflow-y-auto rounded-md border border-slate-200">
+          <div className="chat-scrollbar max-h-52 overflow-y-auto rounded-md border border-[#35405a]">
             {users.map((user) => {
               const checked = selectedIds.includes(user.id);
               return (
@@ -1742,14 +1776,14 @@ function NewChatModal({
                   type="button"
                   key={user.id}
                   onClick={() => toggleUser(user.id)}
-                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${checked ? "bg-indigo-50" : "hover:bg-slate-50"}`}
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${checked ? "bg-indigo-500/15" : "hover:bg-[#141f35]"}`}
                 >
                   <div className={`grid h-7 w-7 place-items-center rounded-full text-[10px] font-bold text-white ${avatarColor(user.id)}`}>
                     {initials(user.full_name)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-slate-800">{user.full_name}</p>
-                    <p className="truncate text-[10px] text-slate-500">{user.email}</p>
+                    <p className="truncate font-medium text-slate-100">{user.full_name}</p>
+                    <p className="truncate text-[10px] text-slate-400">{user.email}</p>
                   </div>
                   {checked ? <span className="text-xs font-semibold text-indigo-600">Selected</span> : null}
                 </button>
@@ -1757,8 +1791,8 @@ function NewChatModal({
             })}
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
-          <button type="button" onClick={onClose} className="rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-700">
+        <div className="flex justify-end gap-2 border-t border-[#35405a] px-4 py-3">
+          <button type="button" onClick={onClose} className="rounded-md border border-[#35405a] px-3 py-1.5 text-xs text-slate-300">
             Cancel
           </button>
           <button
