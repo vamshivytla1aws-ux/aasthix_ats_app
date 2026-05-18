@@ -25,7 +25,11 @@
     "guard:missing-imports": "node scripts/checkMissingAliasImports.mjs",
     "guard:desktop-freeze": "playwright test e2e/desktop-parity.spec.ts --project=desktop-chrome",
     "test:e2e:mobile-hardening": "playwright test e2e/mobile-hardening.spec.ts --project=desktop-chrome --project=mobile-chrome",
-    "test:e2e:mobile-safari": "playwright test e2e/mobile-hardening.spec.ts --project=mobile-safari"
+    "test:e2e:mobile-safari": "playwright test e2e/mobile-hardening.spec.ts --project=mobile-safari",
+    "desktop:dev": "electron .",
+    "desktop:dist": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win nsis",
+    "desktop:build:win": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win nsis --publish never",
+    "desktop:postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.7.6",
@@ -54,7 +58,8 @@
     "recharts": "^3.8.0",
     "resend": "^6.11.0",
     "swr": "^2.4.1",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.51.0",
@@ -70,6 +75,50 @@
     "tailwindcss": "^3.4.1",
     "tsx": "^4.21.0",
     "typescript": "^5.4.0",
-    "vitest": "^3.0.5"
+    "vitest": "^3.0.5",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "com.aasthix.ats.desktop",
+    "productName": "AASTHIX ATS",
+    "artifactName": "ATS-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "desktop/resources"
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "desktop/main.cjs"
+    },
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AASTHIX ATS"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "aasthix",
+        "repo": "ats-app"
+      }
+    ]
   }
 }

@@ -56,6 +56,35 @@ Notes:
 - recommended public ATS domain: `https://app.aasthix.com`
 - keep the marketing site on `https://www.aasthix.com` and point `app.aasthix.com` to Railway with a `CNAME`
 
+## ATS Desktop App (Windows EXE)
+
+The ATS can be packaged as a Windows desktop app (Electron shell that loads cloud ATS URL).
+
+Required environment variables for desktop runtime:
+
+- `ATS_DESKTOP_TARGET_URL` (example: `https://app.aasthix.com`)
+- `ATS_DESKTOP_CHANNEL` (`stable` or `beta`)
+
+Build and run:
+
+```bash
+npm run desktop:dev
+npm run desktop:build:win
+```
+
+Output installer:
+
+- `dist/ATS-Setup-x.y.z.exe`
+
+Optional helper scripts:
+
+- `scripts/install-ats-desktop.bat`
+- `scripts/uninstall-ats-desktop.bat`
+
+Desktop health check endpoint used by the shell fallback:
+
+- `GET /api/desktop/health`
+
 ## Google Meet Interview Scheduling
 
 Interview scheduling now supports a shared-company Google Calendar connection that creates real Google Meet links from the ATS.
