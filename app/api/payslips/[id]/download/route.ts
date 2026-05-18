@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePermission } from "@/lib/rbac";
+import { getAuthAccess, requirePermission } from "@/lib/rbac";
 import { query } from "@/lib/db";
 import { buildPayslipPdf } from "@/lib/pdf/payslipExport";
 import { amountToRupeesWords } from "@/lib/salary/numberToWords";
@@ -8,6 +8,18 @@ import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function toDateOnly(value: unknown): string {
+  if (!value) return "-";
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return raw;
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function fyAprilIndex(month: number) {
   return month >= 4 ? month - 4 : month + 8;
 }
@@ -15,6 +27,8 @@ function fyAprilIndex(month: number) {
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   const auth = await requirePermission("salary.view");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const access = await getAuthAccess();
+  if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const payslipId = Number(params.id);
   if (!Number.isFinite(payslipId) || payslipId <= 0) {
     return NextResponse.json({ error: "Invalid payslip id" }, { status: 400 });
@@ -34,6 +48,17 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   );
   if (res.rowCount === 0) return NextResponse.json({ error: "Payslip not found" }, { status: 404 });
   const row = res.rows[0] as any;
+  const employeeId = Number(row.employee_id || 0);
+  if (access.role === "employee" && access.user_id !== employeeId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (access.role === "manager" || access.role === "hiring_manager") {
+    const teamCheck = await query(
+      `SELECT id FROM users WHERE id = $1 AND reporting_manager_user_id = $2 LIMIT 1`,
+      [employeeId, access.user_id],
+    );
+    if (teamCheck.rowCount === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   let pdfBuffer = row.pdf_blob as Buffer | null;
   if (!pdfBuffer || !row.tax_sheet_snapshot) {
     const itemsRes = await query(
@@ -114,7 +139,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       employeeCode: String(row.employee_code || "-"),
       department: String(row.department || "-"),
       designation: String(row.designation || "-"),
-      dateOfJoining: row.date_of_joining ? String(row.date_of_joining).slice(0, 10) : "-",
+      dateOfJoining: toDateOnly(row.date_of_joining),
       pan: String(row.pan || "-"),
       uanNumber: String(row.uan_number || "-"),
       pfNumber: String(row.pf_number || "-"),

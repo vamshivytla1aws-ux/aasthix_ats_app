@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePermission } from "@/lib/rbac";
+import { getAuthAccess, requirePermission } from "@/lib/rbac";
 import { query } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -8,9 +8,21 @@ export const dynamic = "force-dynamic";
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   const auth = await requirePermission("salary.view");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const access = await getAuthAccess();
+  if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const employeeId = Number(params.id);
   if (!Number.isFinite(employeeId) || employeeId <= 0) {
     return NextResponse.json({ error: "Invalid employee id" }, { status: 400 });
+  }
+  if (access.role === "employee" && access.user_id !== employeeId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (access.role === "manager" || access.role === "hiring_manager") {
+    const teamCheck = await query(
+      `SELECT id FROM users WHERE id = $1 AND reporting_manager_user_id = $2 LIMIT 1`,
+      [employeeId, access.user_id],
+    );
+    if (teamCheck.rowCount === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const res = await query(
     `

@@ -165,13 +165,27 @@ function ensureSpace(_requiredHeight: number) {
   return;
 }
 
-function drawCellText(page: any, font: PDFFont, text: string, x: number, y: number, w: number, size: number, bold = false, boldFont?: PDFFont) {
+function drawCellText(
+  page: any,
+  font: PDFFont,
+  text: string,
+  x: number,
+  y: number,
+  w: number,
+  size: number,
+  bold = false,
+  boldFont?: PDFFont,
+  align: "left" | "center" = "left",
+) {
   const value = String(text || "-");
   const activeFont = bold && boldFont ? boldFont : font;
   let out = value;
   while (out.length > 0 && activeFont.widthOfTextAtSize(out, size) > w) out = `${out.slice(0, -1)}`;
   if (out !== value && out.length > 2) out = `${out.slice(0, -2)}..`;
-  page.drawText(out || "-", { x, y, size, font: activeFont, color: TEXT });
+  const finalText = out || "-";
+  const textWidth = activeFont.widthOfTextAtSize(finalText, size);
+  const textX = align === "center" ? x + Math.max(0, (w - textWidth) / 2) : x;
+  page.drawText(finalText, { x: textX, y, size, font: activeFont, color: TEXT });
 }
 
 function drawSectionHeader(page: any, bold: PDFFont, title: string, x: number, y: number, w: number, h: number, fontSize: number) {
@@ -243,10 +257,10 @@ function drawPersonalDetailsBlock(page: any, bold: PDFFont, font: PDFFont, y: nu
   for (let i = 0; i < rowCount; i += 1) {
     const l = leftRows[i] || ["", ""];
     const r = rightRows[i] || ["", ""];
-    drawCellText(page, font, l[0], col1X + s.padX, cy, leftLabelW - s.padX * 2, s.baseFont);
-    drawCellText(page, font, l[1] || "-", col2X + s.padX, cy, leftValW - s.padX * 2, s.baseFont, true, bold);
-    drawCellText(page, font, r[0], col3X + s.padX, cy, rightLabelW - s.padX * 2, s.baseFont);
-    drawCellText(page, font, r[1] || "-", col4X + s.padX, cy, rightValW - s.padX * 2, s.baseFont, true, bold);
+    drawCellText(page, font, l[0], col1X + s.padX, cy, leftLabelW - s.padX * 2, s.baseFont, false, bold, "center");
+    drawCellText(page, font, l[1] || "-", col2X + s.padX, cy, leftValW - s.padX * 2, s.baseFont, true, bold, "center");
+    drawCellText(page, font, r[0], col3X + s.padX, cy, rightLabelW - s.padX * 2, s.baseFont, false, bold, "center");
+    drawCellText(page, font, r[1] || "-", col4X + s.padX, cy, rightValW - s.padX * 2, s.baseFont, true, bold, "center");
     cy -= rowH;
   }
 
@@ -281,7 +295,7 @@ function drawEarningsDeductionsBlock(page: any, bold: PDFFont, font: PDFFont, y:
   headers.forEach((header, i) => {
     const hx = colX[i] + s.padX;
     const hw = colX[i + 1] - colX[i] - s.padX * 2;
-    drawCellText(page, font, header, hx, tableTop - rowH + (rowH - s.baseFont) / 2, hw, s.baseFont, true, bold);
+    drawCellText(page, font, header, hx, tableTop - rowH + (rowH - s.baseFont) / 2, hw, s.baseFont, true, bold, "center");
   });
 
   let cy = tableTop - rowH * 2 + (rowH - s.baseFont) / 2;
@@ -289,29 +303,29 @@ function drawEarningsDeductionsBlock(page: any, bold: PDFFont, font: PDFFont, y:
     const e = payload.earnings[i];
     const d = payload.deductions[i];
     if (e) {
-      drawCellText(page, font, e.name, colX[0] + s.padX, cy, colX[1] - colX[0] - s.padX * 2, s.smallFont);
-      drawCellText(page, font, inr(e.monthly), colX[1] + s.padX, cy, colX[2] - colX[1] - s.padX * 2, s.smallFont);
-      drawCellText(page, font, inr(e.amountForMonth), colX[2] + s.padX, cy, colX[3] - colX[2] - s.padX * 2, s.smallFont);
-      drawCellText(page, font, "0.00", colX[3] + s.padX, cy, colX[4] - colX[3] - s.padX * 2, s.smallFont);
-      drawCellText(page, font, inr(e.amountForMonth), colX[4] + s.padX, cy, colX[5] - colX[4] - s.padX * 2, s.smallFont);
+      drawCellText(page, font, e.name, colX[0] + s.padX, cy, colX[1] - colX[0] - s.padX * 2, s.smallFont, false, bold, "center");
+      drawCellText(page, font, inr(e.monthly), colX[1] + s.padX, cy, colX[2] - colX[1] - s.padX * 2, s.smallFont, false, bold, "center");
+      drawCellText(page, font, inr(e.amountForMonth), colX[2] + s.padX, cy, colX[3] - colX[2] - s.padX * 2, s.smallFont, false, bold, "center");
+      drawCellText(page, font, "0.00", colX[3] + s.padX, cy, colX[4] - colX[3] - s.padX * 2, s.smallFont, false, bold, "center");
+      drawCellText(page, font, inr(e.amountForMonth), colX[4] + s.padX, cy, colX[5] - colX[4] - s.padX * 2, s.smallFont, false, bold, "center");
     }
     if (d) {
-      drawCellText(page, font, d.name, colX[5] + s.padX, cy, colX[6] - colX[5] - s.padX * 2, s.smallFont);
-      drawCellText(page, font, inr(d.amountForMonth), colX[6] + s.padX, cy, colX[7] - colX[6] - s.padX * 2, s.smallFont);
-      drawCellText(page, font, inr(d.amountForMonth), colX[7] + s.padX, cy, colX[8] - colX[7] - s.padX * 2, s.smallFont);
+      drawCellText(page, font, d.name, colX[5] + s.padX, cy, colX[6] - colX[5] - s.padX * 2, s.smallFont, false, bold, "center");
+      drawCellText(page, font, inr(d.amountForMonth), colX[6] + s.padX, cy, colX[7] - colX[6] - s.padX * 2, s.smallFont, false, bold, "center");
+      drawCellText(page, font, inr(d.amountForMonth), colX[7] + s.padX, cy, colX[8] - colX[7] - s.padX * 2, s.smallFont, false, bold, "center");
     }
     cy -= rowH;
   }
 
   const grossY = tableTop - rowH * (rows + 2) + (rowH - s.baseFont) / 2;
-  drawCellText(page, font, "GROSS EARNINGS", colX[0] + s.padX, grossY, colX[2] - colX[0] - s.padX * 2, s.baseFont, true, bold);
-  drawCellText(page, font, inr(payload.grossSalary), colX[4] + s.padX, grossY, colX[5] - colX[4] - s.padX * 2, s.baseFont, true, bold);
-  drawCellText(page, font, "GROSS DEDUCTIONS", colX[5] + s.padX, grossY, colX[7] - colX[5] - s.padX * 2, s.baseFont, true, bold);
-  drawCellText(page, font, inr(payload.totalDeductions), colX[7] + s.padX, grossY, colX[8] - colX[7] - s.padX * 2, s.baseFont, true, bold);
+  drawCellText(page, font, "GROSS EARNINGS", colX[0] + s.padX, grossY, colX[2] - colX[0] - s.padX * 2, s.baseFont, true, bold, "center");
+  drawCellText(page, font, inr(payload.grossSalary), colX[4] + s.padX, grossY, colX[5] - colX[4] - s.padX * 2, s.baseFont, true, bold, "center");
+  drawCellText(page, font, "GROSS DEDUCTIONS", colX[5] + s.padX, grossY, colX[7] - colX[5] - s.padX * 2, s.baseFont, true, bold, "center");
+  drawCellText(page, font, inr(payload.totalDeductions), colX[7] + s.padX, grossY, colX[8] - colX[7] - s.padX * 2, s.baseFont, true, bold, "center");
 
   const netY = tableTop - rowH * (rows + 3) + (rowH - s.baseFont) / 2;
-  drawCellText(page, font, "NET PAY", colX[5] + s.padX, netY, colX[7] - colX[5], s.baseFont, true, bold);
-  drawCellText(page, font, inr(payload.netSalary), colX[7] + s.padX, netY, colX[8] - colX[7], s.baseFont, true, bold);
+  drawCellText(page, font, "NET PAY", colX[5] + s.padX, netY, colX[7] - colX[5], s.baseFont, true, bold, "center");
+  drawCellText(page, font, inr(payload.netSalary), colX[7] + s.padX, netY, colX[8] - colX[7], s.baseFont, true, bold, "center");
 
   return tableTop - rowH * (totalRows + 1) - s.sectionGap;
 }

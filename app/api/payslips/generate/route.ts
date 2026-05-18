@@ -13,6 +13,18 @@ import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function toDateOnly(value: unknown): string {
+  if (!value) return "-";
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return raw;
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function fyAprilIndex(month: number) {
   return month >= 4 ? month - 4 : month + 8;
 }
@@ -198,7 +210,7 @@ export async function POST(request: Request) {
     employeeCode: String(latest.structure.employee_code || "-"),
     department: String(latest.structure.department || "-"),
     designation: String(latest.structure.designation || "-"),
-    dateOfJoining: latest.structure.date_of_joining ? String(latest.structure.date_of_joining).slice(0, 10) : "-",
+    dateOfJoining: toDateOnly(latest.structure.date_of_joining),
     pan: String(latest.structure.pan || "-"),
     uanNumber: String(latest.structure.uan_number || "-"),
     pfNumber: String(latest.structure.pf_number || "-"),
