@@ -64,6 +64,7 @@ Required environment variables for desktop runtime:
 
 - `ATS_DESKTOP_TARGET_URL` (example: `https://app.aasthix.com`)
 - `ATS_DESKTOP_CHANNEL` (`stable` or `beta`)
+- `ATS_DESKTOP_ENTRY_PATH` (default: `/chat-app` for pure chat desktop mode)
 
 Build and run:
 

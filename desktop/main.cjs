@@ -4,11 +4,25 @@ const { autoUpdater } = require("electron-updater");
 
 const APP_NAME = "AASTHIX ATS";
 const TARGET_URL = process.env.ATS_DESKTOP_TARGET_URL || "https://app.aasthix.com";
+const ENTRY_PATH = process.env.ATS_DESKTOP_ENTRY_PATH || "/chat-app";
+const CHAT_ENTRY_URL = `${TARGET_URL.replace(/\/+$/, "")}${ENTRY_PATH.startsWith("/") ? ENTRY_PATH : `/${ENTRY_PATH}`}`;
 const CHANNEL = process.env.ATS_DESKTOP_CHANNEL || "stable";
 const WINDOW_STATE_KEY = "window-state";
 const SETTINGS_KEY = "desktop-settings";
 const HEALTH_PATH = "/api/desktop/health";
 const UPDATE_CHECK_INTERVAL_MS = 1000 * 60 * 30;
+const IN_APP_PATH_PREFIXES = ["/chat-app", "/login", "/signup", "/invite/accept", "/api", "/_next", "/uploads", "/favicon.ico"];
+
+function isAllowedInAppUrl(url) {
+  try {
+    const safeOrigin = new URL(TARGET_URL).origin;
+    const parsed = new URL(url);
+    if (parsed.origin !== safeOrigin) return false;
+    return IN_APP_PATH_PREFIXES.some((prefix) => parsed.pathname.startsWith(prefix));
+  } catch {
+    return false;
+  }
+}
 
 let tray = null;
 let mainWindow = null;
@@ -112,7 +126,7 @@ function createTray() {
 function loadFallbackPage(reason) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const fallbackPath = path.join(__dirname, "offline.html");
-  mainWindow.loadFile(fallbackPath, { query: { target: TARGET_URL, reason } }).catch((err) => {
+  mainWindow.loadFile(fallbackPath, { query: { target: CHAT_ENTRY_URL, reason } }).catch((err) => {
     console.error("fallback load failed", err);
   });
 }
@@ -126,7 +140,7 @@ async function validateHealth() {
     clearTimeout(timeout);
     if (!resp.ok) throw new Error(`Health check returned ${resp.status}`);
     if (mainWindow && mainWindow.webContents.getURL().includes("offline.html")) {
-      mainWindow.loadURL(TARGET_URL);
+      mainWindow.loadURL(CHAT_ENTRY_URL);
     }
   } catch (error) {
     console.error("health check failed", error);
@@ -221,9 +235,7 @@ function createMainWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    const safeTarget = new URL(TARGET_URL).origin;
-    const outgoing = new URL(url).origin;
-    if (outgoing !== safeTarget) {
+    if (!isAllowedInAppUrl(url)) {
       shell.openExternal(url);
       return { action: "deny" };
     }
@@ -231,16 +243,14 @@ function createMainWindow() {
   });
 
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    const safeTarget = new URL(TARGET_URL).origin;
-    const outgoing = new URL(url).origin;
-    if (outgoing !== safeTarget) {
+    if (!isAllowedInAppUrl(url)) {
       event.preventDefault();
       shell.openExternal(url);
     }
   });
 
   mainWindow.webContents.on("did-fail-load", () => loadFallbackPage("Unable to load ATS"));
-  mainWindow.loadURL(TARGET_URL).catch((err) => {
+  mainWindow.loadURL(CHAT_ENTRY_URL).catch((err) => {
     console.error("initial load failed", err);
     loadFallbackPage("Initial connection failed");
   });
@@ -281,7 +291,7 @@ ipcMain.handle("desktop:getDiagnostics", () => {
   return {
     appVersion: app.getVersion(),
     channel: CHANNEL,
-    targetUrl: TARGET_URL,
+    targetUrl: CHAT_ENTRY_URL,
     launchAtLogin: settings.launchAtLogin,
     minimizeToTray: settings.minimizeToTray,
     platform: process.platform,
