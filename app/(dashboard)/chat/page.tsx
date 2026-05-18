@@ -308,6 +308,50 @@ export default function ChatPage() {
           )}
         </main>
       </div>
+      <style jsx global>{`
+        @keyframes chat-message-pop {
+          0% {
+            opacity: 0;
+            transform: translateY(8px) scale(0.985);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+        @keyframes chat-panel-slide {
+          0% {
+            opacity: 0;
+            transform: translateX(16px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        @keyframes unread-pulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5);
+          }
+          70% {
+            box-shadow: 0 0 0 8px rgba(99, 102, 241, 0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+          }
+        }
+        .chat-message-pop {
+          animation: chat-message-pop 230ms cubic-bezier(0.2, 0.7, 0.2, 1);
+          will-change: transform, opacity;
+        }
+        .chat-panel-slide {
+          animation: chat-panel-slide 250ms cubic-bezier(0.2, 0.7, 0.2, 1);
+          will-change: transform, opacity;
+        }
+        .chat-unread-pulse {
+          animation: unread-pulse 2.2s ease-out infinite;
+        }
+      `}</style>
 
       {showNewChat ? (
         <NewChatModal
@@ -344,7 +388,7 @@ function ConversationRow({
       type="button"
       onClick={onClick}
       className={[
-        "w-full border-l-2 px-4 py-2.5 text-left transition",
+        "w-full border-l-2 px-4 py-2.5 text-left transition duration-200 ease-out",
         isActive ? "border-indigo-400 bg-[#2a3142]" : "border-transparent hover:bg-[#262c3c]",
       ].join(" ")}
     >
@@ -362,7 +406,7 @@ function ConversationRow({
               {last ? (last.is_system ? last.content : `${last.sender_name.split(" ")[0]}: ${last.content}`) : "No messages yet"}
             </span>
             {unread > 0 ? (
-              <span className="shrink-0 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">{unread}</span>
+              <span className="chat-unread-pulse shrink-0 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">{unread}</span>
             ) : null}
           </div>
         </div>
@@ -977,7 +1021,7 @@ function MessageBubble({
   }
 
   return (
-    <div id={`message-${message.id}`} className={`group flex gap-2 ${isMe ? "justify-end" : ""}`}>
+    <div id={`message-${message.id}`} className={`chat-message-pop group flex gap-2 ${isMe ? "justify-end" : ""}`}>
       {!isMe ? (
         <div className="w-8 shrink-0">
           {showSender ? (
@@ -1130,7 +1174,7 @@ function ThreadPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   return (
-    <aside className="w-[400px] shrink-0 border-l border-slate-700 bg-[#212735] text-slate-100 shadow-[-12px_0_30px_rgba(2,6,23,0.2)]">
+    <aside className="chat-panel-slide w-[400px] shrink-0 border-l border-slate-700 bg-[#212735] text-slate-100 shadow-[-12px_0_30px_rgba(2,6,23,0.2)]">
       <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-200">Thread</p>
         <button type="button" onClick={onClose} className="rounded p-1 hover:bg-slate-200">
