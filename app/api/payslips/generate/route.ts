@@ -9,6 +9,7 @@ import { getMonthlyApprovedLopDays } from "@/lib/leave";
 import { getPayrollRunByMonthYear } from "@/lib/hrms/payroll";
 import { loadActiveTaxConfig, calculateAnnualTaxFromConfig } from "@/lib/salary/tax";
 import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
+import { getMonthDays } from "@/lib/salary/monthDays";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -140,7 +141,11 @@ export async function POST(request: Request) {
 
     const input = toCalcInputFromStructure(latest.structure);
     const calc = await calculateSalaryStructure(input);
-    const paidDaysResolved = Number.isFinite(paidDays) && paidDays > 0 ? paidDays : Number(latest.structure.total_paid_days || 30);
+    const monthDays = getMonthDays(year, month);
+    const paidDaysResolved =
+      Number.isFinite(paidDays) && paidDays > 0
+        ? paidDays
+        : Number(latest.structure.total_paid_days || monthDays);
     const manualLopDays = Number.isFinite(lopDays) && lopDays >= 0 ? lopDays : Number(latest.structure.lop_days || 0);
     if (paidDaysResolved <= 0) {
       return NextResponse.json(
@@ -216,7 +221,7 @@ export async function POST(request: Request) {
     pfNumber: String(latest.structure.pf_number || "-"),
     bankAccountNumber: String(latest.structure.bank_account_number || "-"),
     workLocation: String(latest.structure.work_location || "-"),
-    paidDays: Number.isFinite(paidDays) ? paidDays : Number(latest.structure.total_paid_days || 30),
+    paidDays: Number.isFinite(paidDays) && paidDays > 0 ? paidDays : Number(latest.structure.total_paid_days || monthDays),
     lopDays: totalLopDays,
     earnings: prorated.earnings,
     deductions: deductionsWithLop,

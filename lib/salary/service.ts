@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { calculateSalaryStructure } from "@/lib/salary/engine";
 import type { SalaryCalcInput, SalaryCalcResult } from "@/lib/salary/types";
+import { writeAuditLog } from "@/lib/auditLog";
 
 export async function listSalaryEmployees() {
   const res = await query(
@@ -248,4 +249,89 @@ export function applyPayslipProration(calc: SalaryCalcResult, paidDays: number, 
   const totalDeductions = Math.round(deductions.reduce((acc, item) => acc + (item.amountForMonth || 0), 0) * 100) / 100;
   const net = Math.round((grossMonthly - totalDeductions) * 100) / 100;
   return { ratio, earnings, deductions, grossMonthly, totalDeductions, net };
+}
+
+export async function listEmployeeCtcHistory(employeeId: number) {
+  const res = await query(
+    `
+      SELECT
+        s.id,
+        s.employee_id,
+        s.ctc_annual,
+        s.salary_month,
+        s.effective_from,
+        s.created_at,
+        s.updated_at,
+        s.employee_code,
+        s.department,
+        s.designation,
+        s.work_location
+      FROM salary_structures s
+      WHERE s.employee_id = $1
+      ORDER BY s.effective_from DESC, s.created_at DESC, s.id DESC
+    `,
+    [employeeId],
+  );
+  return res.rows.map((row: any) => ({
+    id: Number(row.id),
+    employee_id: Number(row.employee_id),
+    ctc_annual: Number(row.ctc_annual || 0),
+    salary_month: row.salary_month ? String(row.salary_month).slice(0, 10) : null,
+    effective_from: row.effective_from ? String(row.effective_from).slice(0, 10) : null,
+    created_at: String(row.created_at || ""),
+    updated_at: String(row.updated_at || ""),
+    employee_code: String(row.employee_code || ""),
+    department: String(row.department || ""),
+    designation: String(row.designation || ""),
+    work_location: String(row.work_location || ""),
+  }));
+}
+
+export async function getEmployeeCtcByMonth(employeeId: number, month: number, year: number) {
+  return getSalaryStructureForMonth(employeeId, month, year);
+}
+
+export async function createCtcVersion(input: SalaryCalcInput, actorUserId: number) {
+  const result = await createSalaryStructure(input, actorUserId);
+  await writeAuditLog({
+    actorUserId,
+    action: "hrms.ctc.created",
+    metadata: {
+      employee_id: input.employeeId,
+      ctc_annual: input.ctcAnnual,
+      salary_month: input.salaryMonth,
+      salary_structure_id: result.salaryStructureId,
+    },
+  });
+  return result;
+}
+
+export async function updateCtcVersion(
+  id: number,
+  updates: { ctcAnnual: number; effectiveFrom?: string | null },
+  actorUserId: number,
+) {
+  const current = await query(`SELECT id, employee_id, effective_from, ctc_annual FROM salary_structures WHERE id = $1 LIMIT 1`, [id]);
+  if (current.rowCount === 0) throw new Error("CTC version not found.");
+  const row = current.rows[0] as any;
+  const effectiveFrom = updates.effectiveFrom ? String(updates.effectiveFrom) : String(row.effective_from).slice(0, 10);
+  await query(
+    `
+      UPDATE salary_structures
+      SET ctc_annual = $2, effective_from = $3::date, salary_month = $3::date, updated_at = NOW()
+      WHERE id = $1
+    `,
+    [id, Number(updates.ctcAnnual), effectiveFrom],
+  );
+  await writeAuditLog({
+    actorUserId,
+    action: "hrms.ctc.updated",
+    metadata: {
+      salary_structure_id: id,
+      employee_id: Number(row.employee_id),
+      from_ctc: Number(row.ctc_annual || 0),
+      to_ctc: Number(updates.ctcAnnual || 0),
+      effective_from: effectiveFrom,
+    },
+  });
 }

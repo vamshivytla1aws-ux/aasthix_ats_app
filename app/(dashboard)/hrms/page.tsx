@@ -10,6 +10,7 @@ const MODULES = [
   { href: "/hrms/documents", title: "Document Management", subtitle: "Upload and securely manage employee documents." },
   { href: "/hrms/attendance-rules", title: "Attendance Rules", subtitle: "Configure shifts, late/early rules, overtime, and corrections." },
   { href: "/hrms/payroll", title: "Payroll Control", subtitle: "Run monthly payroll, approve runs, and export reports." },
+  { href: "/hrms/ctc", title: "CTC Management", subtitle: "Maintain month-wise CTC versions with effective dates and history." },
   { href: "/hrms/onboarding-exit", title: "Onboarding & Exit", subtitle: "Track new joiner and resignation workflows end-to-end." },
   { href: "/hrms/performance", title: "Performance Management", subtitle: "Manage review cycles, ratings, and recommendations." },
   { href: "/salary", title: "Salary Structures", subtitle: "Configure salary and generate payslips." },

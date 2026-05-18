@@ -9,6 +9,7 @@ import Toast from "@/components/Toast";
 import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
+import { getMonthDaysFromDateString } from "@/lib/salary/monthDays";
 
 type EmployeeOption = { id: number; full_name: string; email: string; role: string };
 type SalaryComponent = { key: string; name: string; type: "earning" | "deduction"; annual: number; monthly: number; amountForMonth?: number };
@@ -63,7 +64,7 @@ export default function SalaryPage() {
   const [workLocation, setWorkLocation] = React.useState("");
   const [ctcAnnual, setCtcAnnual] = React.useState("1600000");
   const [salaryMonth, setSalaryMonth] = React.useState(todayMonthDate());
-  const [totalPaidDays, setTotalPaidDays] = React.useState("30");
+  const [totalPaidDays, setTotalPaidDays] = React.useState(String(getMonthDaysFromDateString(todayMonthDate())));
   const [lopDays, setLopDays] = React.useState("0");
   const [taxRegime, setTaxRegime] = React.useState<"new_regime" | "old_regime" | "manual_tds">("new_regime");
   const [manualTdsAnnual, setManualTdsAnnual] = React.useState("");
@@ -101,8 +102,9 @@ export default function SalaryPage() {
     setBankAccountNumber(String(structure.bank_account_number || ""));
     setWorkLocation(String(structure.work_location || ""));
     setCtcAnnual(String(Number(structure.ctc_annual || 0)));
-    setSalaryMonth(structure.salary_month ? String(structure.salary_month).slice(0, 10) : todayMonthDate());
-    setTotalPaidDays(String(Number(structure.total_paid_days || 30)));
+    const nextSalaryMonth = structure.salary_month ? String(structure.salary_month).slice(0, 10) : todayMonthDate();
+    setSalaryMonth(nextSalaryMonth);
+    setTotalPaidDays(String(Number(structure.total_paid_days || getMonthDaysFromDateString(nextSalaryMonth))));
     setLopDays(String(Number(structure.lop_days || 0)));
     setTaxRegime((String(structure.tax_regime || "new_regime") as "new_regime" | "old_regime" | "manual_tds"));
     setManualTdsAnnual(structure.manual_tds_annual == null ? "" : String(Number(structure.manual_tds_annual)));
@@ -282,7 +284,11 @@ export default function SalaryPage() {
             <label className={UI.label}>Bank Account Number<input className={UI.input} value={bankAccountNumber} onChange={(e) => setBankAccountNumber(e.target.value)} /></label>
             <label className={UI.label}>Work Location<input className={UI.input} value={workLocation} onChange={(e) => setWorkLocation(e.target.value)} /></label>
             <label className={UI.label}>CTC Annual<input className={UI.input} type="number" min={1} value={ctcAnnual} onChange={(e) => setCtcAnnual(e.target.value)} /></label>
-            <label className={UI.label}>Salary Month<input type="month" className={UI.input} value={salaryMonth.slice(0, 7)} onChange={(e) => setSalaryMonth(`${e.target.value}-01`)} /></label>
+            <label className={UI.label}>Salary Month<input type="month" className={UI.input} value={salaryMonth.slice(0, 7)} onChange={(e) => {
+              const next = `${e.target.value}-01`;
+              setSalaryMonth(next);
+              setTotalPaidDays(String(getMonthDaysFromDateString(next)));
+            }} /></label>
             <label className={UI.label}>Total Paid Days<input className={UI.input} type="number" min={0} value={totalPaidDays} onChange={(e) => setTotalPaidDays(e.target.value)} /></label>
             <label className={UI.label}>LOP Days<input className={UI.input} type="number" min={0} value={lopDays} onChange={(e) => setLopDays(e.target.value)} /></label>
             <label className={UI.label}>

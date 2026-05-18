@@ -6,6 +6,7 @@ import { applyPayslipProration, getLatestSalaryStructure, getSalaryStructureForM
 import { buildPayslipPdf } from "@/lib/pdf/payslipExport";
 import { loadActiveTaxConfig, calculateAnnualTaxFromConfig } from "@/lib/salary/tax";
 import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
+import { getMonthDays } from "@/lib/salary/monthDays";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,7 +119,7 @@ export async function POST(request: Request) {
       if (!latest) continue;
       const input = toCalcInputFromStructure(latest.structure);
       const calc = await calculateSalaryStructure(input);
-      const paidDaysResolved = 30;
+      const paidDaysResolved = getMonthDays(year, month);
       const prorated = applyPayslipProration(calc, paidDaysResolved, 0);
       const totalDeductions = Math.round(prorated.totalDeductions * 100) / 100;
       const netSalary = Math.round((prorated.grossMonthly - totalDeductions) * 100) / 100;
