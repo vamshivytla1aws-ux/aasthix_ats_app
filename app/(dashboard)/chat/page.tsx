@@ -1715,7 +1715,9 @@ function MessageBubble({
               </div>
             ) : (
               <>
-                {renderMessageWithMentions(message.content, message.mentions)}
+                <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                  {renderMessageWithMentions(message.content, message.mentions)}
+                </span>
                 {message.edited_at ? <span className={`ml-1 text-[10px] ${isMe ? "text-indigo-100" : "text-slate-400"}`}>(edited)</span> : null}
               </>
             )}

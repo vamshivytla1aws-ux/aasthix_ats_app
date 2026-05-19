@@ -7,6 +7,18 @@ import { sendTransactionalEmail } from "@/lib/sendTransactionalEmail";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function resolveInviteOrigin(request: Request) {
+  const configured = String(process.env.NEXT_PUBLIC_APP_URL || "").trim();
+  if (configured) {
+    try {
+      return new URL(configured).origin;
+    } catch {
+      // fallback to request origin below
+    }
+  }
+  return new URL(request.url).origin;
+}
+
 async function assertMember(conversationId: number, userId: number) {
   const r = await query(`SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2`, [conversationId, userId]);
   return r.rowCount > 0;
@@ -64,7 +76,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       [conversationId, access.user_id, externalName, tokenHash, expiresAt],
     );
 
-    const host = new URL(request.url).origin;
+    const host = resolveInviteOrigin(request);
     const inviteLink = `${host}/chat/external/${token}`;
     const convRes = await query(`SELECT name FROM conversations WHERE id = $1`, [conversationId]);
     const conversationName = String(convRes.rows?.[0]?.name || "Temporary chat");
