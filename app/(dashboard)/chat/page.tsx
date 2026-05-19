@@ -11,6 +11,7 @@ import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import {
   Bell,
+  CalendarDays,
   ChevronLeft,
   Clock3,
   Download,
@@ -19,9 +20,11 @@ import {
   Image as ImageIcon,
   Info,
   MessageSquare,
+  MonitorUp,
   Paperclip,
   Pin,
   Plus,
+  Phone,
   Search,
   Send,
   Smile,
@@ -89,7 +92,7 @@ type ConversationDetails = {
   stats: { shared_files: number; shared_images: number };
 };
 type PinnedMessageItem = Message & { pin_id: number; pinned_at: string; pinned_by: number; pinned_by_name: string };
-type DrawerView = "details" | "pins" | "notify";
+type DrawerView = "details" | "pins" | "notify" | "calendar";
 type ChatUser = { id: number; full_name: string; email: string; role: string };
 type SearchResult = {
   id: number;
@@ -116,6 +119,28 @@ type UploadItemState = {
   status: "uploading" | "failed" | "ready";
   error?: string;
   uploaded?: { type: "file" | "image"; url: string; name: string; size: number };
+};
+type ChatCalendarEvent = {
+  id: number;
+  title: string;
+  start_at: string;
+  end_at: string;
+  meet_link: string | null;
+  status: string;
+  calendar_sync_status: string | null;
+  conversation_id?: number;
+  conversation_name?: string | null;
+};
+type ConversationLiveStatus = {
+  conversation_id: number;
+  status_kind: "presenting" | "in_call" | "in_meeting" | "busy" | "active_now" | "none";
+};
+type ExternalInvite = {
+  id: number;
+  external_name: string;
+  expires_at: string;
+  revoked_at: string | null;
+  created_at: string;
 };
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -177,6 +202,24 @@ function formatRelative(iso: string) {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+function statusLabel(kind: ConversationLiveStatus["status_kind"]) {
+  if (kind === "presenting") return "Presenting";
+  if (kind === "in_call") return "In call";
+  if (kind === "in_meeting") return "In meeting";
+  if (kind === "busy") return "Busy";
+  if (kind === "active_now") return "Active now";
+  return null;
+}
+
+function statusClasses(kind: ConversationLiveStatus["status_kind"]) {
+  if (kind === "presenting") return "bg-cyan-500/20 text-cyan-200 border-cyan-400/40";
+  if (kind === "in_call") return "bg-emerald-500/20 text-emerald-200 border-emerald-400/40";
+  if (kind === "in_meeting") return "bg-amber-500/20 text-amber-100 border-amber-400/40";
+  if (kind === "busy") return "bg-rose-500/20 text-rose-100 border-rose-400/40";
+  if (kind === "active_now") return "bg-indigo-500/20 text-indigo-100 border-indigo-400/40";
+  return "bg-slate-500/10 text-slate-300 border-slate-400/30";
 }
 
 function extractMentionQuery(value: string) {
@@ -277,6 +320,22 @@ export default function ChatPage() {
     { refreshInterval: 7000 }
   );
   const threadInbox = useMemo(() => threadInboxData?.inbox ?? [], [threadInboxData]);
+  const { data: upcomingCalendarData } = useSWR<{ events: ChatCalendarEvent[] }>(
+    "/api/chat/calendar/upcoming?limit=8",
+    dashboardFetcher,
+    { refreshInterval: 20_000 }
+  );
+  const upcomingCalendar = useMemo(() => upcomingCalendarData?.events ?? [], [upcomingCalendarData]);
+  const { data: statusData } = useSWR<{ statuses: ConversationLiveStatus[] }>(
+    "/api/chat/conversations/statuses",
+    dashboardFetcher,
+    { refreshInterval: 12_000 }
+  );
+  const statusMap = useMemo(() => {
+    const map = new Map<number, ConversationLiveStatus["status_kind"]>();
+    (statusData?.statuses ?? []).forEach((row) => map.set(row.conversation_id, row.status_kind));
+    return map;
+  }, [statusData]);
   const filteredConversations = useMemo(() => {
     const q = sidebarSearch.trim().toLowerCase();
     if (!q) return conversations;
@@ -346,6 +405,28 @@ export default function ChatPage() {
                 </div>
               </div>
             ) : null}
+            {upcomingCalendar.length > 0 ? (
+              <div className="border-b border-slate-700 px-3 py-2">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Calendar</p>
+                <div className="space-y-1.5">
+                  {upcomingCalendar.slice(0, 4).map((event) => (
+                    <button
+                      key={event.id}
+                      type="button"
+                      onClick={() => {
+                        if (event.conversation_id) setActiveConvId(event.conversation_id);
+                      }}
+                      className="w-full rounded-md border border-slate-700 bg-[#151922] px-2 py-1.5 text-left hover:bg-[#1b2230]"
+                    >
+                      <p className="truncate text-[11px] font-medium text-slate-100">{event.title}</p>
+                      <p className="truncate text-[10px] text-slate-400">
+                        {new Date(event.start_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {filteredConversations.length === 0 ? (
               <div className="px-4 py-8 text-center text-xs text-slate-400">No conversations found</div>
             ) : null}
@@ -353,6 +434,7 @@ export default function ChatPage() {
               <ConversationRow
                 key={conv.id}
                 conv={conv}
+                statusKind={statusMap.get(conv.id) || "none"}
                 isActive={conv.id === activeConvId}
                 currentUserId={currentUserId}
                 onClick={() => setActiveConvId(conv.id)}
@@ -468,11 +550,13 @@ export default function ChatPage() {
 
 function ConversationRow({
   conv,
+  statusKind,
   isActive,
   currentUserId,
   onClick,
 }: {
   conv: Conversation;
+  statusKind: ConversationLiveStatus["status_kind"];
   isActive: boolean;
   currentUserId: number | null;
   onClick: () => void;
@@ -480,6 +564,7 @@ function ConversationRow({
   const label = convLabel(conv, currentUserId);
   const unread = conv.unread_count ?? 0;
   const last = conv.last_message;
+  const badge = statusLabel(statusKind);
   return (
     <button
       type="button"
@@ -502,6 +587,11 @@ function ConversationRow({
             <span className="truncate text-xs text-slate-400">
               {last ? (last.is_system ? last.content : `${last.sender_name.split(" ")[0]}: ${last.content}`) : "No messages yet"}
             </span>
+            {badge ? (
+              <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${statusClasses(statusKind)}`}>
+                {badge}
+              </span>
+            ) : null}
             {unread > 0 ? (
               <span className="chat-unread-pulse shrink-0 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">{unread}</span>
             ) : null}
@@ -536,6 +626,8 @@ function ChatWorkspace({
   const [sending, setSending] = useState(false);
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [drawerView, setDrawerView] = useState<DrawerView | null>(null);
+  const [callLoading, setCallLoading] = useState<null | "call" | "screenshare">(null);
+  const [desktopMode, setDesktopMode] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -592,6 +684,10 @@ function ChatWorkspace({
     drawerView === "details" ? `/api/chat/conversations/${conversation.id}/details` : null,
     dashboardFetcher
   );
+  const { data: externalInviteData, mutate: mutateExternalInvites } = useSWR<{ invites: ExternalInvite[] }>(
+    drawerView === "details" ? `/api/chat/conversations/${conversation.id}/external-invites` : null,
+    dashboardFetcher
+  );
   const { data: pinData, mutate: mutatePins } = useSWR<{ pins: PinnedMessageItem[] }>(
     drawerView === "pins" || (conversation.pin_count ?? 0) > 0 ? `/api/chat/conversations/${conversation.id}/pins` : null,
     dashboardFetcher
@@ -600,6 +696,16 @@ function ChatWorkspace({
     user: { mention_only: boolean; desktop_sound: boolean; desktop_toast: boolean; email_digest: boolean; email_digest_frequency: string };
     conversations: Array<{ conversation_id: number; muted: boolean; mention_only: boolean }>;
   }>(drawerView === "notify" ? "/api/chat/preferences" : null, dashboardFetcher);
+  const { data: presenceData, mutate: mutatePresence } = useSWR<{ manual_presence: "available" | "busy" }>(
+    "/api/chat/presence",
+    dashboardFetcher,
+    { refreshInterval: 15_000 }
+  );
+  const { data: calendarData, mutate: mutateCalendar } = useSWR<{ events: ChatCalendarEvent[] }>(
+    `/api/chat/conversations/${conversation.id}/calendar?limit=40`,
+    dashboardFetcher,
+    { refreshInterval: 20_000 }
+  );
 
   useEffect(() => {
     if (conversation.unread_count > 0) {
@@ -616,6 +722,10 @@ function ChatWorkspace({
   useEffect(() => {
     textareaRef.current?.focus();
   }, [conversation.id]);
+
+  useEffect(() => {
+    setDesktopMode(typeof window !== "undefined" && Boolean((window as any).atsDesktop));
+  }, []);
 
   const resetComposer = () => {
     setShowEmoji(false);
@@ -813,6 +923,65 @@ function ChatWorkspace({
     },
     [uploadFiles]
   );
+  const activeCall = useMemo(() => {
+    const now = Date.now();
+    const events = calendarData?.events ?? [];
+    return (
+      events.find((event) => {
+        if (!event.meet_link) return false;
+        const start = new Date(event.start_at).getTime() - 5 * 60_000;
+        const end = new Date(event.end_at).getTime();
+        return now >= start && now <= end;
+      }) ?? null
+    );
+  }, [calendarData]);
+
+  const launchCall = useCallback(
+    async (mode: "call" | "screenshare") => {
+      try {
+        setCallLoading(mode);
+        const data = await apiFetchJson<{ join_link: string | null; user_message?: string }>(
+          `/api/chat/conversations/${conversation.id}/calls`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode, duration_minutes: 30 }),
+          }
+        );
+        if (data.join_link) {
+          window.open(data.join_link, "_blank", "noopener,noreferrer");
+        }
+        onToast(data.user_message || (mode === "screenshare" ? "Screen share started." : "Call started."), "success");
+        void mutateMessages();
+        onMutateConversations();
+        setDrawerView("calendar");
+      } catch (error) {
+        const msg = error instanceof ApiError ? error.message : "Unable to start call.";
+        onToast(msg, "error");
+      } finally {
+        setCallLoading(null);
+      }
+    },
+    [conversation.id, mutateMessages, onMutateConversations, onToast]
+  );
+
+  const setManualPresence = useCallback(
+    async (manualPresence: "available" | "busy") => {
+      try {
+        await apiFetchJson("/api/chat/presence", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ manual_presence: manualPresence }),
+        });
+        onToast(`Status set to ${manualPresence === "busy" ? "Busy" : "Available"}.`, "success");
+        void mutatePresence();
+      } catch (error) {
+        const msg = error instanceof ApiError ? error.message : "Unable to update status.";
+        onToast(msg, "error");
+      }
+    },
+    [mutatePresence, onToast]
+  );
 
   return (
     <div
@@ -847,6 +1016,66 @@ function ChatWorkspace({
               </p>
             </div>
             <div className="hidden items-center gap-1 md:flex">
+              {desktopMode ? (
+                <div className="mr-1 flex items-center gap-1 rounded-lg border border-[#364157] bg-[#0f1629] p-0.5">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await (window as any).atsDesktop?.minimizeWindow?.();
+                    }}
+                    className="rounded px-2 py-1 text-[11px] text-slate-300 hover:bg-[#1a233a]"
+                    title="Minimize"
+                  >
+                    —
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await (window as any).atsDesktop?.maximizeRestoreWindow?.();
+                    }}
+                    className="rounded px-2 py-1 text-[11px] text-slate-300 hover:bg-[#1a233a]"
+                    title="Maximize/Restore"
+                  >
+                    ◻
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await (window as any).atsDesktop?.closeWindow?.();
+                    }}
+                    className="rounded px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-500/15"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={async () => launchCall("call")}
+                disabled={callLoading !== null}
+                className="rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-2 py-1.5 text-[11px] font-semibold text-emerald-200 transition hover:bg-emerald-500/25 disabled:opacity-60"
+              >
+                <Phone className="mr-1 inline h-3.5 w-3.5" />
+                {callLoading === "call" ? "Starting…" : "Call"}
+              </button>
+              <button
+                type="button"
+                onClick={async () => launchCall("screenshare")}
+                disabled={callLoading !== null}
+                className="rounded-lg border border-cyan-400/40 bg-cyan-500/15 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 transition hover:bg-cyan-500/25 disabled:opacity-60"
+              >
+                <MonitorUp className="mr-1 inline h-3.5 w-3.5" />
+                {callLoading === "screenshare" ? "Starting…" : "Share"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDrawerView((v) => (v === "calendar" ? null : "calendar"))}
+                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition", drawerView === "calendar" ? "border-amber-400 bg-amber-500/20 text-amber-100" : "border-[#364157] bg-[#0f1629] text-slate-300 hover:bg-[#1a233a]"].join(" ")}
+              >
+                <CalendarDays className="mr-1 inline h-3.5 w-3.5" />
+                Calendar
+              </button>
               <button
                 type="button"
                 onClick={() => setDrawerView((v) => (v === "details" ? null : "details"))}
@@ -871,6 +1100,16 @@ function ChatWorkspace({
                 <Bell className="mr-1 inline h-3.5 w-3.5" />
                 Notify
               </button>
+              <select
+                value={presenceData?.manual_presence || "available"}
+                onChange={async (e) => {
+                  await setManualPresence(e.target.value === "busy" ? "busy" : "available");
+                }}
+                className="rounded-lg border border-[#364157] bg-[#0f1629] px-2 py-1.5 text-[11px] font-semibold text-slate-200"
+              >
+                <option value="available">Available</option>
+                <option value="busy">Busy</option>
+              </select>
             </div>
           </div>
           <div className="mt-3 flex items-center gap-2">
@@ -1178,6 +1417,16 @@ function ChatWorkspace({
           pins={pinData?.pins ?? []}
           conversationId={conversation.id}
           preferences={prefData}
+          externalInvites={externalInviteData?.invites ?? []}
+          calendarEvents={calendarData?.events ?? []}
+          onCalendarChanged={() => {
+            void mutateCalendar();
+            void mutateMessages();
+            onMutateConversations();
+          }}
+          onExternalInvitesChanged={() => {
+            void mutateExternalInvites();
+          }}
           onPinnedChanged={() => {
             void mutatePins();
             onMutateConversations();
@@ -1194,6 +1443,23 @@ function ChatWorkspace({
         <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-indigo-900/20 backdrop-blur-[1px]">
           <div className="rounded-xl border border-indigo-400/70 bg-[#0a1121]/95 px-5 py-3 text-sm font-medium text-indigo-200 shadow">
             Drop files here to upload
+          </div>
+        </div>
+      ) : null}
+
+      {activeCall?.meet_link ? (
+        <div className="pointer-events-none absolute bottom-24 right-6 z-40">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-2 shadow-[0_10px_30px_rgba(16,185,129,0.25)] backdrop-blur">
+            <span className="chat-unread-pulse inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
+            <span className="text-xs font-semibold text-emerald-100">Call is active</span>
+            <a
+              href={activeCall.meet_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-400"
+            >
+              Join now
+            </a>
           </div>
         </div>
       ) : null}
@@ -1411,6 +1677,10 @@ function ChatContextDrawer({
   pins,
   conversationId,
   preferences,
+  externalInvites,
+  calendarEvents,
+  onCalendarChanged,
+  onExternalInvitesChanged,
   onPinnedChanged,
   onPreferencesSaved,
 }: {
@@ -1423,10 +1693,25 @@ function ChatContextDrawer({
     user: { mention_only: boolean; desktop_sound: boolean; desktop_toast: boolean; email_digest: boolean; email_digest_frequency: string };
     conversations: Array<{ conversation_id: number; muted: boolean; mention_only: boolean }>;
   };
+  externalInvites: ExternalInvite[];
+  calendarEvents: ChatCalendarEvent[];
+  onCalendarChanged: () => void;
+  onExternalInvitesChanged: () => void;
   onPinnedChanged: () => void;
   onPreferencesSaved: () => void;
 }) {
   const conversationPreference = preferences?.conversations.find((pref) => pref.conversation_id === conversationId);
+  const [scheduleTitle, setScheduleTitle] = useState("Scheduled chat call");
+  const [scheduleStart, setScheduleStart] = useState(() => {
+    const d = new Date(Date.now() + 10 * 60_000);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+    return local.toISOString().slice(0, 16);
+  });
+  const [scheduleDuration, setScheduleDuration] = useState(30);
+  const [calendarBusy, setCalendarBusy] = useState(false);
+  const [externalNameInput, setExternalNameInput] = useState("");
+  const [externalExpiryHours, setExternalExpiryHours] = useState(24);
+  const [externalBusy, setExternalBusy] = useState(false);
 
   async function togglePin(messageId: number, isPinned: boolean) {
     if (isPinned) {
@@ -1477,6 +1762,59 @@ function ChatContextDrawer({
     onPreferencesSaved();
   }
 
+  async function createScheduledCall() {
+    try {
+      setCalendarBusy(true);
+      const startIso = new Date(scheduleStart).toISOString();
+      await apiFetchJson(`/api/chat/conversations/${conversationId}/calendar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: scheduleTitle,
+          start_at: startIso,
+          duration_minutes: scheduleDuration,
+        }),
+      });
+      onCalendarChanged();
+    } finally {
+      setCalendarBusy(false);
+    }
+  }
+
+  async function createExternalInvite() {
+    if (!externalNameInput.trim()) return;
+    try {
+      setExternalBusy(true);
+      const payload = await apiFetchJson<{ invite_link: string }>(
+        `/api/chat/conversations/${conversationId}/external-invites`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            external_name: externalNameInput.trim(),
+            expiry_hours: externalExpiryHours,
+          }),
+        }
+      );
+      if (payload.invite_link) {
+        try {
+          await navigator.clipboard.writeText(payload.invite_link);
+        } catch {}
+      }
+      setExternalNameInput("");
+      onExternalInvitesChanged();
+    } finally {
+      setExternalBusy(false);
+    }
+  }
+
+  async function revokeExternalInvite(inviteId: number) {
+    await apiFetchJson(`/api/chat/conversations/${conversationId}/external-invites/${inviteId}`, {
+      method: "DELETE",
+    });
+    onExternalInvitesChanged();
+  }
+
   return (
     <aside className="chat-panel-slide w-[340px] shrink-0 border-l border-[#2e3a56] bg-[#0d1428]/95 backdrop-blur">
       <div className="flex items-center justify-between border-b border-[#2e3a56] px-4 py-3">
@@ -1510,6 +1848,57 @@ function ChatContextDrawer({
                   <div key={m.user_id} className="rounded-lg border border-[#33405d] bg-[#121a30] px-2 py-1.5">
                     <p className="text-sm font-medium text-slate-100">{m.full_name}</p>
                     <p className="text-xs text-slate-400">{m.email}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[#33405d] bg-[#121a30] p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">External guest access</p>
+              <div className="mt-2 grid grid-cols-1 gap-2">
+                <input
+                  value={externalNameInput}
+                  onChange={(e) => setExternalNameInput(e.target.value)}
+                  placeholder="Guest name"
+                  className="w-full rounded-lg border border-[#3a4660] bg-[#0b1223] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400"
+                />
+                <select
+                  value={externalExpiryHours}
+                  onChange={(e) => setExternalExpiryHours(Number(e.target.value))}
+                  className="w-full rounded-lg border border-[#3a4660] bg-[#0b1223] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400"
+                >
+                  <option value={4}>4 hours</option>
+                  <option value={24}>24 hours</option>
+                  <option value={72}>3 days</option>
+                  <option value={168}>7 days</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={async () => createExternalInvite()}
+                  disabled={externalBusy || !externalNameInput.trim()}
+                  className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+                >
+                  {externalBusy ? "Creating…" : "Create temporary link"}
+                </button>
+              </div>
+              <div className="mt-3 space-y-2">
+                {externalInvites.length === 0 ? <p className="text-xs text-slate-400">No external links yet.</p> : null}
+                {externalInvites.map((invite) => (
+                  <div key={invite.id} className="rounded-lg border border-[#3a4660] bg-[#0b1223] p-2">
+                    <p className="text-xs font-semibold text-slate-100">External • {invite.external_name}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Expires {new Date(invite.expires_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+                    </p>
+                    {!invite.revoked_at ? (
+                      <button
+                        type="button"
+                        onClick={async () => revokeExternalInvite(invite.id)}
+                        className="mt-1 rounded border border-rose-400/40 px-2 py-1 text-[11px] font-medium text-rose-200 hover:bg-rose-500/15"
+                      >
+                        Remove access
+                      </button>
+                    ) : (
+                      <span className="mt-1 inline-flex rounded bg-slate-700 px-2 py-0.5 text-[11px] text-slate-200">Revoked</span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1565,6 +1954,71 @@ function ChatContextDrawer({
               checked={preferences?.user.email_digest ?? false}
               onChange={async (checked) => savePreference({ email_digest: checked })}
             />
+          </div>
+        ) : null}
+
+        {view === "calendar" ? (
+          <div className="space-y-3 text-sm text-slate-200">
+            <div className="rounded-xl border border-[#33405d] bg-[#121a30] p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Schedule call</p>
+              <div className="mt-2 space-y-2">
+                <input
+                  value={scheduleTitle}
+                  onChange={(e) => setScheduleTitle(e.target.value)}
+                  placeholder="Call title"
+                  className="w-full rounded-lg border border-[#3a4660] bg-[#0b1223] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400"
+                />
+                <input
+                  type="datetime-local"
+                  value={scheduleStart}
+                  onChange={(e) => setScheduleStart(e.target.value)}
+                  className="w-full rounded-lg border border-[#3a4660] bg-[#0b1223] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400"
+                />
+                <select
+                  value={scheduleDuration}
+                  onChange={(e) => setScheduleDuration(Number(e.target.value))}
+                  className="w-full rounded-lg border border-[#3a4660] bg-[#0b1223] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400"
+                >
+                  <option value={15}>15 minutes</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={45}>45 minutes</option>
+                  <option value={60}>1 hour</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={async () => createScheduledCall()}
+                  disabled={calendarBusy}
+                  className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-2 text-xs font-semibold text-white transition hover:from-indigo-500 hover:to-violet-500 disabled:opacity-60"
+                >
+                  {calendarBusy ? "Scheduling…" : "Schedule call"}
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[#33405d] bg-[#121a30] p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Upcoming</p>
+              <div className="space-y-2">
+                {calendarEvents.length === 0 ? <p className="text-xs text-slate-400">No scheduled calls yet.</p> : null}
+                {calendarEvents.map((event) => (
+                  <div key={event.id} className="rounded-lg border border-[#3a4660] bg-[#0b1223] p-2">
+                    <p className="truncate text-xs font-semibold text-slate-100">{event.title}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      {new Date(event.start_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+                    </p>
+                    {event.meet_link ? (
+                      <a
+                        href={event.meet_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-flex rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20"
+                      >
+                        Join call
+                      </a>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         ) : null}
       </div>

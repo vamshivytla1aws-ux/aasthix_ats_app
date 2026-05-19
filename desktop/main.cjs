@@ -330,6 +330,25 @@ ipcMain.handle("desktop:notify", (_evt, payload) => {
   return { ok: true };
 });
 
+ipcMain.handle("desktop:window:minimize", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+  mainWindow.minimize();
+  return { ok: true };
+});
+
+ipcMain.handle("desktop:window:toggleMaximize", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, maximized: false };
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
+  return { ok: true, maximized: mainWindow.isMaximized() };
+});
+
+ipcMain.handle("desktop:window:close", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+  mainWindow.close();
+  return { ok: true };
+});
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();

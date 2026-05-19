@@ -40,7 +40,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/careers")) {
+  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/careers") || pathname.startsWith("/chat/external/")) {
     const res = NextResponse.next();
     if (shouldNoIndex) {
       res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
