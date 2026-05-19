@@ -94,24 +94,39 @@ async function requireResolvableReportingManager(
   throw error;
 }
 
-let hasEmployeeCodeColumnCache: boolean | null = null;
+const usersColumnCache = new Map<string, boolean>();
 
-async function hasUsersEmployeeCodeColumn() {
-  // Re-check periodically so long-lived processes do not hold stale schema capability state.
-  if (hasEmployeeCodeColumnCache != null) return hasEmployeeCodeColumnCache;
+async function hasUsersColumn(columnName: string) {
+  const key = columnName.trim().toLowerCase();
+  if (!key) return false;
+  const cached = usersColumnCache.get(key);
+  if (typeof cached === "boolean") return cached;
   const res = await query(
     `
       SELECT 1
       FROM information_schema.columns
       WHERE table_schema = 'public'
         AND table_name = 'users'
-        AND column_name = 'employee_code'
+        AND column_name = $1
       LIMIT 1
     `,
-    [],
+    [key],
   );
-  hasEmployeeCodeColumnCache = res.rowCount > 0;
-  return hasEmployeeCodeColumnCache;
+  const exists = res.rowCount > 0;
+  usersColumnCache.set(key, exists);
+  return exists;
+}
+
+async function hasUsersColumns(columns: string[]) {
+  const checks = await Promise.all(columns.map((column) => hasUsersColumn(column)));
+  return columns.reduce<Record<string, boolean>>((acc, column, idx) => {
+    acc[column] = checks[idx];
+    return acc;
+  }, {});
+}
+
+async function hasUsersEmployeeCodeColumn() {
+  return hasUsersColumn("employee_code");
 }
 
 function isMissingEmployeeCodeError(error: unknown) {
@@ -122,7 +137,7 @@ function isMissingEmployeeCodeError(error: unknown) {
 }
 
 function invalidateEmployeeCodeCache() {
-  hasEmployeeCodeColumnCache = null;
+  usersColumnCache.delete("employee_code");
 }
 
 export function normalizeEmployeeStatus(value: string): EmployeeStatus {
@@ -139,8 +154,19 @@ export async function listEmployees(params: {
   department?: string;
   status?: string;
 }) {
-  let hasEmployeeCode = await hasUsersEmployeeCodeColumn();
-  const buildQuery = (withEmployeeCode: boolean) => {
+  const caps = await hasUsersColumns([
+    "employee_code",
+    "phone",
+    "department",
+    "role",
+    "designation",
+    "employment_type",
+    "joining_date",
+    "work_location",
+    "employment_status",
+    "reporting_manager_user_id",
+  ]);
+  const buildQuery = () => {
     const where: string[] = [];
     const values: Array<string | number> = [];
     let idx = 1;
@@ -149,27 +175,31 @@ export async function listEmployees(params: {
       where.push(`u.id = $${idx++}`);
       values.push(params.actorUserId);
     } else if (params.role === "hiring_manager" || params.role === "manager") {
-      where.push(`u.reporting_manager_user_id = $${idx++}`);
-      values.push(params.actorUserId);
+      if (caps.reporting_manager_user_id) {
+        where.push(`u.reporting_manager_user_id = $${idx++}`);
+        values.push(params.actorUserId);
+      } else {
+        where.push("1 = 0");
+      }
     }
 
     if (params.q && params.q.trim()) {
+      const qClauses = [`u.full_name ILIKE $${idx}`, `u.email ILIKE $${idx}`];
+      if (caps.employee_code) qClauses.push(`COALESCE(u.employee_code, '') ILIKE $${idx}`);
+      if (caps.phone) qClauses.push(`COALESCE(u.phone, '') ILIKE $${idx}`);
       where.push(`(
-        u.full_name ILIKE $${idx}
-        OR u.email ILIKE $${idx}
-        OR COALESCE(${withEmployeeCode ? "u.employee_code" : "''"}, '') ILIKE $${idx}
-        OR COALESCE(u.phone, '') ILIKE $${idx}
+        ${qClauses.join("\n        OR ")}
       )`);
       values.push(`%${params.q.trim()}%`);
       idx += 1;
     }
 
-    if (params.department && params.department.trim()) {
+    if (caps.department && params.department && params.department.trim()) {
       where.push(`COALESCE(u.department, '') ILIKE $${idx++}`);
       values.push(params.department.trim());
     }
 
-    if (params.status && params.status.trim()) {
+    if (caps.employment_status && params.status && params.status.trim()) {
       where.push(`u.employment_status = $${idx++}`);
       values.push(normalizeEmployeeStatus(params.status));
     }
@@ -178,38 +208,29 @@ export async function listEmployees(params: {
     const sql = `
       SELECT
         u.id,
-        ${withEmployeeCode ? "COALESCE(u.employee_code, '')" : "''"} AS employee_code,
+        ${caps.employee_code ? "COALESCE(u.employee_code, '')" : "''"} AS employee_code,
         u.full_name,
         u.email,
-        COALESCE(u.phone, '') AS phone,
-        COALESCE(u.department, '') AS department,
-        COALESCE(u.role, 'user') AS role,
-        COALESCE(u.designation, '') AS designation,
-        COALESCE(u.employment_type, '') AS employment_type,
-        u.joining_date,
-        COALESCE(u.work_location, '') AS work_location,
-        COALESCE(u.employment_status, 'active') AS employment_status,
-        u.reporting_manager_user_id,
-        COALESCE(m.full_name, '') AS reporting_manager_name,
-        COALESCE(m.email, '') AS reporting_manager_email
+        ${caps.phone ? "COALESCE(u.phone, '')" : "''"} AS phone,
+        ${caps.department ? "COALESCE(u.department, '')" : "''"} AS department,
+        ${caps.role ? "COALESCE(u.role, 'user')" : "'user'"} AS role,
+        ${caps.designation ? "COALESCE(u.designation, '')" : "''"} AS designation,
+        ${caps.employment_type ? "COALESCE(u.employment_type, '')" : "''"} AS employment_type,
+        ${caps.joining_date ? "u.joining_date" : "NULL::date"} AS joining_date,
+        ${caps.work_location ? "COALESCE(u.work_location, '')" : "''"} AS work_location,
+        ${caps.employment_status ? "COALESCE(u.employment_status, 'active')" : "'active'"} AS employment_status,
+        ${caps.reporting_manager_user_id ? "u.reporting_manager_user_id" : "NULL::int"} AS reporting_manager_user_id,
+        ${caps.reporting_manager_user_id ? "COALESCE(m.full_name, '')" : "''"} AS reporting_manager_name,
+        ${caps.reporting_manager_user_id ? "COALESCE(m.email, '')" : "''"} AS reporting_manager_email
       FROM users u
-      LEFT JOIN users m ON m.id = u.reporting_manager_user_id
+      ${caps.reporting_manager_user_id ? "LEFT JOIN users m ON m.id = u.reporting_manager_user_id" : ""}
       ${whereSql}
       ORDER BY LOWER(u.full_name) ASC, u.id ASC
     `;
     return { sql, values };
   };
-  let res;
-  try {
-    const q = buildQuery(hasEmployeeCode);
-    res = await query(q.sql, q.values);
-  } catch (error) {
-    if (!hasEmployeeCode || !isMissingEmployeeCodeError(error)) throw error;
-    invalidateEmployeeCodeCache();
-    hasEmployeeCode = false;
-    const q = buildQuery(false);
-    res = await query(q.sql, q.values);
-  }
+  const q = buildQuery();
+  const res = await query(q.sql, q.values);
   return res.rows.map((row: Record<string, unknown>) => {
     const filled = COMPLETENESS_FIELDS.reduce((acc, key) => {
       const value = row[key];
@@ -331,7 +352,18 @@ export async function applyImportConflictChecks(results: EmployeeImportRowResult
 
 export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserId: number) {
   if (rows.length === 0) return { created: 0 };
-  let hasEmployeeCode = await hasUsersEmployeeCodeColumn();
+  const caps = await hasUsersColumns([
+    "employee_code",
+    "phone",
+    "department",
+    "designation",
+    "employment_type",
+    "joining_date",
+    "reporting_manager_user_id",
+    "work_location",
+    "employment_status",
+    "role",
+  ]);
   const client = await pool.connect();
   let created = 0;
   try {
@@ -341,51 +373,54 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
         row.reportingManagerUserId || null,
         row.reportingManagerEmail || null,
       );
-      const buildInsert = (withEmployeeCode: boolean) => ({
-        sql: `
-          INSERT INTO users
-          (${withEmployeeCode ? "employee_code," : ""} full_name, email, phone, department, designation, employment_type, joining_date, reporting_manager_user_id, work_location, employment_status, role)
-          VALUES (${withEmployeeCode ? "$1," : ""} ${withEmployeeCode ? "$2" : "$1"}, ${withEmployeeCode ? "$3" : "$2"}, ${withEmployeeCode ? "$4" : "$3"}, ${withEmployeeCode ? "$5" : "$4"}, ${withEmployeeCode ? "$6" : "$5"}, ${withEmployeeCode ? "$7" : "$6"}, ${withEmployeeCode ? "$8" : "$7"}::date, ${withEmployeeCode ? "$9" : "$8"}, ${withEmployeeCode ? "$10" : "$9"}, ${withEmployeeCode ? "$11" : "$10"}, ${withEmployeeCode ? "$12" : "$11"})
-        `,
-        values: withEmployeeCode
-          ? [
-              row.employeeIdCode,
-              row.fullName,
-              row.email,
-              row.phone,
-              row.department,
-              row.designation,
-              row.employmentType,
-              row.joiningDate,
-              managerId,
-              row.workLocation,
-              normalizeEmployeeStatus(row.status),
-              (row.role || "employee").toLowerCase(),
-            ]
-          : [
-              row.fullName,
-              row.email,
-              row.phone,
-              row.department,
-              row.designation,
-              row.employmentType,
-              row.joiningDate,
-              managerId,
-              row.workLocation,
-              normalizeEmployeeStatus(row.status),
-              (row.role || "employee").toLowerCase(),
-            ],
-      });
-      try {
-        const ins = buildInsert(hasEmployeeCode);
-        await client.query(ins.sql, ins.values);
-      } catch (error) {
-        if (!hasEmployeeCode || !isMissingEmployeeCodeError(error)) throw error;
-        invalidateEmployeeCodeCache();
-        hasEmployeeCode = false;
-        const ins = buildInsert(false);
-        await client.query(ins.sql, ins.values);
+      const cols = ["full_name", "email"];
+      const vals: Array<string | number | null> = [row.fullName, row.email];
+      if (caps.employee_code) {
+        cols.unshift("employee_code");
+        vals.unshift(row.employeeIdCode);
       }
+      if (caps.phone) {
+        cols.push("phone");
+        vals.push(row.phone ?? null);
+      }
+      if (caps.department) {
+        cols.push("department");
+        vals.push(row.department ?? null);
+      }
+      if (caps.designation) {
+        cols.push("designation");
+        vals.push(row.designation ?? null);
+      }
+      if (caps.employment_type) {
+        cols.push("employment_type");
+        vals.push(row.employmentType ?? null);
+      }
+      if (caps.joining_date) {
+        cols.push("joining_date");
+        vals.push(row.joiningDate || null);
+      }
+      if (caps.reporting_manager_user_id) {
+        cols.push("reporting_manager_user_id");
+        vals.push(managerId);
+      }
+      if (caps.work_location) {
+        cols.push("work_location");
+        vals.push(row.workLocation ?? null);
+      }
+      if (caps.employment_status) {
+        cols.push("employment_status");
+        vals.push(normalizeEmployeeStatus(row.status));
+      }
+      if (caps.role) {
+        cols.push("role");
+        vals.push((row.role || "employee").toLowerCase());
+      }
+      const placeholders = vals.map((_, i) => {
+        const col = cols[i];
+        if (col === "joining_date") return `$${i + 1}::date`;
+        return `$${i + 1}`;
+      });
+      await client.query(`INSERT INTO users (${cols.join(", ")}) VALUES (${placeholders.join(", ")})`, vals);
       created += 1;
     }
     await client.query("COMMIT");
@@ -406,57 +441,69 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
 }
 
 export async function createEmployee(input: EmployeeDirectoryInput, actorUserId: number) {
-  let hasEmployeeCode = await hasUsersEmployeeCodeColumn();
+  const caps = await hasUsersColumns([
+    "employee_code",
+    "phone",
+    "department",
+    "designation",
+    "employment_type",
+    "joining_date",
+    "reporting_manager_user_id",
+    "work_location",
+    "employment_status",
+    "role",
+  ]);
   const normalizedStatus = normalizeEmployeeStatus(input.status);
   const role = (input.role || "employee").trim().toLowerCase();
   const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
-  const buildInsert = (withEmployeeCode: boolean) => ({
-    sql: `
-      INSERT INTO users
-      (${withEmployeeCode ? "employee_code," : ""} full_name, email, phone, department, designation, employment_type, joining_date, reporting_manager_user_id, work_location, employment_status, role)
-      VALUES (${withEmployeeCode ? "$1," : ""} ${withEmployeeCode ? "$2" : "$1"}, ${withEmployeeCode ? "$3" : "$2"}, ${withEmployeeCode ? "$4" : "$3"}, ${withEmployeeCode ? "$5" : "$4"}, ${withEmployeeCode ? "$6" : "$5"}, ${withEmployeeCode ? "$7" : "$6"}, ${withEmployeeCode ? "$8" : "$7"}::date, ${withEmployeeCode ? "$9" : "$8"}, ${withEmployeeCode ? "$10" : "$9"}, ${withEmployeeCode ? "$11" : "$10"}, ${withEmployeeCode ? "$12" : "$11"})
-      RETURNING id
-    `,
-    values: withEmployeeCode
-      ? [
-          input.employeeIdCode.trim(),
-          input.fullName.trim(),
-          input.email.trim().toLowerCase(),
-          input.phone?.trim() || null,
-          input.department?.trim() || null,
-          input.designation?.trim() || null,
-          input.employmentType?.trim() || null,
-          input.joiningDate || null,
-          managerId,
-          input.workLocation?.trim() || null,
-          normalizedStatus,
-          role,
-        ]
-      : [
-          input.fullName.trim(),
-          input.email.trim().toLowerCase(),
-          input.phone?.trim() || null,
-          input.department?.trim() || null,
-          input.designation?.trim() || null,
-          input.employmentType?.trim() || null,
-          input.joiningDate || null,
-          managerId,
-          input.workLocation?.trim() || null,
-          normalizedStatus,
-          role,
-        ],
-  });
-  let ins;
-  try {
-    const q = buildInsert(hasEmployeeCode);
-    ins = await query(q.sql, q.values);
-  } catch (error) {
-    if (!hasEmployeeCode || !isMissingEmployeeCodeError(error)) throw error;
-    invalidateEmployeeCodeCache();
-    hasEmployeeCode = false;
-    const q = buildInsert(false);
-    ins = await query(q.sql, q.values);
+  const cols = ["full_name", "email"];
+  const vals: Array<string | number | null> = [input.fullName.trim(), input.email.trim().toLowerCase()];
+  if (caps.employee_code) {
+    cols.unshift("employee_code");
+    vals.unshift(input.employeeIdCode.trim());
   }
+  if (caps.phone) {
+    cols.push("phone");
+    vals.push(input.phone?.trim() || null);
+  }
+  if (caps.department) {
+    cols.push("department");
+    vals.push(input.department?.trim() || null);
+  }
+  if (caps.designation) {
+    cols.push("designation");
+    vals.push(input.designation?.trim() || null);
+  }
+  if (caps.employment_type) {
+    cols.push("employment_type");
+    vals.push(input.employmentType?.trim() || null);
+  }
+  if (caps.joining_date) {
+    cols.push("joining_date");
+    vals.push(input.joiningDate || null);
+  }
+  if (caps.reporting_manager_user_id) {
+    cols.push("reporting_manager_user_id");
+    vals.push(managerId);
+  }
+  if (caps.work_location) {
+    cols.push("work_location");
+    vals.push(input.workLocation?.trim() || null);
+  }
+  if (caps.employment_status) {
+    cols.push("employment_status");
+    vals.push(normalizedStatus);
+  }
+  if (caps.role) {
+    cols.push("role");
+    vals.push(role);
+  }
+  const placeholders = vals.map((_, i) => {
+    const col = cols[i];
+    if (col === "joining_date") return `$${i + 1}::date`;
+    return `$${i + 1}`;
+  });
+  const ins = await query(`INSERT INTO users (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING id`, vals);
   const id = Number(ins.rows[0]?.id || 0);
   await writeAuditLog({
     actorUserId,
@@ -467,68 +514,72 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
 }
 
 export async function updateEmployee(id: number, input: EmployeeDirectoryInput, actorUserId: number) {
-  let hasEmployeeCode = await hasUsersEmployeeCodeColumn();
+  const caps = await hasUsersColumns([
+    "employee_code",
+    "phone",
+    "department",
+    "designation",
+    "employment_type",
+    "joining_date",
+    "reporting_manager_user_id",
+    "work_location",
+    "employment_status",
+    "role",
+  ]);
   const normalizedStatus = normalizeEmployeeStatus(input.status);
   const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
-  const buildUpdate = (withEmployeeCode: boolean) => ({
-    sql: `
+  const setClauses = ["full_name = $2", "email = $3"];
+  const vals: Array<string | number | null> = [id, input.fullName.trim(), input.email.trim().toLowerCase()];
+  let idx = 4;
+  if (caps.employee_code) {
+    setClauses.unshift(`employee_code = $${idx}`);
+    vals.push(input.employeeIdCode.trim());
+    idx += 1;
+  }
+  if (caps.phone) {
+    setClauses.push(`phone = $${idx++}`);
+    vals.push(input.phone?.trim() || null);
+  }
+  if (caps.department) {
+    setClauses.push(`department = $${idx++}`);
+    vals.push(input.department?.trim() || null);
+  }
+  if (caps.designation) {
+    setClauses.push(`designation = $${idx++}`);
+    vals.push(input.designation?.trim() || null);
+  }
+  if (caps.employment_type) {
+    setClauses.push(`employment_type = $${idx++}`);
+    vals.push(input.employmentType?.trim() || null);
+  }
+  if (caps.joining_date) {
+    setClauses.push(`joining_date = $${idx++}::date`);
+    vals.push(input.joiningDate || null);
+  }
+  if (caps.reporting_manager_user_id) {
+    setClauses.push(`reporting_manager_user_id = $${idx++}`);
+    vals.push(managerId);
+  }
+  if (caps.work_location) {
+    setClauses.push(`work_location = $${idx++}`);
+    vals.push(input.workLocation?.trim() || null);
+  }
+  if (caps.employment_status) {
+    setClauses.push(`employment_status = $${idx++}`);
+    vals.push(normalizedStatus);
+  }
+  if (caps.role) {
+    setClauses.push(`role = $${idx++}`);
+    vals.push((input.role || "employee").trim().toLowerCase());
+  }
+  await query(
+    `
       UPDATE users
-      SET
-        ${withEmployeeCode ? "employee_code = $2," : ""}
-        full_name = ${withEmployeeCode ? "$3" : "$2"},
-        email = ${withEmployeeCode ? "$4" : "$3"},
-        phone = ${withEmployeeCode ? "$5" : "$4"},
-        department = ${withEmployeeCode ? "$6" : "$5"},
-        designation = ${withEmployeeCode ? "$7" : "$6"},
-        employment_type = ${withEmployeeCode ? "$8" : "$7"},
-        joining_date = ${withEmployeeCode ? "$9" : "$8"}::date,
-        reporting_manager_user_id = ${withEmployeeCode ? "$10" : "$9"},
-        work_location = ${withEmployeeCode ? "$11" : "$10"},
-        employment_status = ${withEmployeeCode ? "$12" : "$11"},
-        role = ${withEmployeeCode ? "$13" : "$12"}
+      SET ${setClauses.join(",\n          ")}
       WHERE id = $1
     `,
-    values: withEmployeeCode
-      ? [
-          id,
-          input.employeeIdCode.trim(),
-          input.fullName.trim(),
-          input.email.trim().toLowerCase(),
-          input.phone?.trim() || null,
-          input.department?.trim() || null,
-          input.designation?.trim() || null,
-          input.employmentType?.trim() || null,
-          input.joiningDate || null,
-          managerId,
-          input.workLocation?.trim() || null,
-          normalizedStatus,
-          (input.role || "employee").trim().toLowerCase(),
-        ]
-      : [
-          id,
-          input.fullName.trim(),
-          input.email.trim().toLowerCase(),
-          input.phone?.trim() || null,
-          input.department?.trim() || null,
-          input.designation?.trim() || null,
-          input.employmentType?.trim() || null,
-          input.joiningDate || null,
-          managerId,
-          input.workLocation?.trim() || null,
-          normalizedStatus,
-          (input.role || "employee").trim().toLowerCase(),
-        ],
-  });
-  try {
-    const q = buildUpdate(hasEmployeeCode);
-    await query(q.sql, q.values);
-  } catch (error) {
-    if (!hasEmployeeCode || !isMissingEmployeeCodeError(error)) throw error;
-    invalidateEmployeeCodeCache();
-    hasEmployeeCode = false;
-    const q = buildUpdate(false);
-    await query(q.sql, q.values);
-  }
+    vals,
+  );
   await writeAuditLog({
     actorUserId,
     action: "hrms.employee.updated",
