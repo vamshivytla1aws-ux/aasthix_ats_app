@@ -72,6 +72,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       );
     }
 
+    const requestKey = _request.headers.get("x-idempotency-key")?.trim() || "";
     await query(
       `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
       [roomId, access.user_id],
@@ -96,11 +97,19 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       conversationId: room.conversation_id,
       userId: access.user_id,
       eventType: "join_success",
-      eventKey: `join_success:${roomId}:${access.user_id}:${Date.now()}`,
+      eventKey: requestKey || `join_success:${roomId}:${access.user_id}`,
     });
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [room.conversation_id]);
 
-    return NextResponse.json({ operation_status: "success", user_message: "Joined call room." });
+    const countRes = await query(
+      `SELECT COUNT(*)::int AS count FROM chat_call_participants WHERE room_id = $1 AND left_at IS NULL`,
+      [roomId],
+    );
+    return NextResponse.json({
+      operation_status: "success",
+      user_message: "Joined call room.",
+      joined_count: Number((countRes.rows[0] as { count?: number } | undefined)?.count || 0),
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to join call room." }, { status: 400 });
   }

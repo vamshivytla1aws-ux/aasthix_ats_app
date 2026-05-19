@@ -20,6 +20,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     const room = roomRes.rows[0] as { id: number; conversation_id: number } | undefined;
     if (!room) return NextResponse.json({ error: "Call room not found." }, { status: 404 });
 
+    const requestKey = _request.headers.get("x-idempotency-key")?.trim() || "";
     await query(
       `
       UPDATE chat_call_participants
@@ -49,6 +50,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
         conversationId: room.conversation_id,
         userId: access.user_id,
         eventType: "end",
+        eventKey: requestKey || `call_end:${roomId}:${access.user_id}`,
         metadata: { reason: "last_participant_left" },
       });
     } else {
@@ -61,6 +63,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
         conversationId: room.conversation_id,
         userId: access.user_id,
         eventType: "drop",
+        eventKey: requestKey || `call_drop:${roomId}:${access.user_id}`,
       });
     }
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [room.conversation_id]);

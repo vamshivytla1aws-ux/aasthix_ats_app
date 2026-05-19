@@ -45,6 +45,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     }
 
     const body = await request.json().catch(() => ({}));
+    const requestKey = request.headers.get("x-idempotency-key")?.trim() || "";
     const mode = normalizeMode(body?.mode);
     const durationMinutesRaw = Number(body?.duration_minutes);
     const durationMinutes =
@@ -79,7 +80,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       conversationId,
       userId: access.user_id,
       eventType: "call_start",
-      eventKey: `call_start:${room.id}:${access.user_id}`,
+      eventKey: requestKey || `call_start:${room.id}:${access.user_id}`,
       metadata: { session_mode: mode },
     });
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
@@ -122,6 +123,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     if (!memberCheck.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
 
     const url = new URL(request.url);
+    const requestKey = request.headers.get("x-idempotency-key")?.trim() || "";
     const eventId = Number(url.searchParams.get("event_id"));
     if (!Number.isFinite(eventId)) return NextResponse.json({ error: "event_id is required." }, { status: 400 });
 
@@ -162,7 +164,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       conversationId,
       userId: access.user_id,
       eventType: "end",
-      eventKey: `call_end:${event.id}:${access.user_id}`,
+      eventKey: requestKey || `call_end:${event.id}:${access.user_id}`,
       metadata: { reason: "ended" },
     });
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);

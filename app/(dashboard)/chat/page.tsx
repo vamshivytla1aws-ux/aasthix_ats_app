@@ -140,6 +140,9 @@ type ChatCalendarEvent = {
   joined_count?: number;
   joined_user_ids?: number[];
   joined_participants?: Array<{ user_id: number; full_name: string }>;
+  room_closed_reason?: "ended" | "missed" | "declined" | "timeout" | null;
+  connection_state?: "idle" | "connecting" | "connected" | "reconnecting" | "failed";
+  media_state?: "ok" | "permission_denied" | "device_missing" | "failed" | "ready";
 };
 type ConversationLiveStatus = {
   conversation_id: number;
@@ -357,6 +360,10 @@ function getRtcIceServers() {
     }
   }
   return [{ urls: "stun:stun.l.google.com:19302" }];
+}
+
+function buildCallMutationHeaders() {
+  return { "x-idempotency-key": `${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
 }
 
 export default function ChatPage() {
@@ -878,6 +885,11 @@ function ChatWorkspace({
     dashboardFetcher,
     { refreshInterval: callState === "idle" ? 20_000 : 2_000 }
   );
+  const { data: callStateData, mutate: mutateCallState } = useSWR<{ operation_status: string; call: ChatCalendarEvent | null }>(
+    `/api/chat/conversations/${conversation.id}/calls/state`,
+    dashboardFetcher,
+    { refreshInterval: callState === "idle" ? 10_000 : 1_500 }
+  );
 
   useEffect(() => {
     if (conversation.unread_count > 0) {
@@ -1138,6 +1150,7 @@ function ChatWorkspace({
     [uploadFiles]
   );
   const activeCall = useMemo(() => {
+    if (callStateData?.call) return callStateData.call;
     const now = nowTick;
     const events = calendarData?.events ?? [];
     const ranked = events
@@ -1158,7 +1171,7 @@ function ChatWorkspace({
         return new Date(b.start_at).getTime() - new Date(a.start_at).getTime();
       });
     return ranked[0] ?? null;
-  }, [calendarData, nowTick]);
+  }, [callStateData, calendarData, nowTick]);
 
   const activeCallDuration = useMemo(() => {
     if (!activeCall) return "00:00";
@@ -1182,7 +1195,10 @@ function ChatWorkspace({
     let cancelled = false;
     (async () => {
       try {
-        await apiFetchJson(`/api/chat/calls/${initialRoomId}/join`, { method: "POST" });
+        await apiFetchJson(`/api/chat/calls/${initialRoomId}/join`, {
+          method: "POST",
+          headers: buildCallMutationHeaders(),
+        });
         if (cancelled) return;
         setRingDismissedRoomId(null);
         setActiveRoomId(initialRoomId);
@@ -1209,7 +1225,9 @@ function ChatWorkspace({
     }
     const roomId = activeCall.id;
     const isHost = Number(activeCall.created_by_user_id || 0) === Number(currentUserId || 0);
-    const joinedUserIds = activeCall.joined_user_ids ?? [];
+    const joinedUserIds =
+      activeCall.joined_user_ids ??
+      (activeCall.joined_participants ?? []).map((member) => Number(member.user_id));
     const meJoined = joinedUserIds.includes(Number(currentUserId || 0));
     const dismissed = ringDismissedRoomId === roomId;
     if (activeCall.status === "ended" || activeCall.status === "cancelled") {
@@ -1287,17 +1305,19 @@ function ChatWorkspace({
     if (!activeCall) return;
     const isHost = Number(activeCall.created_by_user_id || 0) === Number(currentUserId || 0);
     const joined = Number(activeCall.joined_count || 0);
-    if (!isHost || callState !== "connected" || joined > 1) return;
+    if (!isHost || callState !== "ringing_outgoing" || joined > 1) return;
     unansweredTimeoutRef.current = window.setTimeout(async () => {
       try {
         await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls?event_id=${activeCall.id}`, {
           method: "DELETE",
+          headers: buildCallMutationHeaders(),
         });
         setCallState("idle");
         setActiveRoomId(null);
         setRingDismissedRoomId(activeCall.id);
         onToast("No one joined. Call ended automatically.", "info");
         void mutateCalendar();
+        void mutateCallState();
         void mutateMessages();
         onMutateConversations();
       } catch {
@@ -1310,7 +1330,7 @@ function ChatWorkspace({
         unansweredTimeoutRef.current = null;
       }
     };
-  }, [activeCall, callState, currentUserId, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]);
+  }, [activeCall, callState, currentUserId, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast]);
 
   const stopMediaSession = useCallback(() => {
     setIsPresenting(false);
@@ -1652,7 +1672,10 @@ function ChatWorkspace({
       try {
         callActionRef.current.joining = true;
         if (activeCall) {
-          await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
+          await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, {
+            method: "POST",
+            headers: buildCallMutationHeaders(),
+          });
           setRingDismissedRoomId(null);
           setActiveRoomId(activeCall.id);
           setCallState("connecting_media");
@@ -1660,6 +1683,7 @@ function ChatWorkspace({
           setCallState("connected");
           onToast("Joined active call.", "success");
           void mutateCalendar();
+          void mutateCallState();
           return;
         }
         setCallLoading(mode);
@@ -1667,7 +1691,7 @@ function ChatWorkspace({
           `/api/chat/conversations/${conversation.id}/calls`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
             body: JSON.stringify({ mode, duration_minutes: 30 }),
           }
         );
@@ -1676,7 +1700,10 @@ function ChatWorkspace({
           .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime())
           .find((e) => (e.join_url || e.meet_link) && (e.status === "active" || e.status === "scheduled"));
         if (latest?.id) {
-          await apiFetchJson(`/api/chat/calls/${latest.id}/join`, { method: "POST" });
+          await apiFetchJson(`/api/chat/calls/${latest.id}/join`, {
+            method: "POST",
+            headers: buildCallMutationHeaders(),
+          });
           setRingDismissedRoomId(null);
           setActiveRoomId(latest.id);
           setCallState("connecting_media");
@@ -1686,6 +1713,7 @@ function ChatWorkspace({
         }
         onToast(data.user_message || (mode === "screenshare" ? "Screen share started." : "Call started."), "success");
         void mutateCalendar();
+        void mutateCallState();
         void mutateMessages();
         onMutateConversations();
         setDrawerView("calendar");
@@ -1698,7 +1726,7 @@ function ChatWorkspace({
         setCallLoading(null);
       }
     },
-    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]
+    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast]
   );
 
   const endActiveCall = useCallback(
@@ -1709,10 +1737,13 @@ function ChatWorkspace({
         if (activeRoomId === eventId) {
           await sendSignal(eventId, "leave", {});
         }
-        await apiFetchJson(`/api/chat/calls/${eventId}/leave`, { method: "POST" }).catch(() => {});
+        await apiFetchJson(`/api/chat/calls/${eventId}/leave`, {
+          method: "POST",
+          headers: buildCallMutationHeaders(),
+        }).catch(() => {});
         await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls/end`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
           body: JSON.stringify({ reason: "ended" }),
         });
         setCallState("idle");
@@ -1721,6 +1752,7 @@ function ChatWorkspace({
         stopMediaSession();
         onToast("Call ended.", "success");
         void mutateCalendar();
+        void mutateCallState();
         void mutateMessages();
         onMutateConversations();
       } catch (error) {
@@ -1730,7 +1762,7 @@ function ChatWorkspace({
         callActionRef.current.ending = false;
       }
     },
-    [activeRoomId, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast, sendSignal, stopMediaSession]
+    [activeRoomId, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast, sendSignal, stopMediaSession]
   );
 
   const joinCallRoom = useCallback(
@@ -1738,7 +1770,10 @@ function ChatWorkspace({
       if (callActionRef.current.joining) return;
       try {
         callActionRef.current.joining = true;
-        await apiFetchJson(`/api/chat/calls/${roomId}/join`, { method: "POST" });
+        await apiFetchJson(`/api/chat/calls/${roomId}/join`, {
+          method: "POST",
+          headers: buildCallMutationHeaders(),
+        });
         setRingDismissedRoomId(null);
         setActiveRoomId(roomId);
         setCallState("connecting_media");
@@ -1746,6 +1781,7 @@ function ChatWorkspace({
         setCallState("connected");
         onToast(successMessage, "success");
         void mutateCalendar();
+        void mutateCallState();
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
           setCallState("idle");
@@ -1753,6 +1789,7 @@ function ChatWorkspace({
           setRingDismissedRoomId(roomId);
           onToast("This call has already ended.", "info");
           void mutateCalendar();
+          void mutateCallState();
           return;
         }
         setConnectionState("failed");
@@ -1762,7 +1799,7 @@ function ChatWorkspace({
         callActionRef.current.joining = false;
       }
     },
-    [connectLiveKitRoom, conversation.id, mutateCalendar, onToast]
+    [connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast]
   );
 
   const dismissIncomingCall = useCallback((roomId: number, toastMessage = "Call dismissed.") => {
@@ -1796,6 +1833,7 @@ function ChatWorkspace({
           stopMediaSession();
         }
         void mutateCalendar();
+        void mutateCallState();
         void mutateMessages();
       } catch (error) {
         const msg = error instanceof ApiError ? error.message : "Moderation action failed.";
@@ -1804,7 +1842,7 @@ function ChatWorkspace({
         setModerationBusy(null);
       }
     },
-    [activeCall, mutateCalendar, mutateMessages, onToast, stopMediaSession]
+    [activeCall, mutateCalendar, mutateCallState, mutateMessages, onToast, stopMediaSession]
   );
 
   const copyCallDiagnostics = useCallback(async () => {
@@ -1825,16 +1863,20 @@ function ChatWorkspace({
   const leaveCurrentCall = useCallback(
     async (roomId: number) => {
       try {
-        await apiFetchJson(`/api/chat/calls/${roomId}/leave`, { method: "POST" }).catch(() => {});
+        await apiFetchJson(`/api/chat/calls/${roomId}/leave`, {
+          method: "POST",
+          headers: buildCallMutationHeaders(),
+        }).catch(() => {});
         await sendSignal(roomId, "leave", {}).catch(() => {});
       } finally {
         setCallState("idle");
         setActiveRoomId(null);
         stopMediaSession();
         void mutateCalendar();
+        void mutateCallState();
       }
     },
-    [mutateCalendar, sendSignal, stopMediaSession]
+    [mutateCalendar, mutateCallState, sendSignal, stopMediaSession]
   );
 
   const toggleScreenShare = useCallback(

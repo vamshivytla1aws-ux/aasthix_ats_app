@@ -87,6 +87,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         is_presenting: isPresenting,
         presenter_user_id: presenterUserId,
         room_closed_reason: roomClosedReason || null,
+        connection_state: room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle",
+        media_state: "ok",
       },
     });
   } catch (error) {

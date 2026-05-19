@@ -465,7 +465,8 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
 }
 
 export async function createEmployee(input: EmployeeDirectoryInput, actorUserId: number) {
-  const caps = await hasUsersColumns([
+  const createOnce = async () => {
+    const caps = await hasUsersColumns([
     "employee_code",
     "phone",
     "department",
@@ -477,68 +478,78 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
     "employment_status",
     "role",
   ]);
-  const normalizedStatus = normalizeEmployeeStatus(input.status);
-  const role = (input.role || "employee").trim().toLowerCase();
-  const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
-  const cols = ["full_name", "email"];
-  const vals: Array<string | number | null> = [input.fullName.trim(), input.email.trim().toLowerCase()];
-  if (caps.employee_code) {
-    cols.unshift("employee_code");
-    vals.unshift(input.employeeIdCode.trim());
+    const normalizedStatus = normalizeEmployeeStatus(input.status);
+    const role = (input.role || "employee").trim().toLowerCase();
+    const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
+    const cols = ["full_name", "email"];
+    const vals: Array<string | number | null> = [input.fullName.trim(), input.email.trim().toLowerCase()];
+    if (caps.employee_code) {
+      cols.unshift("employee_code");
+      vals.unshift(input.employeeIdCode.trim());
+    }
+    if (caps.phone) {
+      cols.push("phone");
+      vals.push(input.phone?.trim() || null);
+    }
+    if (caps.department) {
+      cols.push("department");
+      vals.push(input.department?.trim() || null);
+    }
+    if (caps.designation) {
+      cols.push("designation");
+      vals.push(input.designation?.trim() || null);
+    }
+    if (caps.employment_type) {
+      cols.push("employment_type");
+      vals.push(input.employmentType?.trim() || null);
+    }
+    if (caps.joining_date) {
+      cols.push("joining_date");
+      vals.push(input.joiningDate || null);
+    }
+    if (caps.reporting_manager_user_id) {
+      cols.push("reporting_manager_user_id");
+      vals.push(managerId);
+    }
+    if (caps.work_location) {
+      cols.push("work_location");
+      vals.push(input.workLocation?.trim() || null);
+    }
+    if (caps.employment_status) {
+      cols.push("employment_status");
+      vals.push(normalizedStatus);
+    }
+    if (caps.role) {
+      cols.push("role");
+      vals.push(role);
+    }
+    const placeholders = vals.map((_, i) => {
+      const col = cols[i];
+      if (col === "joining_date") return `$${i + 1}::date`;
+      return `$${i + 1}`;
+    });
+    const ins = await query(`INSERT INTO users (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING id`, vals);
+    const id = Number(ins.rows[0]?.id || 0);
+    await writeAuditLog({
+      actorUserId,
+      action: "hrms.employee.created",
+      metadata: { employee_id: id, email: input.email },
+    });
+    return id;
+  };
+  try {
+    return await createOnce();
+  } catch (error) {
+    const missingColumn = extractMissingUsersColumn(error);
+    if (!missingColumn) throw error;
+    usersColumnCache.set(missingColumn, false);
+    return createOnce();
   }
-  if (caps.phone) {
-    cols.push("phone");
-    vals.push(input.phone?.trim() || null);
-  }
-  if (caps.department) {
-    cols.push("department");
-    vals.push(input.department?.trim() || null);
-  }
-  if (caps.designation) {
-    cols.push("designation");
-    vals.push(input.designation?.trim() || null);
-  }
-  if (caps.employment_type) {
-    cols.push("employment_type");
-    vals.push(input.employmentType?.trim() || null);
-  }
-  if (caps.joining_date) {
-    cols.push("joining_date");
-    vals.push(input.joiningDate || null);
-  }
-  if (caps.reporting_manager_user_id) {
-    cols.push("reporting_manager_user_id");
-    vals.push(managerId);
-  }
-  if (caps.work_location) {
-    cols.push("work_location");
-    vals.push(input.workLocation?.trim() || null);
-  }
-  if (caps.employment_status) {
-    cols.push("employment_status");
-    vals.push(normalizedStatus);
-  }
-  if (caps.role) {
-    cols.push("role");
-    vals.push(role);
-  }
-  const placeholders = vals.map((_, i) => {
-    const col = cols[i];
-    if (col === "joining_date") return `$${i + 1}::date`;
-    return `$${i + 1}`;
-  });
-  const ins = await query(`INSERT INTO users (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING id`, vals);
-  const id = Number(ins.rows[0]?.id || 0);
-  await writeAuditLog({
-    actorUserId,
-    action: "hrms.employee.created",
-    metadata: { employee_id: id, email: input.email },
-  });
-  return id;
 }
 
 export async function updateEmployee(id: number, input: EmployeeDirectoryInput, actorUserId: number) {
-  const caps = await hasUsersColumns([
+  const updateOnce = async () => {
+    const caps = await hasUsersColumns([
     "employee_code",
     "phone",
     "department",
@@ -550,65 +561,74 @@ export async function updateEmployee(id: number, input: EmployeeDirectoryInput, 
     "employment_status",
     "role",
   ]);
-  const normalizedStatus = normalizeEmployeeStatus(input.status);
-  const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
-  const setClauses = ["full_name = $2", "email = $3"];
-  const vals: Array<string | number | null> = [id, input.fullName.trim(), input.email.trim().toLowerCase()];
-  let idx = 4;
-  if (caps.employee_code) {
-    setClauses.unshift(`employee_code = $${idx}`);
-    vals.push(input.employeeIdCode.trim());
-    idx += 1;
+    const normalizedStatus = normalizeEmployeeStatus(input.status);
+    const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
+    const setClauses = ["full_name = $2", "email = $3"];
+    const vals: Array<string | number | null> = [id, input.fullName.trim(), input.email.trim().toLowerCase()];
+    let idx = 4;
+    if (caps.employee_code) {
+      setClauses.unshift(`employee_code = $${idx}`);
+      vals.push(input.employeeIdCode.trim());
+      idx += 1;
+    }
+    if (caps.phone) {
+      setClauses.push(`phone = $${idx++}`);
+      vals.push(input.phone?.trim() || null);
+    }
+    if (caps.department) {
+      setClauses.push(`department = $${idx++}`);
+      vals.push(input.department?.trim() || null);
+    }
+    if (caps.designation) {
+      setClauses.push(`designation = $${idx++}`);
+      vals.push(input.designation?.trim() || null);
+    }
+    if (caps.employment_type) {
+      setClauses.push(`employment_type = $${idx++}`);
+      vals.push(input.employmentType?.trim() || null);
+    }
+    if (caps.joining_date) {
+      setClauses.push(`joining_date = $${idx++}::date`);
+      vals.push(input.joiningDate || null);
+    }
+    if (caps.reporting_manager_user_id) {
+      setClauses.push(`reporting_manager_user_id = $${idx++}`);
+      vals.push(managerId);
+    }
+    if (caps.work_location) {
+      setClauses.push(`work_location = $${idx++}`);
+      vals.push(input.workLocation?.trim() || null);
+    }
+    if (caps.employment_status) {
+      setClauses.push(`employment_status = $${idx++}`);
+      vals.push(normalizedStatus);
+    }
+    if (caps.role) {
+      setClauses.push(`role = $${idx++}`);
+      vals.push((input.role || "employee").trim().toLowerCase());
+    }
+    await query(
+      `
+        UPDATE users
+        SET ${setClauses.join(",\n          ")}
+        WHERE id = $1
+      `,
+      vals,
+    );
+    await writeAuditLog({
+      actorUserId,
+      action: "hrms.employee.updated",
+      metadata: { employee_id: id, status: normalizedStatus },
+    });
+  };
+  try {
+    await updateOnce();
+  } catch (error) {
+    const missingColumn = extractMissingUsersColumn(error);
+    if (!missingColumn) throw error;
+    usersColumnCache.set(missingColumn, false);
+    await updateOnce();
   }
-  if (caps.phone) {
-    setClauses.push(`phone = $${idx++}`);
-    vals.push(input.phone?.trim() || null);
-  }
-  if (caps.department) {
-    setClauses.push(`department = $${idx++}`);
-    vals.push(input.department?.trim() || null);
-  }
-  if (caps.designation) {
-    setClauses.push(`designation = $${idx++}`);
-    vals.push(input.designation?.trim() || null);
-  }
-  if (caps.employment_type) {
-    setClauses.push(`employment_type = $${idx++}`);
-    vals.push(input.employmentType?.trim() || null);
-  }
-  if (caps.joining_date) {
-    setClauses.push(`joining_date = $${idx++}::date`);
-    vals.push(input.joiningDate || null);
-  }
-  if (caps.reporting_manager_user_id) {
-    setClauses.push(`reporting_manager_user_id = $${idx++}`);
-    vals.push(managerId);
-  }
-  if (caps.work_location) {
-    setClauses.push(`work_location = $${idx++}`);
-    vals.push(input.workLocation?.trim() || null);
-  }
-  if (caps.employment_status) {
-    setClauses.push(`employment_status = $${idx++}`);
-    vals.push(normalizedStatus);
-  }
-  if (caps.role) {
-    setClauses.push(`role = $${idx++}`);
-    vals.push((input.role || "employee").trim().toLowerCase());
-  }
-  await query(
-    `
-      UPDATE users
-      SET ${setClauses.join(",\n          ")}
-      WHERE id = $1
-    `,
-    vals,
-  );
-  await writeAuditLog({
-    actorUserId,
-    action: "hrms.employee.updated",
-    metadata: { employee_id: id, status: normalizedStatus },
-  });
 }
 
 export async function deactivateEmployee(id: number, actorUserId: number) {
