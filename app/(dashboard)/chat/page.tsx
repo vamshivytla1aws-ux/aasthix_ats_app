@@ -761,6 +761,8 @@ function ChatWorkspace({
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
   const [ringDismissedRoomId, setRingDismissedRoomId] = useState<number | null>(null);
   const [micEnabled, setMicEnabled] = useState(true);
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [isPresenting, setIsPresenting] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -781,6 +783,11 @@ function ChatWorkspace({
   const analyzerRef = useRef<{ raf: number; audioCtx: AudioContext; analyser: AnalyserNode } | null>(null);
   const liveKitRoomRef = useRef<any | null>(null);
   const liveKitConnectedRef = useRef(false);
+  const callActionRef = useRef<{ joining: boolean; ending: boolean; sharing: boolean }>({
+    joining: false,
+    ending: false,
+    sharing: false,
+  });
   const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "connected" | "reconnecting" | "failed">("idle");
   const resizeComposer = useCallback(() => {
     if (!textareaRef.current) return;
@@ -1155,6 +1162,7 @@ function ChatWorkspace({
     if (!activeCall) {
       setCallState("idle");
       setActiveRoomId(null);
+      setIsPresenting(false);
       if (ringIntervalRef.current) {
         window.clearInterval(ringIntervalRef.current);
         ringIntervalRef.current = null;
@@ -1240,6 +1248,8 @@ function ChatWorkspace({
   }, [activeCall, callState, currentUserId, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]);
 
   const stopMediaSession = useCallback(() => {
+    setIsPresenting(false);
+    setCameraEnabled(false);
     if (liveKitRoomRef.current) {
       try {
         liveKitRoomRef.current.disconnect();
@@ -1317,9 +1327,11 @@ function ChatWorkspace({
         autoSubscribe: true,
       });
       await room.localParticipant.setMicrophoneEnabled(true);
+      await room.localParticipant.setCameraEnabled(false).catch(() => {});
       liveKitRoomRef.current = room;
       liveKitConnectedRef.current = true;
       setMicEnabled(true);
+      setCameraEnabled(false);
       setConnectionState("connected");
       return room;
     },
@@ -1546,7 +1558,9 @@ function ChatWorkspace({
 
   const launchCall = useCallback(
     async (mode: "call" | "screenshare") => {
+      if (callActionRef.current.joining || callActionRef.current.ending) return;
       try {
+        callActionRef.current.joining = true;
         if (activeCall) {
           await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
           setRingDismissedRoomId(null);
@@ -1590,6 +1604,7 @@ function ChatWorkspace({
         const msg = error instanceof ApiError ? error.message : "Unable to start call.";
         onToast(msg, "error");
       } finally {
+        callActionRef.current.joining = false;
         setCallLoading(null);
       }
     },
@@ -1598,7 +1613,9 @@ function ChatWorkspace({
 
   const endActiveCall = useCallback(
     async (eventId: number) => {
+      if (callActionRef.current.ending) return;
       try {
+        callActionRef.current.ending = true;
         if (activeRoomId === eventId) {
           await sendSignal(eventId, "leave", {});
         }
@@ -1619,6 +1636,8 @@ function ChatWorkspace({
       } catch (error) {
         const msg = error instanceof ApiError ? error.message : "Unable to end call.";
         onToast(msg, "error");
+      } finally {
+        callActionRef.current.ending = false;
       }
     },
     [activeRoomId, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast, sendSignal, stopMediaSession]
@@ -1626,7 +1645,9 @@ function ChatWorkspace({
 
   const joinCallRoom = useCallback(
     async (roomId: number, successMessage = "Joined call.") => {
+      if (callActionRef.current.joining) return;
       try {
+        callActionRef.current.joining = true;
         await apiFetchJson(`/api/chat/calls/${roomId}/join`, { method: "POST" });
         setRingDismissedRoomId(null);
         setActiveRoomId(roomId);
@@ -1647,6 +1668,8 @@ function ChatWorkspace({
         setConnectionState("failed");
         const msg = error instanceof ApiError ? error.message : "Unable to join call.";
         onToast(msg, "error");
+      } finally {
+        callActionRef.current.joining = false;
       }
     },
     [connectLiveKitRoom, conversation.id, mutateCalendar, onToast]
@@ -1661,6 +1684,42 @@ function ChatWorkspace({
     }
     onToast(toastMessage, "success");
   }, [onToast]);
+
+  const leaveCurrentCall = useCallback(
+    async (roomId: number) => {
+      try {
+        await apiFetchJson(`/api/chat/calls/${roomId}/leave`, { method: "POST" }).catch(() => {});
+        await sendSignal(roomId, "leave", {}).catch(() => {});
+      } finally {
+        setCallState("idle");
+        setActiveRoomId(null);
+        stopMediaSession();
+        void mutateCalendar();
+      }
+    },
+    [mutateCalendar, sendSignal, stopMediaSession]
+  );
+
+  const toggleScreenShare = useCallback(
+    async (roomId: number) => {
+      if (callActionRef.current.sharing || !liveKitRoomRef.current?.localParticipant) return;
+      try {
+        callActionRef.current.sharing = true;
+        const next = !isPresenting;
+        await liveKitRoomRef.current.localParticipant.setScreenShareEnabled(next);
+        await sendSignal(roomId, "presenting", { enabled: next }).catch(() => {});
+        setIsPresenting(next);
+        onToast(next ? "Screen sharing started." : "Screen sharing stopped.", "success");
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Screen share unavailable.";
+        onToast(msg, "error");
+        setIsPresenting(false);
+      } finally {
+        callActionRef.current.sharing = false;
+      }
+    },
+    [isPresenting, onToast, sendSignal]
+  );
 
   const setManualPresence = useCallback(
     async (manualPresence: "available" | "busy") => {
@@ -2119,8 +2178,20 @@ function ChatWorkspace({
             </span>
             {callState === "connecting_media" ? <span className="text-[11px] text-emerald-200/90">Connecting audio…</span> : null}
             {connectionState === "reconnecting" ? <span className="text-[11px] text-amber-200/90">Reconnecting…</span> : null}
-            {connectionState === "failed" ? <span className="text-[11px] text-rose-200/90">Connection failed</span> : null}
+            {connectionState === "failed" ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!activeCall) return;
+                  await joinCallRoom(activeCall.id, "Reconnected to call.");
+                }}
+                className="rounded-full border border-rose-300/40 px-2 py-0.5 text-[11px] text-rose-100 hover:bg-rose-500/20"
+              >
+                Connection failed • Retry
+              </button>
+            ) : null}
             {mediaError ? <span className="max-w-[220px] truncate text-[11px] text-rose-200">{mediaError}</span> : null}
+            {isPresenting ? <span className="rounded-full border border-cyan-300/40 px-2 py-0.5 text-[11px] text-cyan-100">Presenting</span> : null}
             {callState === "connected" ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 px-2 py-0.5 text-[11px] text-emerald-100/90">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" style={{ opacity: Math.max(0.2, audioLevel) }} />
@@ -2174,19 +2245,29 @@ function ChatWorkspace({
                 {micEnabled ? "Mute" : "Unmute"}
               </button>
             ) : null}
+            {callState === "connected" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setCameraEnabled((prev) => {
+                    const next = !prev;
+                    if (liveKitRoomRef.current?.localParticipant?.setCameraEnabled) {
+                      void liveKitRoomRef.current.localParticipant.setCameraEnabled(next).catch(() => {});
+                    }
+                    return next;
+                  });
+                }}
+                className="rounded-full border border-indigo-400/50 bg-indigo-500/15 px-3 py-1 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/25"
+              >
+                {cameraEnabled ? "Camera off" : "Camera on"}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={async () => {
                 if (activeRoomId === activeCall.id || callState === "connected") {
                   if (liveKitRoomRef.current?.localParticipant?.setScreenShareEnabled) {
-                    try {
-                      await liveKitRoomRef.current.localParticipant.setScreenShareEnabled(true);
-                      await sendSignal(activeCall.id, "presenting", { enabled: true });
-                      onToast("Screen sharing started.", "success");
-                    } catch (error) {
-                      const msg = error instanceof Error ? error.message : "Screen share unavailable.";
-                      onToast(msg, "error");
-                    }
+                    await toggleScreenShare(activeCall.id);
                   } else {
                     onToast("Screen share is not available in this session.", "error");
                   }
@@ -2196,8 +2277,17 @@ function ChatWorkspace({
               }}
               className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/25"
             >
-              Share Screen
+              {isPresenting ? "Stop share" : "Share Screen"}
             </button>
+            {callState === "connected" ? (
+              <button
+                type="button"
+                onClick={async () => leaveCurrentCall(activeCall.id)}
+                className="rounded-full border border-amber-400/50 bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/25"
+              >
+                Leave
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={async () => {

@@ -12,6 +12,12 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     const access = gate.access;
     const roomId = Number(params.roomId);
     if (!Number.isFinite(roomId)) return NextResponse.json({ error: "Invalid room id." }, { status: 400 });
+    const roomRes = await query(
+      `SELECT id, conversation_id FROM chat_call_rooms WHERE id = $1 LIMIT 1`,
+      [roomId],
+    );
+    const room = roomRes.rows[0] as { id: number; conversation_id: number } | undefined;
+    if (!room) return NextResponse.json({ error: "Call room not found." }, { status: 404 });
 
     await query(
       `
@@ -33,11 +39,20 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
         `UPDATE chat_call_rooms SET status = 'ended', ended_at = NOW(), updated_at = NOW() WHERE id = $1 AND status <> 'ended'`,
         [roomId],
       );
+      await query(
+        `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+        [room.conversation_id, access.user_id, "call_ended: Call ended"],
+      );
+    } else {
+      await query(
+        `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+        [room.conversation_id, access.user_id, "call_left: Left call"],
+      );
     }
+    await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [room.conversation_id]);
 
     return NextResponse.json({ operation_status: "success", user_message: "Left call room." });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to leave call room." }, { status: 400 });
   }
 }
-

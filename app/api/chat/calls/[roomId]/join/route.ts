@@ -42,6 +42,11 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       `UPDATE chat_call_rooms SET status = 'active', updated_at = NOW() WHERE id = $1 AND status IN ('scheduled','active')`,
       [roomId],
     );
+    await query(
+      `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+      [room.conversation_id, access.user_id, "call_joined: Joined call"],
+    );
+    await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [room.conversation_id]);
 
     return NextResponse.json({ operation_status: "success", user_message: "Joined call room." });
   } catch (error) {

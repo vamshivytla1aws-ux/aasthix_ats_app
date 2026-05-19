@@ -52,6 +52,20 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       user_id: Number(p.user_id),
       full_name: String(p.full_name || "Unknown user"),
     }));
+    const presentingRes = await query(
+      `
+      SELECT from_user_id, payload
+      FROM chat_call_signals
+      WHERE room_id = $1
+        AND signal_type = 'presenting'
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      [room.id],
+    );
+    const presentingRow = presentingRes.rows[0] as { from_user_id: number; payload: { enabled?: boolean } } | undefined;
+    const isPresenting = Boolean(presentingRow?.payload?.enabled);
+    const presenterUserId = isPresenting ? Number(presentingRow?.from_user_id || 0) : null;
     return NextResponse.json({
       operation_status: "success",
       call: {
@@ -60,7 +74,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         joined_count: participants.length,
         joined_participants: participants,
         is_active: room.status === "active" || room.status === "scheduled",
-        status_kind: room.session_mode === "screenshare" ? "presenting" : "in_call",
+        status_kind: isPresenting || room.session_mode === "screenshare" ? "presenting" : "in_call",
+        is_presenting: isPresenting,
+        presenter_user_id: presenterUserId,
       },
     });
   } catch (error) {
@@ -70,4 +86,3 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     );
   }
 }
-

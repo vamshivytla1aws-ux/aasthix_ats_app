@@ -42,7 +42,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const startAt = new Date().toISOString();
     const endAt = new Date(Date.now() + durationMinutes * 60_000).toISOString();
     const modeLabel = mode === "screenshare" ? "Screen Share" : "Call";
-    const title = `${modeLabel} • ${conv.name || "Chat conversation"}`;
+    const title = `${modeLabel} - ${conv.name || "Chat conversation"}`;
 
     const room = await createChatCallRoom({
       conversationId,
@@ -56,8 +56,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     const systemMessage =
       mode === "screenshare"
-        ? `Screen share session started. Join: ${room.join_url}`
-        : `Call started. Join: ${room.join_url}`;
+        ? `call_started: Screen share session started. Join: ${room.join_url}`
+        : `call_started: Call started. Join: ${room.join_url}`;
     await query(
       `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
       [conversationId, access.user_id, systemMessage],
@@ -135,7 +135,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     );
     await query(
       `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-      [conversationId, access.user_id, `Call ended: ${event.title}`],
+      [conversationId, access.user_id, `call_ended: Call ended: ${event.title}`],
     );
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
 
