@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { createChatCallRoom, endChatCallRoom } from "@/lib/chatCalls";
+import { canStartCallByPolicy, getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,17 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const convRes = await query(`SELECT id, name FROM conversations WHERE id = $1 LIMIT 1`, [conversationId]);
     const conv = convRes.rows[0] as { id: number; name: string | null } | undefined;
     if (!conv) return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+    const policy = await getChatCallPolicy();
+    if (!canStartCallByPolicy(access, policy)) {
+      return NextResponse.json(
+        {
+          operation_status: "blocked",
+          user_message: "Call start is restricted by policy.",
+          hint: "Ask admin to update chat call policy.",
+        },
+        { status: 403 },
+      );
+    }
 
     const body = await request.json().catch(() => ({}));
     const mode = normalizeMode(body?.mode);
@@ -62,6 +74,14 @@ export async function POST(request: Request, { params }: { params: { id: string 
       `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
       [conversationId, access.user_id, systemMessage],
     );
+    await logCallEvent({
+      roomId: Number(room.id),
+      conversationId,
+      userId: access.user_id,
+      eventType: "call_start",
+      eventKey: `call_start:${room.id}:${access.user_id}`,
+      metadata: { session_mode: mode },
+    });
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
 
     return NextResponse.json({
@@ -137,6 +157,14 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
       [conversationId, access.user_id, `call_ended: Call ended: ${event.title}`],
     );
+    await logCallEvent({
+      roomId: Number(event.id),
+      conversationId,
+      userId: access.user_id,
+      eventType: "end",
+      eventKey: `call_end:${event.id}:${access.user_id}`,
+      metadata: { reason: "ended" },
+    });
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
 
     return NextResponse.json({

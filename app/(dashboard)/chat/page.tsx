@@ -158,7 +158,7 @@ type CallSignal = {
   room_id: number;
   from_user_id: number;
   to_user_id: number | null;
-  signal_type: "offer" | "answer" | "ice" | "leave" | "presenting";
+  signal_type: "offer" | "answer" | "ice" | "leave" | "presenting" | "moderation_mute" | "moderation_remove" | "moderation_end";
   payload: Record<string, unknown>;
   created_at: string;
 };
@@ -365,6 +365,7 @@ export default function ChatPage() {
   const [queryRoomId, setQueryRoomId] = useState<number | null>(null);
   const [sidebarSearch, setSidebarSearch] = useState("");
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("user");
   const [showNewChat, setShowNewChat] = useState(false);
   const [newChatType, setNewChatType] = useState<"direct" | "group">("direct");
   const [showComposeMenu, setShowComposeMenu] = useState(false);
@@ -374,8 +375,11 @@ export default function ChatPage() {
   const [desktopFullscreenFit, setDesktopFullscreenFit] = useState(false);
 
   useEffect(() => {
-    apiFetchJson<{ user: { id?: number } }>("/api/auth/me")
-      .then((d) => setCurrentUserId(d.user?.id ?? null))
+    apiFetchJson<{ user: { id?: number; role?: string } }>("/api/auth/me")
+      .then((d) => {
+        setCurrentUserId(d.user?.id ?? null);
+        setCurrentUserRole(String(d.user?.role || "user"));
+      })
       .catch(() => {});
   }, []);
 
@@ -619,6 +623,7 @@ export default function ChatPage() {
             <ChatWorkspace
               conversation={activeConversation}
               currentUserId={currentUserId}
+              currentUserRole={currentUserRole}
               initialRoomId={queryRoomId}
               onBack={() => setActiveConvId(null)}
               onMutateConversations={() => void mutateConvs()}
@@ -732,6 +737,7 @@ function ConversationRow({
 function ChatWorkspace({
   conversation,
   currentUserId,
+  currentUserRole,
   initialRoomId,
   onBack,
   onMutateConversations,
@@ -739,6 +745,7 @@ function ChatWorkspace({
 }: {
   conversation: Conversation;
   currentUserId: number | null;
+  currentUserRole: string;
   initialRoomId: number | null;
   onBack: () => void;
   onMutateConversations: () => void;
@@ -763,6 +770,7 @@ function ChatWorkspace({
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [isPresenting, setIsPresenting] = useState(false);
+  const [moderationBusy, setModerationBusy] = useState<null | "mute" | "remove" | "end_all">(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -1136,6 +1144,13 @@ function ChatWorkspace({
     const ss = String(secs % 60).padStart(2, "0");
     return `${mm}:${ss}`;
   }, [activeCall, nowTick]);
+  const canModerate = useMemo(() => {
+    if (!activeCall || !currentUserId) return false;
+    const host = Number(activeCall.created_by_user_id || 0) === Number(currentUserId);
+    if (host) return true;
+    const role = String(currentUserRole || "").toLowerCase();
+    return role === "admin" || role === "hr" || role === "coordinator";
+  }, [activeCall, currentUserId, currentUserRole]);
 
   useEffect(() => {
     if (!initialRoomId || !activeCall) return;
@@ -1443,6 +1458,31 @@ function ChatWorkspace({
         }
         return;
       }
+      if (signal.signal_type === "moderation_end") {
+        setCallState("idle");
+        setActiveRoomId(null);
+        stopMediaSession();
+        onToast("Call ended by moderator.", "info");
+        return;
+      }
+      if (signal.signal_type === "moderation_remove") {
+        setCallState("idle");
+        setActiveRoomId(null);
+        stopMediaSession();
+        onToast("You were removed from the call.", "error");
+        return;
+      }
+      if (signal.signal_type === "moderation_mute") {
+        if (liveKitRoomRef.current?.localParticipant) {
+          await liveKitRoomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+        }
+        if (localStreamRef.current) {
+          for (const track of localStreamRef.current.getAudioTracks()) track.enabled = false;
+        }
+        setMicEnabled(false);
+        onToast("You were muted by moderator.", "info");
+        return;
+      }
       const pc = await ensurePeerConnection(roomId, fromUserId);
       if (signal.signal_type === "offer") {
         const sdp = signal.payload?.sdp as RTCSessionDescriptionInit | undefined;
@@ -1469,7 +1509,7 @@ function ChatWorkspace({
         await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
       }
     },
-    [currentUserId, ensurePeerConnection, sendSignal]
+    [currentUserId, ensurePeerConnection, sendSignal, stopMediaSession, onToast]
   );
 
   useEffect(() => {
@@ -1684,6 +1724,53 @@ function ChatWorkspace({
     }
     onToast(toastMessage, "success");
   }, [onToast]);
+
+  const moderateCall = useCallback(
+    async (action: "mute_participant" | "remove_participant" | "end_for_all", targetUserId?: number) => {
+      if (!activeCall) return;
+      const busyKey = action === "end_for_all" ? "end_all" : action === "remove_participant" ? "remove" : "mute";
+      setModerationBusy(busyKey);
+      try {
+        const res = await apiFetchJson<{ operation_status?: string; user_message?: string; hint?: string }>(
+          `/api/chat/calls/${activeCall.id}/moderate`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action, target_user_id: targetUserId ?? null }),
+          }
+        );
+        onToast(res.user_message || "Moderation action applied.", res.operation_status === "blocked" ? "info" : "success");
+        if (action === "end_for_all") {
+          setCallState("idle");
+          setActiveRoomId(null);
+          stopMediaSession();
+        }
+        void mutateCalendar();
+        void mutateMessages();
+      } catch (error) {
+        const msg = error instanceof ApiError ? error.message : "Moderation action failed.";
+        onToast(msg, "error");
+      } finally {
+        setModerationBusy(null);
+      }
+    },
+    [activeCall, mutateCalendar, mutateMessages, onToast, stopMediaSession]
+  );
+
+  const copyCallDiagnostics = useCallback(async () => {
+    if (!activeCall) return;
+    try {
+      const data = await apiFetchJson<{ diagnostics: unknown }>(`/api/chat/calls/${activeCall.id}/diagnostics`);
+      const text = JSON.stringify(data.diagnostics || {}, null, 2);
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+      onToast("Call diagnostics copied.", "success");
+    } catch (error) {
+      const msg = error instanceof ApiError ? error.message : "Unable to copy diagnostics.";
+      onToast(msg, "error");
+    }
+  }, [activeCall, onToast]);
 
   const leaveCurrentCall = useCallback(
     async (roomId: number) => {
@@ -2301,6 +2388,57 @@ function ChatWorkspace({
             >
               {activeRoomId === activeCall.id || callState === "connected" ? "End call" : "Dismiss"}
             </button>
+            {canModerate && callState === "connected" ? (
+              <>
+                <button
+                  type="button"
+                  disabled={moderationBusy !== null}
+                  onClick={async () => {
+                    await moderateCall("end_for_all");
+                  }}
+                  className="rounded-full border border-rose-300/70 bg-rose-500/25 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-500/35 disabled:opacity-60"
+                >
+                  {moderationBusy === "end_all" ? "Ending…" : "End for all"}
+                </button>
+                {activeCall.joined_participants
+                  ?.filter((p) => Number(p.user_id) !== Number(currentUserId || 0))
+                  .slice(0, 2)
+                  .map((p) => (
+                    <div key={p.user_id} className="inline-flex items-center gap-1 rounded-full border border-slate-500/50 px-2 py-0.5 text-[11px] text-slate-200">
+                      <span className="max-w-[84px] truncate">{p.full_name.split(" ")[0]}</span>
+                      <button
+                        type="button"
+                        disabled={moderationBusy !== null}
+                        onClick={async () => {
+                          await moderateCall("mute_participant", p.user_id);
+                        }}
+                        className="rounded px-1 text-[10px] text-amber-200 hover:bg-amber-500/20"
+                      >
+                        Mute
+                      </button>
+                      <button
+                        type="button"
+                        disabled={moderationBusy !== null}
+                        onClick={async () => {
+                          await moderateCall("remove_participant", p.user_id);
+                        }}
+                        className="rounded px-1 text-[10px] text-rose-200 hover:bg-rose-500/20"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await copyCallDiagnostics();
+                  }}
+                  className="rounded-full border border-indigo-300/40 px-2 py-1 text-[11px] text-indigo-100 hover:bg-indigo-500/20"
+                >
+                  Copy diagnostics
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}

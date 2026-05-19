@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
+import { canShareByPolicy, getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type SignalType = "offer" | "answer" | "ice" | "leave" | "presenting";
+type SignalType = "offer" | "answer" | "ice" | "leave" | "presenting" | "moderation_mute" | "moderation_remove" | "moderation_end";
 
 function normalizeSignalType(value: unknown): SignalType {
   const v = String(value || "").toLowerCase();
-  if (v === "offer" || v === "answer" || v === "ice" || v === "leave" || v === "presenting") return v;
+  if (v === "offer" || v === "answer" || v === "ice" || v === "leave" || v === "presenting" || v === "moderation_mute" || v === "moderation_remove" || v === "moderation_end") return v;
   return "ice";
 }
 
@@ -80,6 +81,31 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     const toUserIdRaw = Number(body?.to_user_id);
     const toUserId = Number.isFinite(toUserIdRaw) ? toUserIdRaw : null;
     const payload = body?.payload && typeof body.payload === "object" ? body.payload : {};
+    if (signalType === "presenting") {
+      const policy = await getChatCallPolicy();
+      const allowed = await canShareByPolicy({
+        access,
+        roomId,
+        policy,
+      });
+      if (!allowed) {
+        await logCallEvent({
+          roomId,
+          conversationId: room.conversation_id,
+          userId: access.user_id,
+          eventType: "share_blocked",
+          metadata: { scope: policy.call_share_scope },
+        });
+        return NextResponse.json(
+          {
+            operation_status: "blocked",
+            user_message: "Screen share is restricted by policy.",
+            hint: `Current share policy: ${policy.call_share_scope}`,
+          },
+          { status: 403 },
+        );
+      }
+    }
 
     const ins = await query(
       `

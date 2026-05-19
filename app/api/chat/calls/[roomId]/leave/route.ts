@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
+import { logCallEvent } from "@/lib/chatCallGovernance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,11 +44,24 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
         `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
         [room.conversation_id, access.user_id, "call_ended: Call ended"],
       );
+      await logCallEvent({
+        roomId,
+        conversationId: room.conversation_id,
+        userId: access.user_id,
+        eventType: "end",
+        metadata: { reason: "last_participant_left" },
+      });
     } else {
       await query(
         `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
         [room.conversation_id, access.user_id, "call_left: Left call"],
       );
+      await logCallEvent({
+        roomId,
+        conversationId: room.conversation_id,
+        userId: access.user_id,
+        eventType: "drop",
+      });
     }
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [room.conversation_id]);
 

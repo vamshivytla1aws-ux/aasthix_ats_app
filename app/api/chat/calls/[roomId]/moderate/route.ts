@@ -1,0 +1,125 @@
+import { NextResponse } from "next/server";
+import { query } from "@/lib/db";
+import { requirePermission } from "@/lib/rbac";
+import { canModerateCall, logCallEvent } from "@/lib/chatCallGovernance";
+import { endChatCallRoom } from "@/lib/chatCalls";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type Action = "end_for_all" | "remove_participant" | "mute_participant";
+
+export async function POST(request: Request, { params }: { params: { roomId: string } }) {
+  try {
+    const gate = await requirePermission("chat.view");
+    if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+    const access = gate.access;
+    const roomId = Number(params.roomId);
+    if (!Number.isFinite(roomId)) return NextResponse.json({ operation_status: "blocked", user_message: "Invalid room id." }, { status: 400 });
+
+    const roomRes = await query(
+      `SELECT id, conversation_id, status, created_by_user_id, title FROM chat_call_rooms WHERE id = $1 LIMIT 1`,
+      [roomId],
+    );
+    const room = roomRes.rows[0] as { id: number; conversation_id: number; status: string; created_by_user_id: number | null; title: string } | undefined;
+    if (!room) return NextResponse.json({ operation_status: "blocked", user_message: "Call room not found." }, { status: 404 });
+    if (room.status === "ended" || room.status === "cancelled") {
+      return NextResponse.json({ operation_status: "blocked", user_message: "Call is already ended." }, { status: 409 });
+    }
+    const memberRes = await query(
+      `SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2 LIMIT 1`,
+      [room.conversation_id, access.user_id],
+    );
+    if (!memberRes.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
+    if (!canModerateCall(access, room.created_by_user_id)) {
+      return NextResponse.json({ operation_status: "blocked", user_message: "Only host/admin/HR can moderate this call." }, { status: 403 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const action = String(body?.action || "") as Action;
+    const targetUserId = Number(body?.target_user_id);
+
+    if (action === "end_for_all") {
+      const ended = await endChatCallRoom(roomId, access.user_id);
+      if (!ended) return NextResponse.json({ operation_status: "blocked", user_message: "Call already ended." }, { status: 409 });
+      await query(`UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`, [roomId]);
+      await query(`INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`, [
+        room.conversation_id,
+        access.user_id,
+        `call_ended_by_host: Call ended by moderator: ${room.title}`,
+      ]);
+      await logCallEvent({
+        roomId,
+        conversationId: room.conversation_id,
+        userId: access.user_id,
+        eventType: "end",
+        metadata: { reason: "moderator_end" },
+        eventKey: `moderator_end:${roomId}:${access.user_id}`,
+      });
+      return NextResponse.json({ operation_status: "success", user_message: "Call ended for all." });
+    }
+
+    if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
+      return NextResponse.json({ operation_status: "blocked", user_message: "Target participant is required." }, { status: 400 });
+    }
+
+    if (action === "remove_participant") {
+      await query(
+        `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
+        [roomId, targetUserId],
+      );
+      await query(
+        `INSERT INTO chat_call_removed_participants (room_id, user_id, removed_by_user_id) VALUES ($1, $2, $3)
+         ON CONFLICT (room_id, user_id) DO UPDATE SET removed_by_user_id = EXCLUDED.removed_by_user_id, created_at = NOW()`,
+        [roomId, targetUserId, access.user_id],
+      );
+      await query(`INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`, [
+        room.conversation_id,
+        access.user_id,
+        `participant_removed: Participant removed from call`,
+      ]);
+      await query(
+        `INSERT INTO chat_call_signals (room_id, from_user_id, to_user_id, signal_type, payload)
+         VALUES ($1, $2, $3, 'moderation_remove', '{}'::jsonb)`,
+        [roomId, access.user_id, targetUserId],
+      );
+      await logCallEvent({
+        roomId,
+        conversationId: room.conversation_id,
+        userId: access.user_id,
+        eventType: "remove_participant",
+        metadata: { target_user_id: targetUserId },
+      });
+      return NextResponse.json({ operation_status: "success", user_message: "Participant removed." });
+    }
+
+    if (action === "mute_participant") {
+      await query(
+        `UPDATE chat_call_participants SET muted = TRUE WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
+        [roomId, targetUserId],
+      );
+      await query(`INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`, [
+        room.conversation_id,
+        access.user_id,
+        `participant_muted: Participant muted by moderator`,
+      ]);
+      await query(
+        `INSERT INTO chat_call_signals (room_id, from_user_id, to_user_id, signal_type, payload)
+         VALUES ($1, $2, $3, 'moderation_mute', '{}'::jsonb)`,
+        [roomId, access.user_id, targetUserId],
+      );
+      await logCallEvent({
+        roomId,
+        conversationId: room.conversation_id,
+        userId: access.user_id,
+        eventType: "mute_participant",
+        metadata: { target_user_id: targetUserId },
+      });
+      return NextResponse.json({ operation_status: "success", user_message: "Participant muted." });
+    }
+
+    return NextResponse.json({ operation_status: "blocked", user_message: "Unsupported moderation action." }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ operation_status: "error", error: error instanceof Error ? error.message : "Failed to moderate call." }, { status: 500 });
+  }
+}

@@ -66,6 +66,15 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const presentingRow = presentingRes.rows[0] as { from_user_id: number; payload: { enabled?: boolean } } | undefined;
     const isPresenting = Boolean(presentingRow?.payload?.enabled);
     const presenterUserId = isPresenting ? Number(presentingRow?.from_user_id || 0) : null;
+    const endEventRes = await query(
+      `SELECT metadata
+       FROM chat_call_events
+       WHERE room_id = $1 AND event_type = 'end'
+       ORDER BY id DESC
+       LIMIT 1`,
+      [room.id],
+    );
+    const roomClosedReason = String((endEventRes.rows[0] as { metadata?: { reason?: string } } | undefined)?.metadata?.reason || "");
     return NextResponse.json({
       operation_status: "success",
       call: {
@@ -77,6 +86,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         status_kind: isPresenting || room.session_mode === "screenshare" ? "presenting" : "in_call",
         is_presenting: isPresenting,
         presenter_user_id: presenterUserId,
+        room_closed_reason: roomClosedReason || null,
       },
     });
   } catch (error) {

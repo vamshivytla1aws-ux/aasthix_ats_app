@@ -74,6 +74,7 @@ export default function GovernancePage() {
     "/api/hrms/diagnostics/schema",
     dashboardFetcher,
   );
+  const { data: chatCallMetrics } = useSWR("/api/chat/calls/metrics", dashboardFetcher, { refreshInterval: 30000 });
 
   const workspaceRows = Array.isArray((workspaces as any)?.workspaces) ? (workspaces as any).workspaces : [];
   const accessRows = Array.isArray((accessPolicies as any)?.policies) ? (accessPolicies as any).policies : [];
@@ -374,6 +375,22 @@ export default function GovernancePage() {
             ) : null}
           </section>
         ) : null}
+
+        <section className={UI.enterprise.elevatedCard + " mb-4 p-4"}>
+          <div className="text-sm font-semibold text-[var(--ats-text)]">Chat call operations</div>
+          {(chatCallMetrics as any)?.metrics ? (
+            <div className="mt-2 grid gap-2 text-xs text-[var(--ats-text-muted)] sm:grid-cols-2 lg:grid-cols-3">
+              <div>Join success: {Math.round(Number((chatCallMetrics as any).metrics.join_success_rate || 0) * 100)}%</div>
+              <div>Drop rate: {Math.round(Number((chatCallMetrics as any).metrics.drop_rate || 0) * 100)}%</div>
+              <div>Avg reconnects: {Number((chatCallMetrics as any).metrics.avg_reconnects_per_attempt || 0).toFixed(2)}</div>
+              <div>Median duration: {Math.round(Number((chatCallMetrics as any).metrics.median_call_duration_seconds || 0))}s</div>
+              <div>Avg participants: {Number((chatCallMetrics as any).metrics.avg_participants || 0).toFixed(2)}</div>
+              <div>Total call events: {Number((chatCallMetrics as any).metrics.total_events || 0)}</div>
+            </div>
+          ) : (
+            <div className="mt-2 text-xs text-[var(--ats-text-muted)]">Call metrics are unavailable for this user or environment.</div>
+          )}
+        </section>
 
         <div className="grid gap-4 md:grid-cols-2">
           <section className={UI.enterprise.elevatedCard + " p-4"}>
