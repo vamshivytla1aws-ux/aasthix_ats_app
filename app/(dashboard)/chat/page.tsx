@@ -781,6 +781,8 @@ function ChatWorkspace({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastSeenMessageIdRef = useRef<number>(0);
   const ringIntervalRef = useRef<number | null>(null);
+  const lastDesktopNotifiedMessageIdRef = useRef<number>(0);
+  const lastDesktopNotifiedCallRoomRef = useRef<number>(0);
   const unansweredTimeoutRef = useRef<number | null>(null);
   const signalCursorRef = useRef(0);
   const peerConnectionsRef = useRef<Map<number, RTCPeerConnection>>(new Map());
@@ -865,7 +867,7 @@ function ChatWorkspace({
   const { data: prefData, mutate: mutatePrefs } = useSWR<{
     user: { mention_only: boolean; desktop_sound: boolean; desktop_toast: boolean; email_digest: boolean; email_digest_frequency: string };
     conversations: Array<{ conversation_id: number; muted: boolean; mention_only: boolean }>;
-  }>(drawerView === "notify" ? "/api/chat/preferences" : null, dashboardFetcher);
+  }>("/api/chat/preferences", dashboardFetcher, { refreshInterval: 30_000 });
   const { data: presenceData, mutate: mutatePresence } = useSWR<{ manual_presence: "available" | "busy" }>(
     "/api/chat/presence",
     dashboardFetcher,
@@ -915,8 +917,29 @@ function ChatWorkspace({
     if (previous > 0 && prefData?.user?.desktop_sound && !conversationMuted && isIncoming) {
       playTone("message", 120);
     }
+    if (previous > 0 && (prefData?.user?.desktop_toast ?? true) && !conversationMuted && isIncoming) {
+      const latestMessageId = Number(latestMessage?.id || 0);
+      if (latestMessageId > 0 && latestMessageId !== lastDesktopNotifiedMessageIdRef.current && typeof window !== "undefined" && "Notification" in window) {
+        const notify = () =>
+          new Notification(convLabel(conversation, currentUserId), {
+            body: latestMessage?.content?.slice(0, 140) || "New message",
+            tag: `chat-msg-${conversation.id}-${latestMessageId}`,
+          });
+        if (Notification.permission === "granted") {
+          notify();
+          lastDesktopNotifiedMessageIdRef.current = latestMessageId;
+        } else if (Notification.permission === "default") {
+          void Notification.requestPermission().then((permission) => {
+            if (permission === "granted") {
+              notify();
+              lastDesktopNotifiedMessageIdRef.current = latestMessageId;
+            }
+          });
+        }
+      }
+    }
     lastSeenMessageIdRef.current = latestId;
-  }, [messages, prefData, conversation.id, currentUserId]);
+  }, [messages, prefData, conversation.id, currentUserId, conversation]);
 
   const resetComposer = () => {
     setShowEmoji(false);
@@ -1205,7 +1228,7 @@ function ChatWorkspace({
     } else if (dismissed) {
       setCallState("idle");
     }
-    if (prefData?.user?.desktop_sound && (callState === "ringing_incoming" || callState === "ringing_outgoing")) {
+    if ((prefData?.user?.desktop_sound ?? true) && (callState === "ringing_incoming" || callState === "ringing_outgoing")) {
       if (!ringIntervalRef.current) {
         playTone("ring", 240);
         ringIntervalRef.current = window.setInterval(() => playTone("ring", 240), 1200);
@@ -1228,6 +1251,33 @@ function ChatWorkspace({
     prefData?.user?.desktop_sound,
     ringDismissedRoomId,
   ]);
+
+  useEffect(() => {
+    if (!activeCall) return;
+    if (callState !== "ringing_incoming") return;
+    if (!(prefData?.user?.desktop_toast ?? true)) return;
+    const roomId = Number(activeCall.id || 0);
+    if (!roomId || roomId === lastDesktopNotifiedCallRoomRef.current) return;
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    const notify = () =>
+      new Notification(`Incoming call: ${convLabel(conversation, currentUserId)}`, {
+        body: "Tap Join now to answer.",
+        tag: `chat-call-${roomId}`,
+      });
+    if (Notification.permission === "granted") {
+      notify();
+      lastDesktopNotifiedCallRoomRef.current = roomId;
+      return;
+    }
+    if (Notification.permission === "default") {
+      void Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          notify();
+          lastDesktopNotifiedCallRoomRef.current = roomId;
+        }
+      });
+    }
+  }, [activeCall, callState, prefData?.user?.desktop_toast, conversation, currentUserId]);
 
   useEffect(() => {
     if (unansweredTimeoutRef.current) {
