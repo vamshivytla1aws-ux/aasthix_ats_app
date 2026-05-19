@@ -549,70 +549,6 @@ export default function ChatPage() {
           )}
         </main>
       </div>
-      <style jsx global>{`
-        @keyframes chat-message-pop {
-          0% {
-            opacity: 0;
-            transform: translateY(8px) scale(0.985);
-          }
-          100% {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
-        }
-        @keyframes chat-panel-slide {
-          0% {
-            opacity: 0;
-            transform: translateX(16px);
-          }
-          100% {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-        @keyframes unread-pulse {
-          0% {
-            box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5);
-          }
-          70% {
-            box-shadow: 0 0 0 8px rgba(99, 102, 241, 0);
-          }
-          100% {
-            box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
-          }
-        }
-        .chat-message-pop {
-          animation: chat-message-pop 230ms cubic-bezier(0.2, 0.7, 0.2, 1);
-          will-change: transform, opacity;
-        }
-        .chat-panel-slide {
-          animation: chat-panel-slide 250ms cubic-bezier(0.2, 0.7, 0.2, 1);
-          will-change: transform, opacity;
-        }
-        .chat-unread-pulse {
-          animation: unread-pulse 2.2s ease-out infinite;
-        }
-        .chat-scrollbar::-webkit-scrollbar {
-          width: 10px;
-          height: 10px;
-        }
-        .chat-scrollbar::-webkit-scrollbar-thumb {
-          border-radius: 999px;
-          background: rgba(129, 140, 248, 0.35);
-          border: 2px solid rgba(15, 23, 42, 0.8);
-        }
-        .chat-scrollbar::-webkit-scrollbar-track {
-          background: rgba(15, 23, 42, 0.5);
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .chat-message-pop,
-          .chat-panel-slide,
-          .chat-unread-pulse {
-            animation: none !important;
-          }
-        }
-      `}</style>
-
       {showNewChat ? (
         <NewChatModal
           initialType={newChatType}
@@ -698,7 +634,7 @@ function ConversationRow({
               </span>
             ) : null}
             {unread > 0 ? (
-              <span className="chat-unread-pulse shrink-0 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">{unread}</span>
+              <span className="shrink-0 animate-pulse rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">{unread}</span>
             ) : null}
           </div>
         </div>
@@ -1569,7 +1505,7 @@ function ChatWorkspace({
       {activeCall?.meet_link ? (
         <div className="pointer-events-none absolute bottom-24 right-6 z-40">
           <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-2 shadow-[0_10px_30px_rgba(16,185,129,0.25)] backdrop-blur">
-            <span className="chat-unread-pulse inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
+            <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
             <span className="text-xs font-semibold text-emerald-100">
               Call is active • {activeCallDuration} • {conversation.members.length} participant{conversation.members.length === 1 ? "" : "s"}
             </span>
@@ -1662,7 +1598,10 @@ function MessageBubble({
   }
 
   return (
-    <div id={`message-${message.id}`} className={`chat-message-pop group flex gap-2 ${isMe ? "justify-end" : ""}`}>
+    <div
+      id={`message-${message.id}`}
+      className={`group flex gap-2 transition-all duration-200 ease-out ${isMe ? "justify-end" : ""}`}
+    >
       {!isMe ? (
         <div className="w-8 shrink-0">
           {showSender ? (
@@ -1956,7 +1895,7 @@ function ChatContextDrawer({
   }
 
   return (
-    <aside className="chat-panel-slide w-[340px] shrink-0 border-l border-[#2e3a56] bg-[#0d1428]/95 backdrop-blur">
+    <aside className="w-[340px] shrink-0 border-l border-[#2e3a56] bg-[#0d1428]/95 backdrop-blur">
       <div className="flex items-center justify-between border-b border-[#2e3a56] px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-200">{view}</p>
         <button type="button" onClick={onClose} className="rounded p-1 text-slate-300 hover:bg-[#1a233a]">
@@ -2212,7 +2151,7 @@ function ThreadPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   return (
-    <aside className="chat-panel-slide w-[400px] shrink-0 border-l border-[#2e3a56] bg-[#121a30] text-slate-100 shadow-[-12px_0_30px_rgba(2,6,23,0.35)]">
+    <aside className="w-[400px] shrink-0 border-l border-[#2e3a56] bg-[#121a30] text-slate-100 shadow-[-12px_0_30px_rgba(2,6,23,0.35)]">
       <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-200">Thread</p>
         <button type="button" onClick={onClose} className="rounded p-1 hover:bg-[#1a233a]">
