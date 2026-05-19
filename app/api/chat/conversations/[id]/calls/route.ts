@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { ATS_TIMEZONE } from "@/lib/timezones";
-import { cancelTeamCalendarEvent, createTeamCalendarEvent } from "@/lib/teamCalendar";
+import { createChatCallRoom, endChatCallRoom } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,18 +28,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
     if (!memberCheck.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
 
-    const convRes = await query(
-      `
-      SELECT c.id, c.name, c.type, COALESCE(array_agg(u.email) FILTER (WHERE u.email IS NOT NULL), '{}') AS member_emails
-      FROM conversations c
-      JOIN conversation_members cm ON cm.conversation_id = c.id
-      JOIN users u ON u.id = cm.user_id
-      WHERE c.id = $1
-      GROUP BY c.id
-      `,
-      [conversationId],
-    );
-    const conv = convRes.rows[0] as { name: string | null; type: "direct" | "group"; member_emails: string[] } | undefined;
+    const convRes = await query(`SELECT id, name FROM conversations WHERE id = $1 LIMIT 1`, [conversationId]);
+    const conv = convRes.rows[0] as { id: number; name: string | null } | undefined;
     if (!conv) return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
 
     const body = await request.json().catch(() => ({}));
@@ -50,43 +39,41 @@ export async function POST(request: Request, { params }: { params: { id: string 
       Number.isFinite(durationMinutesRaw) && durationMinutesRaw >= 10 && durationMinutesRaw <= 180
         ? Math.trunc(durationMinutesRaw)
         : 30;
-    const startAt = new Date();
-    const endAt = new Date(startAt.getTime() + durationMinutes * 60_000);
+    const startAt = new Date().toISOString();
+    const endAt = new Date(Date.now() + durationMinutes * 60_000).toISOString();
     const modeLabel = mode === "screenshare" ? "Screen Share" : "Call";
     const title = `${modeLabel} • ${conv.name || "Chat conversation"}`;
-    const description = `[chat-conversation:${conversationId}] mode=${mode}; Instant ${modeLabel.toLowerCase()} started from chat.`;
 
-    const event = await createTeamCalendarEvent(access.user_id, {
+    const room = await createChatCallRoom({
+      conversationId,
+      createdByUserId: access.user_id,
       title,
-      description,
-      start_at: startAt.toISOString(),
-      end_at: endAt.toISOString(),
-      timezone: ATS_TIMEZONE,
-      attendee_emails: conv.member_emails,
+      mode,
+      startAt,
+      endAt,
+      activateNow: true,
     });
 
-    const meetLink = event.meet_link || "";
-    if (meetLink) {
-      const systemMessage =
-        mode === "screenshare"
-          ? `Screen share session started. Join: ${meetLink}`
-          : `Call started. Join: ${meetLink}`;
-      await query(
-        `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-        [conversationId, access.user_id, systemMessage],
-      );
-      await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
-    }
+    const systemMessage =
+      mode === "screenshare"
+        ? `Screen share session started. Join: ${room.join_url}`
+        : `Call started. Join: ${room.join_url}`;
+    await query(
+      `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+      [conversationId, access.user_id, systemMessage],
+    );
+    await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
 
     return NextResponse.json({
       operation_status: "success",
       user_message: `${modeLabel} created successfully.`,
-      event,
-      join_link: meetLink || null,
+      event: room,
+      join_link: room.join_url || null,
       session_mode: mode,
       is_active: true,
       status_kind: mode === "screenshare" ? "presenting" : "in_call",
       status_priority: mode === "screenshare" ? 1 : 2,
+      provider: "ats_native",
     });
   } catch (error) {
     return NextResponse.json(
@@ -118,50 +105,32 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     const eventId = Number(url.searchParams.get("event_id"));
     if (!Number.isFinite(eventId)) return NextResponse.json({ error: "event_id is required." }, { status: 400 });
 
-    const eventRes = await query(`SELECT id, title, description FROM team_calendar_events WHERE id = $1 LIMIT 1`, [eventId]);
-    const event = eventRes.rows[0] as { id: number; title: string; description: string | null } | undefined;
-    if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
-
-    const marker = `[chat-conversation:${conversationId}]`;
-    if (!String(event.description || "").includes(marker)) {
-      return NextResponse.json({ error: "Event does not belong to this conversation." }, { status: 403 });
+    const eventRes = await query(
+      `SELECT id, title, conversation_id, provider FROM chat_call_rooms WHERE id = $1 LIMIT 1`,
+      [eventId],
+    );
+    const event = eventRes.rows[0] as { id: number; title: string; conversation_id: number; provider: string } | undefined;
+    if (!event) return NextResponse.json({ error: "Call room not found." }, { status: 404 });
+    if (event.provider !== "ats_native") {
+      return NextResponse.json({ error: "This endpoint can end native chat calls only." }, { status: 400 });
+    }
+    if (Number(event.conversation_id) !== conversationId) {
+      return NextResponse.json({ error: "Call room does not belong to this conversation." }, { status: 403 });
     }
 
-    let cancelledTitle = event.title;
-    let cancelledWithFallback = false;
-    try {
-      const cancelled = await cancelTeamCalendarEvent(access.user_id, eventId);
-      cancelledTitle = cancelled.title;
-    } catch (syncError) {
-      cancelledWithFallback = true;
-      const syncMessage = syncError instanceof Error ? syncError.message : "Calendar cancellation sync failed.";
-      await query(
-        `
-        UPDATE team_calendar_events
-        SET
-          status = 'cancelled',
-          calendar_sync_status = 'sync_failed',
-          calendar_sync_error = $2,
-          updated_by_user_id = $3,
-          updated_at = NOW()
-        WHERE id = $1
-        `,
-        [eventId, syncMessage, access.user_id],
-      );
-    }
+    await endChatCallRoom(eventId, access.user_id);
     await query(
       `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-      [conversationId, access.user_id, `Call ended: ${cancelledTitle}`],
+      [conversationId, access.user_id, `Call ended: ${event.title}`],
     );
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
 
     return NextResponse.json({
       operation_status: "success",
-      user_message: cancelledWithFallback
-        ? "Call ended in chat. Calendar provider sync failed; shared Google connection may need attention."
-        : "Call ended successfully.",
+      user_message: "Call ended successfully.",
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to end call." }, { status: 400 });
   }
 }
+

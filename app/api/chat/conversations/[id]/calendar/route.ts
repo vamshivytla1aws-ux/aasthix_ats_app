@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { ATS_TIMEZONE } from "@/lib/timezones";
-import { createTeamCalendarEvent } from "@/lib/teamCalendar";
+import { createChatCallRoom, listConversationCallRooms } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,30 +31,27 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const url = new URL(request.url);
     const limitRaw = Number(url.searchParams.get("limit"));
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.trunc(limitRaw), 100) : 25;
-    const marker = `%[chat-conversation:${conversationId}]%`;
+    const rooms = await listConversationCallRooms(conversationId, limit);
 
-    const rows = await query(
-      `
-      SELECT id, title, start_at, end_at, meet_link, status, calendar_sync_status
-      FROM team_calendar_events
-      WHERE COALESCE(description, '') ILIKE $1
-        AND status <> 'cancelled'
-      ORDER BY start_at ASC
-      LIMIT $2
-      `,
-      [marker, limit],
-    );
-
-    const events = (rows.rows as Array<any>).map((event) => {
-      const start = new Date(event.start_at).getTime() - 5 * 60_000;
-      const end = new Date(event.end_at).getTime();
-      const isActive = Date.now() >= start && Date.now() <= end;
+    const events = rooms.map((room) => {
+      const start = new Date(room.start_at).getTime() - 5 * 60_000;
+      const end = new Date(room.end_at).getTime();
+      const activeByWindow = Date.now() >= start && Date.now() <= end;
+      const isActive = room.status === "active" || (room.status === "scheduled" && activeByWindow);
       return {
-        ...event,
-        session_mode: String(event.title || "").toLowerCase().includes("screen share") ? "screenshare" : "call",
+        id: room.id,
+        title: room.title,
+        start_at: room.start_at,
+        end_at: room.end_at,
+        meet_link: room.join_url,
+        join_url: room.join_url,
+        status: room.status,
+        calendar_sync_status: room.provider,
+        provider: room.provider,
+        session_mode: room.mode,
         is_active: isActive,
-        status_kind: isActive ? "in_meeting" : "none",
-        status_priority: isActive ? 3 : 999,
+        status_kind: isActive ? (room.mode === "screenshare" ? "presenting" : "in_call") : "none",
+        status_priority: isActive ? (room.mode === "screenshare" ? 1 : 2) : 999,
       };
     });
 
@@ -90,47 +86,27 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const durationMinutes = Number.isFinite(durationRaw) && durationRaw >= 10 && durationRaw <= 240 ? Math.trunc(durationRaw) : 30;
     const endAt = new Date(startAt.getTime() + durationMinutes * 60_000);
 
-    const memberRes = await query(
-      `
-      SELECT u.email
-      FROM conversation_members cm
-      JOIN users u ON u.id = cm.user_id
-      WHERE cm.conversation_id = $1 AND u.email IS NOT NULL
-      `,
-      [conversationId],
-    );
-    const attendeeEmails: string[] = Array.from(
-      new Set(
-        memberRes.rows
-          .map((row: { email?: string }) => String(row.email || "").trim().toLowerCase())
-          .filter(Boolean),
-      ),
-    );
-    if (!attendeeEmails.length) {
-      return NextResponse.json({ error: "No attendee emails found in this conversation." }, { status: 400 });
-    }
-
-    const event = await createTeamCalendarEvent(access.user_id, {
+    const room = await createChatCallRoom({
+      conversationId,
+      createdByUserId: access.user_id,
       title,
-      description: `[chat-conversation:${conversationId}] Scheduled from chat calendar.`,
-      start_at: startAt.toISOString(),
-      end_at: endAt.toISOString(),
-      timezone: ATS_TIMEZONE,
-      attendee_emails: attendeeEmails,
+      mode: "call",
+      startAt: startAt.toISOString(),
+      endAt: endAt.toISOString(),
+      activateNow: false,
     });
 
-    if (event.meet_link) {
-      await query(
-        `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-        [conversationId, access.user_id, `New scheduled call: ${title}. Join: ${event.meet_link}`],
-      );
-      await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
-    }
+    await query(
+      `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+      [conversationId, access.user_id, `New scheduled call: ${title}. Join: ${room.join_url}`],
+    );
+    await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
 
     return NextResponse.json({
       operation_status: "success",
       user_message: "Call scheduled from chat calendar.",
-      event,
+      event: room,
+      provider: "ats_native",
     });
   } catch (error) {
     return NextResponse.json(
@@ -142,3 +118,4 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
   }
 }
+

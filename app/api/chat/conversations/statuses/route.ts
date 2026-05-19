@@ -28,12 +28,13 @@ export async function GET() {
     const nowWindow = await query(
       `
       SELECT
-        CAST(substring(COALESCE(description, '') from '\\[chat-conversation:([0-9]+)\\]') AS int) AS conversation_id,
-        COALESCE(description,'') AS description,
+        conversation_id,
+        mode,
+        status,
         start_at,
         end_at
-      FROM team_calendar_events
-      WHERE status <> 'cancelled'
+      FROM chat_call_rooms
+      WHERE status IN ('scheduled', 'active')
         AND start_at <= NOW() + INTERVAL '15 minutes'
         AND end_at >= NOW() - INTERVAL '5 minutes'
       `,
@@ -59,14 +60,16 @@ export async function GET() {
     }
 
     const evMap = new Map<number, { presenting: boolean; inCall: boolean; inMeeting: boolean }>();
-    for (const row of nowWindow.rows as Array<{ conversation_id: number | null; description: string; start_at: string; end_at: string }>) {
+    for (const row of nowWindow.rows as Array<{ conversation_id: number | null; mode: string; status: string }>) {
       const cid = Number(row.conversation_id || 0);
       if (!cid || !ids.includes(cid)) continue;
       const slot = evMap.get(cid) || { presenting: false, inCall: false, inMeeting: false };
-      const desc = String(row.description || "").toLowerCase();
-      if (desc.includes("mode=screenshare")) slot.presenting = true;
-      else if (desc.includes("mode=call") || desc.includes("instant call")) slot.inCall = true;
-      else slot.inMeeting = true;
+      if (row.status === "active") {
+        if (String(row.mode || "").toLowerCase() === "screenshare") slot.presenting = true;
+        else slot.inCall = true;
+      } else {
+        slot.inMeeting = true;
+      }
       evMap.set(cid, slot);
     }
 
