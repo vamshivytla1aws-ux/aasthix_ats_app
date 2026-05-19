@@ -140,6 +140,17 @@ function invalidateEmployeeCodeCache() {
   usersColumnCache.delete("employee_code");
 }
 
+function extractMissingUsersColumn(error: unknown): string | null {
+  if (!error || typeof error !== "object") return null;
+  const code = "code" in error ? String((error as { code?: unknown }).code || "") : "";
+  const message = "message" in error ? String((error as { message?: unknown }).message || "") : "";
+  if (code !== "42703") return null;
+  const fromAlias = message.match(/column\s+u\.([a-zA-Z0-9_]+)\s+does not exist/i);
+  if (fromAlias?.[1]) return fromAlias[1].toLowerCase();
+  const fromQuoted = message.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i);
+  return fromQuoted?.[1] ? fromQuoted[1].toLowerCase() : null;
+}
+
 export function normalizeEmployeeStatus(value: string): EmployeeStatus {
   const v = (value || "").trim().toLowerCase();
   if (v === "inactive") return "inactive";
@@ -154,7 +165,8 @@ export async function listEmployees(params: {
   department?: string;
   status?: string;
 }) {
-  const caps = await hasUsersColumns([
+  const getCaps = async () =>
+    hasUsersColumns([
     "employee_code",
     "phone",
     "department",
@@ -166,7 +178,7 @@ export async function listEmployees(params: {
     "employment_status",
     "reporting_manager_user_id",
   ]);
-  const buildQuery = () => {
+  const buildQuery = (caps: Record<string, boolean>) => {
     const where: string[] = [];
     const values: Array<string | number> = [];
     let idx = 1;
@@ -229,8 +241,20 @@ export async function listEmployees(params: {
     `;
     return { sql, values };
   };
-  const q = buildQuery();
-  const res = await query(q.sql, q.values);
+  let caps = await getCaps();
+  let q = buildQuery(caps);
+  let res;
+  try {
+    res = await query(q.sql, q.values);
+  } catch (error) {
+    const missingColumn = extractMissingUsersColumn(error);
+    if (!missingColumn) throw error;
+    usersColumnCache.set(missingColumn, false);
+    if (missingColumn === "employee_code") invalidateEmployeeCodeCache();
+    caps = await getCaps();
+    q = buildQuery(caps);
+    res = await query(q.sql, q.values);
+  }
   return res.rows.map((row: Record<string, unknown>) => {
     const filled = COMPLETENESS_FIELDS.reduce((acc, key) => {
       const value = row[key];

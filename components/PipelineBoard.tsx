@@ -373,6 +373,8 @@ export default function PipelineBoard({
   const [scheduleDraftBusy, setScheduleDraftBusy] = useState(false);
   const [scheduleDraftError, setScheduleDraftError] = useState<string | null>(null);
   const [scheduleDraftSource, setScheduleDraftSource] = useState<"ai" | "fallback" | null>(null);
+  const scheduleDraftKeyRef = useRef<string>("");
+  const scheduleDraftEditedRef = useRef(false);
 
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [rescheduleApp, setRescheduleApp] = useState<ApplicationRow | null>(null);
@@ -394,6 +396,8 @@ export default function PipelineBoard({
   const [rescheduleDraftBusy, setRescheduleDraftBusy] = useState(false);
   const [rescheduleDraftError, setRescheduleDraftError] = useState<string | null>(null);
   const [rescheduleDraftSource, setRescheduleDraftSource] = useState<"ai" | "fallback" | null>(null);
+  const rescheduleDraftKeyRef = useRef<string>("");
+  const rescheduleDraftEditedRef = useRef(false);
   const [calendarStatus, setCalendarStatus] = useState<{
     shared_google?: { connected: boolean; configured: boolean; account_email: string | null };
   } | null>(null);
@@ -697,12 +701,28 @@ export default function PipelineBoard({
     setScheduleDraftBody("");
     setScheduleDraftError(null);
     setScheduleDraftSource(null);
+    scheduleDraftKeyRef.current = "";
+    scheduleDraftEditedRef.current = false;
     setScheduleOpen(true);
     void loadChecklist(app.id);
   }
 
-  const generateScheduleInviteDraft = useCallback(async () => {
+  const generateScheduleInviteDraft = useCallback(async (force = false) => {
     if (!scheduleApp || !scheduleDate || !scheduleTime) return;
+    const key = JSON.stringify({
+      appId: scheduleApp.id,
+      scheduleDate,
+      scheduleTime,
+      scheduleTimezone,
+      scheduleDurationMinutes,
+      scheduleMeetingMode,
+      scheduleMeetingLocation,
+      scheduleAttendees,
+      scheduleNotes,
+    });
+    if (!force && scheduleDraftEditedRef.current) return;
+    if (!force && scheduleDraftKeyRef.current === key) return;
+    scheduleDraftKeyRef.current = key;
     setScheduleDraftBusy(true);
     setScheduleDraftError(null);
     try {
@@ -737,6 +757,7 @@ export default function PipelineBoard({
       if (typeof data.defaultTo === "string") setScheduleDraftTo(data.defaultTo);
       if (Array.isArray(data.defaultCc)) setScheduleDraftCc(data.defaultCc.join(", "));
       setScheduleDraftSource(data.source ?? null);
+      if (!force) scheduleDraftEditedRef.current = false;
     } catch (err: any) {
       setScheduleDraftError(err?.message || "Failed to generate interview invite draft.");
     } finally {
@@ -1093,14 +1114,30 @@ export default function PipelineBoard({
     setRescheduleDraftBody("");
     setRescheduleDraftError(null);
     setRescheduleDraftSource(null);
+    rescheduleDraftKeyRef.current = "";
+    rescheduleDraftEditedRef.current = false;
     setRescheduleOpen(true);
     setError(null);
     void loadChecklist(app.id);
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const generateRescheduleInviteDraft = useCallback(async () => {
+  const generateRescheduleInviteDraft = useCallback(async (force = false) => {
     if (!rescheduleApp || !rescheduleDate || !rescheduleTime) return;
+    const key = JSON.stringify({
+      appId: rescheduleApp.id,
+      rescheduleDate,
+      rescheduleTime,
+      rescheduleTimezone,
+      rescheduleDurationMinutes,
+      rescheduleMeetingMode,
+      rescheduleMeetingLocation,
+      rescheduleAttendees,
+      rescheduleNotes,
+    });
+    if (!force && rescheduleDraftEditedRef.current) return;
+    if (!force && rescheduleDraftKeyRef.current === key) return;
+    rescheduleDraftKeyRef.current = key;
     setRescheduleDraftBusy(true);
     setRescheduleDraftError(null);
     try {
@@ -1135,6 +1172,7 @@ export default function PipelineBoard({
       if (typeof data.defaultTo === "string") setRescheduleDraftTo(data.defaultTo);
       if (Array.isArray(data.defaultCc)) setRescheduleDraftCc(data.defaultCc.join(", "));
       setRescheduleDraftSource(data.source ?? null);
+      if (!force) rescheduleDraftEditedRef.current = false;
     } catch (err: any) {
       setRescheduleDraftError(err?.message || "Failed to generate interview invite draft.");
     } finally {
@@ -1953,7 +1991,10 @@ export default function PipelineBoard({
                   </div>
                   <button
                     type="button"
-                    onClick={() => void generateScheduleInviteDraft()}
+                    onClick={() => {
+                      scheduleDraftEditedRef.current = false;
+                      void generateScheduleInviteDraft(true);
+                    }}
                     disabled={scheduleDraftBusy || busyId === scheduleApp.id || !scheduleDate || !scheduleTime}
                     className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
@@ -1972,7 +2013,10 @@ export default function PipelineBoard({
                       type="text"
                       className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       value={scheduleDraftTo}
-                      onChange={(e) => setScheduleDraftTo(e.target.value)}
+                      onChange={(e) => {
+                        scheduleDraftEditedRef.current = true;
+                        setScheduleDraftTo(e.target.value);
+                      }}
                       disabled={busyId === scheduleApp.id}
                     />
                   </div>
@@ -1993,7 +2037,10 @@ export default function PipelineBoard({
                     type="text"
                     className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={scheduleDraftSubject}
-                    onChange={(e) => setScheduleDraftSubject(e.target.value)}
+                    onChange={(e) => {
+                      scheduleDraftEditedRef.current = true;
+                      setScheduleDraftSubject(e.target.value);
+                    }}
                     disabled={busyId === scheduleApp.id}
                   />
                 </div>
@@ -2007,7 +2054,10 @@ export default function PipelineBoard({
                   <textarea
                     className="min-h-[220px] w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={scheduleDraftBody}
-                    onChange={(e) => setScheduleDraftBody(e.target.value)}
+                    onChange={(e) => {
+                      scheduleDraftEditedRef.current = true;
+                      setScheduleDraftBody(e.target.value);
+                    }}
                     disabled={busyId === scheduleApp.id}
                   />
                 </div>
@@ -2173,7 +2223,10 @@ export default function PipelineBoard({
                   </div>
                   <button
                     type="button"
-                    onClick={() => void generateRescheduleInviteDraft()}
+                    onClick={() => {
+                      rescheduleDraftEditedRef.current = false;
+                      void generateRescheduleInviteDraft(true);
+                    }}
                     disabled={rescheduleDraftBusy || busyId === rescheduleApp.id || !rescheduleDate || !rescheduleTime}
                     className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
@@ -2192,7 +2245,10 @@ export default function PipelineBoard({
                       type="text"
                       className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       value={rescheduleDraftTo}
-                      onChange={(e) => setRescheduleDraftTo(e.target.value)}
+                      onChange={(e) => {
+                        rescheduleDraftEditedRef.current = true;
+                        setRescheduleDraftTo(e.target.value);
+                      }}
                       disabled={busyId === rescheduleApp.id}
                     />
                   </div>
@@ -2213,7 +2269,10 @@ export default function PipelineBoard({
                     type="text"
                     className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={rescheduleDraftSubject}
-                    onChange={(e) => setRescheduleDraftSubject(e.target.value)}
+                    onChange={(e) => {
+                      rescheduleDraftEditedRef.current = true;
+                      setRescheduleDraftSubject(e.target.value);
+                    }}
                     disabled={busyId === rescheduleApp.id}
                   />
                 </div>
@@ -2227,7 +2286,10 @@ export default function PipelineBoard({
                   <textarea
                     className="min-h-[220px] w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={rescheduleDraftBody}
-                    onChange={(e) => setRescheduleDraftBody(e.target.value)}
+                    onChange={(e) => {
+                      rescheduleDraftEditedRef.current = true;
+                      setRescheduleDraftBody(e.target.value);
+                    }}
                     disabled={busyId === rescheduleApp.id}
                   />
                 </div>

@@ -120,6 +120,10 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
 
     await endChatCallRoom(eventId, access.user_id);
     await query(
+      `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`,
+      [eventId],
+    );
+    await query(
       `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
       [conversationId, access.user_id, `Call ended: ${event.title}`],
     );
@@ -133,4 +137,3 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to end call." }, { status: 400 });
   }
 }
-

@@ -13,10 +13,13 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     const roomId = Number(params.roomId);
     if (!Number.isFinite(roomId)) return NextResponse.json({ error: "Invalid room id." }, { status: 400 });
 
-    const roomRes = await query(`SELECT id, conversation_id, provider FROM chat_call_rooms WHERE id = $1 LIMIT 1`, [roomId]);
-    const room = roomRes.rows[0] as { id: number; conversation_id: number; provider: string } | undefined;
+    const roomRes = await query(`SELECT id, conversation_id, provider, status FROM chat_call_rooms WHERE id = $1 LIMIT 1`, [roomId]);
+    const room = roomRes.rows[0] as { id: number; conversation_id: number; provider: string; status: string } | undefined;
     if (!room) return NextResponse.json({ error: "Call room not found." }, { status: 404 });
     if (room.provider !== "ats_native") return NextResponse.json({ error: "Unsupported call provider." }, { status: 400 });
+    if (room.status === "ended" || room.status === "cancelled") {
+      return NextResponse.json({ error: "This call is no longer active." }, { status: 409 });
+    }
 
     const member = await query(
       `SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2 LIMIT 1`,
@@ -24,6 +27,10 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     );
     if (!member.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
 
+    await query(
+      `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
+      [roomId, access.user_id],
+    );
     await query(
       `
       INSERT INTO chat_call_participants (room_id, user_id, joined_at, left_at)
@@ -41,4 +48,3 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to join call room." }, { status: 400 });
   }
 }
-

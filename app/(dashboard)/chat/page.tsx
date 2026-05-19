@@ -126,11 +126,15 @@ type ChatCalendarEvent = {
   start_at: string;
   end_at: string;
   meet_link: string | null;
+  join_url?: string | null;
   status: string;
   calendar_sync_status: string | null;
   conversation_id?: number;
   conversation_name?: string | null;
   session_mode?: "call" | "screenshare";
+  is_active?: boolean;
+  provider?: "ats_native" | string | null;
+  created_by_user_id?: number | null;
 };
 type ConversationLiveStatus = {
   conversation_id: number;
@@ -295,8 +299,29 @@ function avatarColor(seed: number) {
   return AVATAR_COLORS[Math.abs(seed) % AVATAR_COLORS.length];
 }
 
+function playTone(kind: "message" | "ring", durationMs = 180) {
+  if (typeof window === "undefined") return;
+  const Ctx = (window as typeof window & { webkitAudioContext?: typeof AudioContext }).AudioContext ||
+    (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return;
+  const ctx = new Ctx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = kind === "ring" ? "sine" : "triangle";
+  osc.frequency.value = kind === "ring" ? 720 : 920;
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(kind === "ring" ? 0.08 : 0.04, ctx.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationMs / 1000);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + durationMs / 1000 + 0.02);
+}
+
 export default function ChatPage() {
   const [activeConvId, setActiveConvId] = useState<number | null>(null);
+  const [queryConversationId, setQueryConversationId] = useState<number | null>(null);
+  const [queryRoomId, setQueryRoomId] = useState<number | null>(null);
   const [sidebarSearch, setSidebarSearch] = useState("");
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [showNewChat, setShowNewChat] = useState(false);
@@ -315,6 +340,13 @@ export default function ChatPage() {
 
   useEffect(() => {
     setDesktopFullscreenFit(typeof window !== "undefined" && Boolean((window as any).atsDesktop));
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const conv = Number(params.get("conversation") || "0");
+      const room = Number(params.get("room") || "0");
+      setQueryConversationId(Number.isFinite(conv) && conv > 0 ? conv : null);
+      setQueryRoomId(Number.isFinite(room) && room > 0 ? room : null);
+    }
   }, []);
 
   const { data: convData, mutate: mutateConvs } = useSWR<{ conversations: Conversation[] }>(
@@ -357,6 +389,18 @@ export default function ChatPage() {
     () => conversations.find((conv) => conv.id === activeConvId) ?? null,
     [conversations, activeConvId]
   );
+
+  useEffect(() => {
+    if (!conversations.length) return;
+    if (queryConversationId) {
+      const match = conversations.find((conv) => conv.id === queryConversationId);
+      if (match) {
+        setActiveConvId(match.id);
+        return;
+      }
+    }
+    if (!activeConvId) setActiveConvId(conversations[0].id);
+  }, [conversations, queryConversationId, activeConvId]);
 
   const unreadTotal = useMemo(() => conversations.reduce((sum, conv) => sum + (conv.unread_count ?? 0), 0), [conversations]);
 
@@ -534,6 +578,7 @@ export default function ChatPage() {
             <ChatWorkspace
               conversation={activeConversation}
               currentUserId={currentUserId}
+              initialRoomId={queryRoomId}
               onBack={() => setActiveConvId(null)}
               onMutateConversations={() => void mutateConvs()}
               onToast={(message, tone = "success") => setToast({ message, tone })}
@@ -646,12 +691,14 @@ function ConversationRow({
 function ChatWorkspace({
   conversation,
   currentUserId,
+  initialRoomId,
   onBack,
   onMutateConversations,
   onToast,
 }: {
   conversation: Conversation;
   currentUserId: number | null;
+  initialRoomId: number | null;
   onBack: () => void;
   onMutateConversations: () => void;
   onToast: (message: string, tone?: ToastTone) => void;
@@ -668,12 +715,17 @@ function ChatWorkspace({
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [drawerView, setDrawerView] = useState<DrawerView | null>(null);
   const [callLoading, setCallLoading] = useState<null | "call" | "screenshare">(null);
+  const [callState, setCallState] = useState<"idle" | "ringing_outgoing" | "ringing_incoming" | "connected">("idle");
+  const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
+  const [ringDismissedRoomId, setRingDismissedRoomId] = useState<number | null>(null);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [nowTick, setNowTick] = useState(Date.now());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastSeenMessageIdRef = useRef<number>(0);
+  const ringIntervalRef = useRef<number | null>(null);
   const resizeComposer = useCallback(() => {
     if (!textareaRef.current) return;
     textareaRef.current.style.height = "auto";
@@ -780,6 +832,18 @@ function ChatWorkspace({
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    const latestId = messages[messages.length - 1]?.id || 0;
+    const previous = lastSeenMessageIdRef.current;
+    if (latestId <= previous) return;
+    const conversationMuted = Boolean(
+      prefData?.conversations?.find((pref) => pref.conversation_id === conversation.id)?.muted,
+    );
+    if (previous > 0 && prefData?.user?.desktop_sound && !conversationMuted) {
+      playTone("message", 120);
+    }
+    lastSeenMessageIdRef.current = latestId;
+  }, [messages, prefData, conversation.id]);
 
   const resetComposer = () => {
     setShowEmoji(false);
@@ -982,10 +1046,13 @@ function ChatWorkspace({
     const events = calendarData?.events ?? [];
     return (
       events.find((event) => {
-        if (!event.meet_link) return false;
+        const joinUrl = event.join_url || event.meet_link;
+        if (!joinUrl) return false;
         const start = new Date(event.start_at).getTime() - 5 * 60_000;
         const end = new Date(event.end_at).getTime();
-        return now >= start && now <= end;
+        const isWindowActive = now >= start && now <= end;
+        if (event.status === "active") return true;
+        return isWindowActive;
       }) ?? null
     );
   }, [calendarData, nowTick]);
@@ -998,12 +1065,77 @@ function ChatWorkspace({
     return `${mm}:${ss}`;
   }, [activeCall, nowTick]);
 
+  useEffect(() => {
+    if (!initialRoomId || !activeCall) return;
+    if (activeCall.id !== initialRoomId) return;
+    if (activeRoomId === initialRoomId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await apiFetchJson(`/api/chat/calls/${initialRoomId}/join`, { method: "POST" });
+        if (cancelled) return;
+        setActiveRoomId(initialRoomId);
+        setCallState("connected");
+      } catch {
+        // ignore here; regular join actions still available
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialRoomId, activeCall, activeRoomId]);
+
+  useEffect(() => {
+    if (!activeCall) {
+      setCallState("idle");
+      setActiveRoomId(null);
+      if (ringIntervalRef.current) {
+        window.clearInterval(ringIntervalRef.current);
+        ringIntervalRef.current = null;
+      }
+      return;
+    }
+    const roomId = activeCall.id;
+    if (ringDismissedRoomId === roomId) return;
+    const isHost = Number(activeCall.created_by_user_id || 0) === Number(currentUserId || 0);
+    if (activeCall.status === "active") {
+      setCallState((prev) => (prev === "connected" ? prev : "ringing_incoming"));
+    } else if (activeCall.status === "scheduled" && isHost) {
+      setCallState((prev) => (prev === "connected" ? prev : "ringing_outgoing"));
+    }
+    if (prefData?.user?.desktop_sound && (callState === "ringing_incoming" || callState === "ringing_outgoing")) {
+      if (!ringIntervalRef.current) {
+        playTone("ring", 240);
+        ringIntervalRef.current = window.setInterval(() => playTone("ring", 240), 1200);
+      }
+    } else if (ringIntervalRef.current) {
+      window.clearInterval(ringIntervalRef.current);
+      ringIntervalRef.current = null;
+    }
+    return () => {
+      if (ringIntervalRef.current && callState === "connected") {
+        window.clearInterval(ringIntervalRef.current);
+        ringIntervalRef.current = null;
+      }
+    };
+  }, [
+    activeCall,
+    callState,
+    currentUserId,
+    prefData?.user?.desktop_sound,
+    ringDismissedRoomId,
+  ]);
+
   const launchCall = useCallback(
     async (mode: "call" | "screenshare") => {
       try {
-        if (activeCall?.meet_link) {
-          window.open(activeCall.meet_link, "_blank", "noopener,noreferrer");
-          onToast("Joining active call.", "success");
+        if (activeCall) {
+          const joinUrl = activeCall.join_url || activeCall.meet_link;
+          await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
+          setActiveRoomId(activeCall.id);
+          setCallState("connected");
+          if (joinUrl) window.open(joinUrl, "_blank", "noopener,noreferrer");
+          onToast("Joined active call.", "success");
           return;
         }
         setCallLoading(mode);
@@ -1018,10 +1150,16 @@ function ChatWorkspace({
         if (data.join_link) {
           window.open(data.join_link, "_blank", "noopener,noreferrer");
         }
-        onToast(
-          `${data.user_message || (mode === "screenshare" ? "Screen share started." : "Call started.")} If Meet shows waiting room, join with invited Google account or ask organizer to admit.`,
-          "success",
-        );
+        const currentEvents = (await mutateCalendar())?.events ?? [];
+        const latest = [...currentEvents]
+          .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime())
+          .find((e) => (e.join_url || e.meet_link) && (e.status === "active" || e.status === "scheduled"));
+        if (latest?.id) {
+          await apiFetchJson(`/api/chat/calls/${latest.id}/join`, { method: "POST" });
+          setActiveRoomId(latest.id);
+          setCallState("ringing_outgoing");
+        }
+        onToast(data.user_message || (mode === "screenshare" ? "Screen share started." : "Call started."), "success");
         void mutateCalendar();
         void mutateMessages();
         onMutateConversations();
@@ -1039,9 +1177,13 @@ function ChatWorkspace({
   const endActiveCall = useCallback(
     async (eventId: number) => {
       try {
+        await apiFetchJson(`/api/chat/calls/${eventId}/leave`, { method: "POST" }).catch(() => {});
         await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls?event_id=${eventId}`, {
           method: "DELETE",
         });
+        setCallState("idle");
+        setActiveRoomId(null);
+        setRingDismissedRoomId(eventId);
         onToast("Call ended.", "success");
         void mutateCalendar();
         void mutateMessages();
@@ -1502,21 +1644,57 @@ function ChatWorkspace({
         </div>
       ) : null}
 
-      {activeCall?.meet_link ? (
+      {activeCall ? (
         <div className="pointer-events-none absolute bottom-24 right-6 z-40">
           <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-2 shadow-[0_10px_30px_rgba(16,185,129,0.25)] backdrop-blur">
             <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
             <span className="text-xs font-semibold text-emerald-100">
               Call is active • {activeCallDuration} • {conversation.members.length} participant{conversation.members.length === 1 ? "" : "s"}
             </span>
-            <a
-              href={activeCall.meet_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-400"
-            >
-              Join now
-            </a>
+            {callState === "ringing_incoming" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
+                    setActiveRoomId(activeCall.id);
+                    setCallState("connected");
+                    const joinUrl = activeCall.join_url || activeCall.meet_link;
+                    if (joinUrl) window.open(joinUrl, "_blank", "noopener,noreferrer");
+                    onToast("Call accepted.", "success");
+                  }}
+                  className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-400"
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRingDismissedRoomId(activeCall.id);
+                    setCallState("idle");
+                    onToast("Call declined.", "success");
+                  }}
+                  className="rounded-full border border-rose-400/50 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-500/25"
+                >
+                  Decline
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
+                  setActiveRoomId(activeCall.id);
+                  setCallState("connected");
+                  const joinUrl = activeCall.join_url || activeCall.meet_link;
+                  if (joinUrl) window.open(joinUrl, "_blank", "noopener,noreferrer");
+                  onToast("Joined call.", "success");
+                }}
+                className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-400"
+              >
+                Join now
+              </button>
+            )}
             <button
               type="button"
               onClick={async () => launchCall(activeCall.session_mode === "screenshare" ? "call" : "screenshare")}
@@ -1526,10 +1704,17 @@ function ChatWorkspace({
             </button>
             <button
               type="button"
-              onClick={async () => endActiveCall(activeCall.id)}
+              onClick={async () => {
+                if (activeRoomId === activeCall.id || callState === "connected") {
+                  await endActiveCall(activeCall.id);
+                  return;
+                }
+                setRingDismissedRoomId(activeCall.id);
+                setCallState("idle");
+              }}
               className="rounded-full border border-rose-400/50 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-500/25"
             >
-              End call
+              {activeRoomId === activeCall.id || callState === "connected" ? "End call" : "Dismiss"}
             </button>
           </div>
         </div>
@@ -2091,9 +2276,9 @@ function ChatContextDrawer({
                     <p className="mt-0.5 text-[11px] text-slate-400">
                       {new Date(event.start_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
                     </p>
-                    {event.meet_link ? (
+                    {(event.join_url || event.meet_link) ? (
                       <a
-                        href={event.meet_link}
+                        href={event.join_url || event.meet_link || "#"}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="mt-1 inline-flex rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20"
