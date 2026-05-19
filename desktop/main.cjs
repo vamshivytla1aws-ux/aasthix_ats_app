@@ -2,7 +2,7 @@ const path = require("path");
 const { app, BrowserWindow, Menu, shell, Tray, nativeImage, ipcMain, Notification } = require("electron");
 const { autoUpdater } = require("electron-updater");
 
-const APP_NAME = "AASTHIX ATS";
+const APP_NAME = "Aasthix chat";
 const TARGET_URL = process.env.ATS_DESKTOP_TARGET_URL || "https://app.aasthix.com";
 const ENTRY_PATH = process.env.ATS_DESKTOP_ENTRY_PATH || "/chat-app";
 const CHAT_ENTRY_URL = `${TARGET_URL.replace(/\/+$/, "")}${ENTRY_PATH.startsWith("/") ? ENTRY_PATH : `/${ENTRY_PATH}`}`;
@@ -86,8 +86,8 @@ function applyLaunchAtLogin() {
 }
 
 function iconPath() {
-  const pngPath = path.join(__dirname, "..", "public", "brand-logo.png");
-  return pngPath;
+  const icoPath = path.join(__dirname, "resources", "icon.ico");
+  return icoPath;
 }
 
 function createTray() {

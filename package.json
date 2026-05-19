@@ -38,6 +38,7 @@
     "bullmq": "^5.71.1",
     "date-fns": "^4.1.0",
     "dotenv": "^17.3.1",
+    "electron-updater": "^6.6.2",
     "framer-motion": "^12.38.0",
     "ioredis": "^5.10.1",
     "jose": "^6.2.1",
@@ -58,8 +59,7 @@
     "recharts": "^3.8.0",
     "resend": "^6.11.0",
     "swr": "^2.4.1",
-    "zod": "^3.23.8",
-    "electron-updater": "^6.6.2"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@playwright/test": "^1.51.0",
@@ -69,21 +69,22 @@
     "@types/react-big-calendar": "^1.16.3",
     "@types/react-dom": "^18.2.19",
     "autoprefixer": "^10.4.17",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
     "eslint": "^8.57.0",
     "eslint-config-next": "14.1.0",
+    "png-to-ico": "^3.0.1",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.21.0",
     "typescript": "^5.4.0",
-    "vitest": "^3.0.5",
-    "electron": "^31.7.7",
-    "electron-builder": "^24.13.3"
+    "vitest": "^3.0.5"
   },
   "main": "desktop/main.cjs",
   "build": {
     "appId": "com.aasthix.ats.desktop",
-    "productName": "AASTHIX ATS",
-    "artifactName": "ATS-Setup-${version}.${ext}",
+    "productName": "Aasthix chat",
+    "artifactName": "Aasthix-chat-Setup-${version}.${ext}",
     "directories": {
       "output": "dist",
       "buildResources": "desktop/resources"
@@ -96,6 +97,7 @@
       "main": "desktop/main.cjs"
     },
     "win": {
+      "icon": "desktop/resources/icon.ico",
       "signAndEditExecutable": false,
       "target": [
         {
@@ -111,7 +113,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "AASTHIX ATS"
+      "shortcutName": "Aasthix chat",
+      "installerIcon": "desktop/resources/icon.ico",
+      "uninstallerIcon": "desktop/resources/icon.ico"
     },
     "publish": [
       {

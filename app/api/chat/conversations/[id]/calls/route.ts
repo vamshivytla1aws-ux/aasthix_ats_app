@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { ATS_TIMEZONE } from "@/lib/timezones";
-import { createTeamCalendarEvent } from "@/lib/teamCalendar";
+import { cancelTeamCalendarEvent, createTeamCalendarEvent } from "@/lib/teamCalendar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,17 +21,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const access = gate.access;
 
     const conversationId = Number(params.id);
-    if (!Number.isFinite(conversationId)) {
-      return NextResponse.json({ error: "Invalid conversation id." }, { status: 400 });
-    }
+    if (!Number.isFinite(conversationId)) return NextResponse.json({ error: "Invalid conversation id." }, { status: 400 });
 
     const memberCheck = await query(
       `SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2`,
       [conversationId, access.user_id],
     );
-    if (!memberCheck.rowCount) {
-      return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
-    }
+    if (!memberCheck.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
 
     const convRes = await query(
       `
@@ -45,14 +41,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
       [conversationId],
     );
     const conv = convRes.rows[0] as { name: string | null; type: "direct" | "group"; member_emails: string[] } | undefined;
-    if (!conv) {
-      return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
-    }
+    if (!conv) return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
 
     const body = await request.json().catch(() => ({}));
     const mode = normalizeMode(body?.mode);
     const durationMinutesRaw = Number(body?.duration_minutes);
-    const durationMinutes = Number.isFinite(durationMinutesRaw) && durationMinutesRaw >= 10 && durationMinutesRaw <= 180 ? Math.trunc(durationMinutesRaw) : 30;
+    const durationMinutes =
+      Number.isFinite(durationMinutesRaw) && durationMinutesRaw >= 10 && durationMinutesRaw <= 180
+        ? Math.trunc(durationMinutesRaw)
+        : 30;
     const startAt = new Date();
     const endAt = new Date(startAt.getTime() + durationMinutes * 60_000);
     const modeLabel = mode === "screenshare" ? "Screen Share" : "Call";
@@ -101,3 +98,48 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
   }
 }
+
+export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const gate = await requirePermission("chat.view");
+    if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+    const access = gate.access;
+
+    const conversationId = Number(params.id);
+    if (!Number.isFinite(conversationId)) return NextResponse.json({ error: "Invalid conversation id." }, { status: 400 });
+
+    const memberCheck = await query(
+      `SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2`,
+      [conversationId, access.user_id],
+    );
+    if (!memberCheck.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
+
+    const url = new URL(request.url);
+    const eventId = Number(url.searchParams.get("event_id"));
+    if (!Number.isFinite(eventId)) return NextResponse.json({ error: "event_id is required." }, { status: 400 });
+
+    const eventRes = await query(`SELECT id, title, description FROM team_calendar_events WHERE id = $1 LIMIT 1`, [eventId]);
+    const event = eventRes.rows[0] as { id: number; title: string; description: string | null } | undefined;
+    if (!event) return NextResponse.json({ error: "Event not found." }, { status: 404 });
+
+    const marker = `[chat-conversation:${conversationId}]`;
+    if (!String(event.description || "").includes(marker)) {
+      return NextResponse.json({ error: "Event does not belong to this conversation." }, { status: 403 });
+    }
+
+    const cancelled = await cancelTeamCalendarEvent(access.user_id, eventId);
+    await query(
+      `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+      [conversationId, access.user_id, `Call ended: ${cancelled.title}`],
+    );
+    await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+
+    return NextResponse.json({
+      operation_status: "success",
+      user_message: "Call ended successfully.",
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to end call." }, { status: 400 });
+  }
+}
+

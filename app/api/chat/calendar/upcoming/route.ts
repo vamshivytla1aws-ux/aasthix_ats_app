@@ -40,10 +40,35 @@ export async function GET(request: Request) {
       [access.user_id, limit],
     );
 
-    return NextResponse.json({ events: rows.rows });
+    const recentRows = await query(
+      `
+      SELECT
+        t.id,
+        t.title,
+        t.start_at,
+        t.end_at,
+        t.meet_link,
+        t.status,
+        conv.id AS conversation_id,
+        conv.name AS conversation_name
+      FROM team_calendar_events t
+      JOIN LATERAL (
+        SELECT CAST(substring(COALESCE(t.description, '') from '\\[chat-conversation:([0-9]+)\\]') AS int) AS cid
+      ) marker ON marker.cid IS NOT NULL
+      JOIN conversations conv ON conv.id = marker.cid
+      JOIN conversation_members cm ON cm.conversation_id = conv.id AND cm.user_id = $1
+      WHERE t.status <> 'cancelled'
+        AND t.end_at < NOW()
+        AND t.end_at >= NOW() - INTERVAL '14 days'
+      ORDER BY t.end_at DESC
+      LIMIT 5
+      `,
+      [access.user_id],
+    );
+
+    return NextResponse.json({ events: rows.rows, recent_events: recentRows.rows });
   } catch (error) {
     console.error("chat/calendar/upcoming GET", error);
     return NextResponse.json({ error: "Failed to load upcoming chat calls." }, { status: 500 });
   }
 }
-

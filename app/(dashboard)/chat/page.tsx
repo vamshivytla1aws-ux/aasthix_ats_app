@@ -130,6 +130,7 @@ type ChatCalendarEvent = {
   calendar_sync_status: string | null;
   conversation_id?: number;
   conversation_name?: string | null;
+  session_mode?: "call" | "screenshare";
 };
 type ConversationLiveStatus = {
   conversation_id: number;
@@ -299,12 +300,20 @@ export default function ChatPage() {
   const [sidebarSearch, setSidebarSearch] = useState("");
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [showNewChat, setShowNewChat] = useState(false);
+  const [newChatType, setNewChatType] = useState<"direct" | "group">("direct");
+  const [showComposeMenu, setShowComposeMenu] = useState(false);
+  const [showQuickCalendar, setShowQuickCalendar] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
+  const [desktopFullscreenFit, setDesktopFullscreenFit] = useState(false);
 
   useEffect(() => {
     apiFetchJson<{ user: { id?: number } }>("/api/auth/me")
       .then((d) => setCurrentUserId(d.user?.id ?? null))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setDesktopFullscreenFit(typeof window !== "undefined" && Boolean((window as any).atsDesktop));
   }, []);
 
   const { data: convData, mutate: mutateConvs } = useSWR<{ conversations: Conversation[] }>(
@@ -320,12 +329,13 @@ export default function ChatPage() {
     { refreshInterval: 7000 }
   );
   const threadInbox = useMemo(() => threadInboxData?.inbox ?? [], [threadInboxData]);
-  const { data: upcomingCalendarData } = useSWR<{ events: ChatCalendarEvent[] }>(
+  const { data: upcomingCalendarData } = useSWR<{ events: ChatCalendarEvent[]; recent_events: ChatCalendarEvent[] }>(
     "/api/chat/calendar/upcoming?limit=8",
     dashboardFetcher,
     { refreshInterval: 20_000 }
   );
   const upcomingCalendar = useMemo(() => upcomingCalendarData?.events ?? [], [upcomingCalendarData]);
+  const recentCalendar = useMemo(() => upcomingCalendarData?.recent_events ?? [], [upcomingCalendarData]);
   const { data: statusData } = useSWR<{ statuses: ConversationLiveStatus[] }>(
     "/api/chat/conversations/statuses",
     dashboardFetcher,
@@ -351,7 +361,7 @@ export default function ChatPage() {
 
   return (
     <AccessGate permissionKey="chat.view">
-      <div className="font-['Sora','Manrope','Inter','Segoe_UI',sans-serif] flex h-[calc(100vh-7rem)] overflow-hidden rounded-2xl border border-[#2c3342] bg-[#0a0f1f] shadow-[0_20px_60px_rgba(2,6,23,0.55)]">
+      <div className={["font-['Sora','Manrope','Inter','Segoe_UI',sans-serif] flex overflow-hidden bg-[#0a0f1f]", desktopFullscreenFit ? "h-[calc(100vh-2px)] rounded-none border-0 shadow-none" : "h-[calc(100vh-7rem)] rounded-2xl border border-[#2c3342] shadow-[0_20px_60px_rgba(2,6,23,0.55)]"].join(" ")}>
         <aside
           className={[
             "w-80 shrink-0 border-r border-slate-700 bg-[#1f2430] text-slate-100",
@@ -365,14 +375,52 @@ export default function ChatPage() {
               {unreadTotal > 0 ? (
                 <span className="rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-semibold text-white">{unreadTotal}</span>
               ) : null}
-              <button
-                type="button"
-                onClick={() => setShowNewChat(true)}
-                className="ml-auto rounded-md bg-indigo-500 p-1.5 text-white hover:bg-indigo-400"
-                title="New chat"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
+              <div className="relative ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowComposeMenu((v) => !v)}
+                  className="rounded-md bg-indigo-500 p-1.5 text-white hover:bg-indigo-400"
+                  title="Create"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+                {showComposeMenu ? (
+                  <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-[#364157] bg-[#0f1629] p-1 shadow-xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewChatType("direct");
+                        setShowNewChat(true);
+                        setShowComposeMenu(false);
+                      }}
+                      className="w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-[#1a233a]"
+                    >
+                      Direct
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewChatType("group");
+                        setShowNewChat(true);
+                        setShowComposeMenu(false);
+                      }}
+                      className="w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-[#1a233a]"
+                    >
+                      Group
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowComposeMenu(false);
+                        setShowQuickCalendar(true);
+                      }}
+                      className="w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-[#1a233a]"
+                    >
+                      Calendar
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
             <div className="relative mt-3">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -421,6 +469,28 @@ export default function ChatPage() {
                       <p className="truncate text-[11px] font-medium text-slate-100">{event.title}</p>
                       <p className="truncate text-[10px] text-slate-400">
                         {new Date(event.start_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {recentCalendar.length > 0 ? (
+              <div className="border-b border-slate-700 px-3 py-2">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Recent calls</p>
+                <div className="space-y-1.5">
+                  {recentCalendar.slice(0, 3).map((event) => (
+                    <button
+                      key={`recent-${event.id}`}
+                      type="button"
+                      onClick={() => {
+                        if (event.conversation_id) setActiveConvId(event.conversation_id);
+                      }}
+                      className="w-full rounded-md border border-slate-700 bg-[#121725] px-2 py-1.5 text-left hover:bg-[#1b2230]"
+                    >
+                      <p className="truncate text-[11px] font-medium text-slate-100">{event.title}</p>
+                      <p className="truncate text-[10px] text-slate-400">
+                        Ended {new Date(event.end_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </p>
                     </button>
                   ))}
@@ -534,6 +604,7 @@ export default function ChatPage() {
 
       {showNewChat ? (
         <NewChatModal
+          initialType={newChatType}
           onClose={() => setShowNewChat(false)}
           onCreate={(id) => {
             setShowNewChat(false);
@@ -544,6 +615,17 @@ export default function ChatPage() {
         />
       ) : null}
       {toast ? <Toast message={toast.message} variant={toast.tone} onClose={() => setToast(null)} autoHideMs={2200} /> : null}
+      {showQuickCalendar ? (
+        <QuickCalendarModal
+          onClose={() => setShowQuickCalendar(false)}
+          onScheduled={(conversationId) => {
+            setShowQuickCalendar(false);
+            setActiveConvId(conversationId);
+          }}
+          currentUserId={currentUserId}
+          conversations={conversations}
+        />
+      ) : null}
     </AccessGate>
   );
 }
@@ -627,9 +709,9 @@ function ChatWorkspace({
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [drawerView, setDrawerView] = useState<DrawerView | null>(null);
   const [callLoading, setCallLoading] = useState<null | "call" | "screenshare">(null);
-  const [desktopMode, setDesktopMode] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [nowTick, setNowTick] = useState(Date.now());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -724,8 +806,10 @@ function ChatWorkspace({
   }, [conversation.id]);
 
   useEffect(() => {
-    setDesktopMode(typeof window !== "undefined" && Boolean((window as any).atsDesktop));
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
   }, []);
+
 
   const resetComposer = () => {
     setShowEmoji(false);
@@ -924,7 +1008,7 @@ function ChatWorkspace({
     [uploadFiles]
   );
   const activeCall = useMemo(() => {
-    const now = Date.now();
+    const now = nowTick;
     const events = calendarData?.events ?? [];
     return (
       events.find((event) => {
@@ -934,7 +1018,15 @@ function ChatWorkspace({
         return now >= start && now <= end;
       }) ?? null
     );
-  }, [calendarData]);
+  }, [calendarData, nowTick]);
+
+  const activeCallDuration = useMemo(() => {
+    if (!activeCall) return "00:00";
+    const secs = Math.max(0, Math.floor((nowTick - new Date(activeCall.start_at).getTime()) / 1000));
+    const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+    const ss = String(secs % 60).padStart(2, "0");
+    return `${mm}:${ss}`;
+  }, [activeCall, nowTick]);
 
   const launchCall = useCallback(
     async (mode: "call" | "screenshare") => {
@@ -963,6 +1055,24 @@ function ChatWorkspace({
       }
     },
     [conversation.id, mutateMessages, onMutateConversations, onToast]
+  );
+
+  const endActiveCall = useCallback(
+    async (eventId: number) => {
+      try {
+        await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls?event_id=${eventId}`, {
+          method: "DELETE",
+        });
+        onToast("Call ended.", "success");
+        void mutateCalendar();
+        void mutateMessages();
+        onMutateConversations();
+      } catch (error) {
+        const msg = error instanceof ApiError ? error.message : "Unable to end call.";
+        onToast(msg, "error");
+      }
+    },
+    [conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]
   );
 
   const setManualPresence = useCallback(
@@ -1016,40 +1126,6 @@ function ChatWorkspace({
               </p>
             </div>
             <div className="hidden items-center gap-1 md:flex">
-              {desktopMode ? (
-                <div className="mr-1 flex items-center gap-1 rounded-lg border border-[#364157] bg-[#0f1629] p-0.5">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await (window as any).atsDesktop?.minimizeWindow?.();
-                    }}
-                    className="rounded px-2 py-1 text-[11px] text-slate-300 hover:bg-[#1a233a]"
-                    title="Minimize"
-                  >
-                    —
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await (window as any).atsDesktop?.maximizeRestoreWindow?.();
-                    }}
-                    className="rounded px-2 py-1 text-[11px] text-slate-300 hover:bg-[#1a233a]"
-                    title="Maximize/Restore"
-                  >
-                    ◻
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await (window as any).atsDesktop?.closeWindow?.();
-                    }}
-                    className="rounded px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-500/15"
-                    title="Close"
-                  >
-                    ×
-                  </button>
-                </div>
-              ) : null}
               <button
                 type="button"
                 onClick={async () => launchCall("call")}
@@ -1451,7 +1527,9 @@ function ChatWorkspace({
         <div className="pointer-events-none absolute bottom-24 right-6 z-40">
           <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-2 shadow-[0_10px_30px_rgba(16,185,129,0.25)] backdrop-blur">
             <span className="chat-unread-pulse inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
-            <span className="text-xs font-semibold text-emerald-100">Call is active</span>
+            <span className="text-xs font-semibold text-emerald-100">
+              Call is active • {activeCallDuration} • {conversation.members.length} participant{conversation.members.length === 1 ? "" : "s"}
+            </span>
             <a
               href={activeCall.meet_link}
               target="_blank"
@@ -1460,6 +1538,20 @@ function ChatWorkspace({
             >
               Join now
             </a>
+            <button
+              type="button"
+              onClick={async () => launchCall(activeCall.session_mode === "screenshare" ? "call" : "screenshare")}
+              className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/25"
+            >
+              {activeCall.session_mode === "screenshare" ? "Switch to call" : "Present"}
+            </button>
+            <button
+              type="button"
+              onClick={async () => endActiveCall(activeCall.id)}
+              className="rounded-full border border-rose-400/50 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-500/25"
+            >
+              End call
+            </button>
           </div>
         </div>
       ) : null}
@@ -2132,15 +2224,17 @@ function ThreadPanel({
 }
 
 function NewChatModal({
+  initialType,
   currentUserId,
   onClose,
   onCreate,
 }: {
+  initialType: "direct" | "group";
   currentUserId: number | null;
   onClose: () => void;
   onCreate: (id: number) => void;
 }) {
-  const [chatType, setChatType] = useState<"direct" | "group">("direct");
+  const [chatType, setChatType] = useState<"direct" | "group">(initialType);
   const [groupName, setGroupName] = useState("");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [search, setSearch] = useState("");
@@ -2256,6 +2350,110 @@ function NewChatModal({
             className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
           >
             {creating ? "Creating…" : chatType === "direct" ? "Start chat" : "Create group"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuickCalendarModal({
+  onClose,
+  onScheduled,
+  currentUserId,
+  conversations,
+}: {
+  onClose: () => void;
+  onScheduled: (conversationId: number) => void;
+  currentUserId: number | null;
+  conversations: Conversation[];
+}) {
+  const [conversationId, setConversationId] = useState<number | "">(
+    conversations[0]?.id ?? ""
+  );
+  const [title, setTitle] = useState("Scheduled chat call");
+  const [duration, setDuration] = useState(30);
+  const [startAt, setStartAt] = useState(() => {
+    const d = new Date(Date.now() + 10 * 60_000);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+    return local.toISOString().slice(0, 16);
+  });
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-[#35405a] bg-[#0e1529] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-[#35405a] px-4 py-3">
+          <h3 className="text-sm font-semibold text-slate-100">Schedule call</h3>
+          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-[#1a233a]">
+            <X className="h-4 w-4 text-slate-300" />
+          </button>
+        </div>
+        <div className="space-y-3 p-4">
+          <select
+            value={conversationId}
+            onChange={(e) => setConversationId(Number(e.target.value))}
+            className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
+          >
+            {conversations
+              .filter((c) => c.members.some((m) => m.user_id !== currentUserId))
+              .map((conv) => (
+                <option key={conv.id} value={conv.id}>
+                  {convLabel(conv, currentUserId)}
+                </option>
+              ))}
+          </select>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Call title"
+            className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
+          />
+          <input
+            type="datetime-local"
+            value={startAt}
+            onChange={(e) => setStartAt(e.target.value)}
+            className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
+          />
+          <select
+            value={duration}
+            onChange={(e) => setDuration(Number(e.target.value))}
+            className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
+          >
+            <option value={15}>15 minutes</option>
+            <option value={30}>30 minutes</option>
+            <option value={45}>45 minutes</option>
+            <option value={60}>1 hour</option>
+          </select>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-[#35405a] px-4 py-3">
+          <button type="button" onClick={onClose} className="rounded-md border border-[#35405a] px-3 py-1.5 text-xs text-slate-300">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!conversationId || saving}
+            onClick={async () => {
+              if (!conversationId) return;
+              setSaving(true);
+              try {
+                await apiFetchJson(`/api/chat/conversations/${conversationId}/calendar`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    title: title.trim() || "Scheduled chat call",
+                    start_at: new Date(startAt).toISOString(),
+                    duration_minutes: duration,
+                  }),
+                });
+                onScheduled(Number(conversationId));
+              } finally {
+                setSaving(false);
+              }
+            }}
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+          >
+            {saving ? "Scheduling…" : "Schedule"}
           </button>
         </div>
       </div>
