@@ -303,6 +303,7 @@ export default function ChatPage() {
   const [newChatType, setNewChatType] = useState<"direct" | "group">("direct");
   const [showComposeMenu, setShowComposeMenu] = useState(false);
   const [showQuickCalendar, setShowQuickCalendar] = useState(false);
+  const [showTempChatModal, setShowTempChatModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [desktopFullscreenFit, setDesktopFullscreenFit] = useState(false);
 
@@ -417,6 +418,16 @@ export default function ChatPage() {
                       className="w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-[#1a233a]"
                     >
                       Calendar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowComposeMenu(false);
+                        setShowTempChatModal(true);
+                      }}
+                      className="w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-[#1a233a]"
+                    >
+                      Temp chat
                     </button>
                   </div>
                 ) : null}
@@ -626,6 +637,18 @@ export default function ChatPage() {
           conversations={conversations}
         />
       ) : null}
+      {showTempChatModal ? (
+        <TempChatModal
+          onClose={() => setShowTempChatModal(false)}
+          selectedConversationId={activeConversation?.id ?? null}
+          conversations={conversations}
+          onDone={(conversationId) => {
+            setShowTempChatModal(false);
+            setActiveConvId(conversationId);
+          }}
+          onToast={(message, tone = "success") => setToast({ message, tone })}
+        />
+      ) : null}
     </AccessGate>
   );
 }
@@ -715,6 +738,12 @@ function ChatWorkspace({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const resizeComposer = useCallback(() => {
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = "auto";
+    const scrollHeight = textareaRef.current.scrollHeight;
+    textareaRef.current.style.height = `${Math.min(Math.max(scrollHeight, 56), 220)}px`;
+  }, []);
 
   const messageRefreshInterval = threadParent ? 2500 : 3000;
   const { data: messageData, mutate: mutateMessages } = useSWR<{ messages: Message[] }>(
@@ -803,7 +832,12 @@ function ChatWorkspace({
 
   useEffect(() => {
     textareaRef.current?.focus();
-  }, [conversation.id]);
+    resizeComposer();
+  }, [conversation.id, resizeComposer]);
+
+  useEffect(() => {
+    resizeComposer();
+  }, [messageInput, resizeComposer]);
 
   useEffect(() => {
     const t = setInterval(() => setNowTick(Date.now()), 1000);
@@ -1412,7 +1446,7 @@ function ChatWorkspace({
                 }
               }}
               placeholder="Type a message"
-              className="max-h-40 min-h-[44px] flex-1 resize-none rounded-2xl border border-[#3a4660] bg-[#0a1121] px-4 py-2.5 text-sm leading-5 text-slate-100 shadow-[inset_0_1px_2px_rgba(2,6,23,0.45)] outline-none transition placeholder:text-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/25"
+              className="max-h-[220px] min-h-[56px] flex-1 resize-none overflow-y-auto rounded-2xl border border-[#3a4660] bg-[#0a1121] px-4 py-3 text-sm leading-6 text-slate-100 shadow-[inset_0_1px_2px_rgba(2,6,23,0.45)] outline-none transition placeholder:text-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/25"
             />
             <button
               type="button"
@@ -1802,6 +1836,7 @@ function ChatContextDrawer({
   const [scheduleDuration, setScheduleDuration] = useState(30);
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [externalNameInput, setExternalNameInput] = useState("");
+  const [externalEmailInput, setExternalEmailInput] = useState("");
   const [externalExpiryHours, setExternalExpiryHours] = useState(24);
   const [externalBusy, setExternalBusy] = useState(false);
 
@@ -1874,7 +1909,7 @@ function ChatContextDrawer({
   }
 
   async function createExternalInvite() {
-    if (!externalNameInput.trim()) return;
+    if (!externalNameInput.trim() || !externalEmailInput.trim()) return;
     try {
       setExternalBusy(true);
       const payload = await apiFetchJson<{ invite_link: string }>(
@@ -1884,6 +1919,7 @@ function ChatContextDrawer({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             external_name: externalNameInput.trim(),
+            external_email: externalEmailInput.trim(),
             expiry_hours: externalExpiryHours,
           }),
         }
@@ -1894,6 +1930,7 @@ function ChatContextDrawer({
         } catch {}
       }
       setExternalNameInput("");
+      setExternalEmailInput("");
       onExternalInvitesChanged();
     } finally {
       setExternalBusy(false);
@@ -1953,6 +1990,13 @@ function ChatContextDrawer({
                   placeholder="Guest name"
                   className="w-full rounded-lg border border-[#3a4660] bg-[#0b1223] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400"
                 />
+                <input
+                  type="email"
+                  value={externalEmailInput}
+                  onChange={(e) => setExternalEmailInput(e.target.value)}
+                  placeholder="Guest email"
+                  className="w-full rounded-lg border border-[#3a4660] bg-[#0b1223] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400"
+                />
                 <select
                   value={externalExpiryHours}
                   onChange={(e) => setExternalExpiryHours(Number(e.target.value))}
@@ -1966,7 +2010,7 @@ function ChatContextDrawer({
                 <button
                   type="button"
                   onClick={async () => createExternalInvite()}
-                  disabled={externalBusy || !externalNameInput.trim()}
+                  disabled={externalBusy || !externalNameInput.trim() || !externalEmailInput.trim()}
                   className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
                 >
                   {externalBusy ? "Creating…" : "Create temporary link"}
@@ -2454,6 +2498,120 @@ function QuickCalendarModal({
             className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
           >
             {saving ? "Scheduling…" : "Schedule"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TempChatModal({
+  onClose,
+  onDone,
+  conversations,
+  selectedConversationId,
+  onToast,
+}: {
+  onClose: () => void;
+  onDone: (conversationId: number) => void;
+  conversations: Conversation[];
+  selectedConversationId: number | null;
+  onToast: (message: string, tone?: ToastTone) => void;
+}) {
+  const [conversationId, setConversationId] = useState<number | "">(selectedConversationId ?? conversations[0]?.id ?? "");
+  const [guestName, setGuestName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
+  const [expiryHours, setExpiryHours] = useState(4);
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-[#35405a] bg-[#0e1529] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-[#35405a] px-4 py-3">
+          <h3 className="text-sm font-semibold text-slate-100">Temporary external chat</h3>
+          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-[#1a233a]">
+            <X className="h-4 w-4 text-slate-300" />
+          </button>
+        </div>
+        <div className="space-y-3 p-4">
+          <select
+            value={conversationId}
+            onChange={(e) => setConversationId(Number(e.target.value))}
+            className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
+          >
+            {conversations.map((conv) => (
+              <option key={conv.id} value={conv.id}>
+                {conv.name?.trim() || `Conversation #${conv.id}`}
+              </option>
+            ))}
+          </select>
+          <input
+            value={guestName}
+            onChange={(e) => setGuestName(e.target.value)}
+            placeholder="Guest name"
+            className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
+          />
+          <input
+            type="email"
+            value={guestEmail}
+            onChange={(e) => setGuestEmail(e.target.value)}
+            placeholder="Guest email"
+            className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
+          />
+          <select
+            value={expiryHours}
+            onChange={(e) => setExpiryHours(Number(e.target.value))}
+            className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
+          >
+            <option value={1}>1 hour</option>
+            <option value={4}>4 hours</option>
+            <option value={12}>12 hours</option>
+            <option value={24}>24 hours</option>
+            <option value={48}>48 hours</option>
+          </select>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-[#35405a] px-4 py-3">
+          <button type="button" onClick={onClose} className="rounded-md border border-[#35405a] px-3 py-1.5 text-xs text-slate-300">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!conversationId || !guestName.trim() || !guestEmail.trim() || saving}
+            onClick={async () => {
+              if (!conversationId) return;
+              setSaving(true);
+              try {
+                const res = await apiFetchJson<{
+                  user_message?: string;
+                  invite_link?: string;
+                  email_send_status?: "sent" | "failed";
+                  hint?: string;
+                }>(`/api/chat/conversations/${conversationId}/external-invites`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    external_name: guestName.trim(),
+                    external_email: guestEmail.trim(),
+                    expiry_hours: expiryHours,
+                  }),
+                });
+                onToast(
+                  res.user_message || "Temporary external chat invite sent.",
+                  res.email_send_status === "failed" ? "error" : "success",
+                );
+                if (res.email_send_status === "failed" && res.hint) {
+                  onToast(res.hint, "error");
+                }
+                onDone(Number(conversationId));
+              } catch (error) {
+                onToast(error instanceof ApiError ? error.message : "Failed to send temporary chat invite.", "error");
+              } finally {
+                setSaving(false);
+              }
+            }}
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+          >
+            {saving ? "Sending…" : "Send temp chat link"}
           </button>
         </div>
       </div>
