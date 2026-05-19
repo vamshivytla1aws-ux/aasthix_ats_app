@@ -163,6 +163,16 @@ type CallSignal = {
   created_at: string;
 };
 
+type LiveKitSessionToken = {
+  operation_status: "success" | "blocked" | "error";
+  room_id?: number;
+  room_name?: string;
+  livekit_url?: string;
+  token?: string;
+  user_message?: string;
+  hint?: string;
+};
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 function initials(name: string) {
@@ -734,6 +744,7 @@ function ChatWorkspace({
   onMutateConversations: () => void;
   onToast: (message: string, tone?: ToastTone) => void;
 }) {
+  const liveKitPrimary = Boolean(process.env.NEXT_PUBLIC_LIVEKIT_URL);
   const [messageInput, setMessageInput] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGif, setShowGif] = useState(false);
@@ -768,6 +779,9 @@ function ChatWorkspace({
   const signalPollRef = useRef<number | null>(null);
   const connectingPeersRef = useRef<Set<number>>(new Set());
   const analyzerRef = useRef<{ raf: number; audioCtx: AudioContext; analyser: AnalyserNode } | null>(null);
+  const liveKitRoomRef = useRef<any | null>(null);
+  const liveKitConnectedRef = useRef(false);
+  const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "connected" | "reconnecting" | "failed">("idle");
   const resizeComposer = useCallback(() => {
     if (!textareaRef.current) return;
     textareaRef.current.style.height = "auto";
@@ -1226,6 +1240,16 @@ function ChatWorkspace({
   }, [activeCall, callState, currentUserId, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]);
 
   const stopMediaSession = useCallback(() => {
+    if (liveKitRoomRef.current) {
+      try {
+        liveKitRoomRef.current.disconnect();
+      } catch {
+        // no-op
+      }
+      liveKitRoomRef.current = null;
+      liveKitConnectedRef.current = false;
+      setConnectionState("idle");
+    }
     if (signalPollRef.current) {
       window.clearInterval(signalPollRef.current);
       signalPollRef.current = null;
@@ -1262,6 +1286,45 @@ function ChatWorkspace({
     setAudioLevel(0);
     setMediaError(null);
   }, []);
+
+  const connectLiveKitRoom = useCallback(
+    async (conversationId: number) => {
+      setConnectionState("connecting");
+      const tokenData = await apiFetchJson<LiveKitSessionToken>(
+        `/api/chat/conversations/${conversationId}/calls/token`,
+        { method: "POST" },
+      );
+      if (!tokenData.token || !tokenData.livekit_url) {
+        throw new ApiError(tokenData.user_message || "Missing LiveKit token.", 503);
+      }
+      const livekit = await import("livekit-client");
+      const room = new livekit.Room({
+        adaptiveStream: true,
+        dynacast: true,
+      });
+      room.on(livekit.RoomEvent.Reconnecting, () => setConnectionState("reconnecting"));
+      room.on(livekit.RoomEvent.Reconnected, () => setConnectionState("connected"));
+      room.on(livekit.RoomEvent.Disconnected, () => {
+        setConnectionState("idle");
+        liveKitConnectedRef.current = false;
+      });
+      room.on(livekit.RoomEvent.ConnectionStateChanged, (state: string) => {
+        if (state === "connected") setConnectionState("connected");
+        else if (state === "connecting") setConnectionState("connecting");
+        else if (state === "reconnecting") setConnectionState("reconnecting");
+      });
+      await room.connect(tokenData.livekit_url, tokenData.token, {
+        autoSubscribe: true,
+      });
+      await room.localParticipant.setMicrophoneEnabled(true);
+      liveKitRoomRef.current = room;
+      liveKitConnectedRef.current = true;
+      setMicEnabled(true);
+      setConnectionState("connected");
+      return room;
+    },
+    [],
+  );
 
   const sendSignal = useCallback(
     async (
@@ -1398,6 +1461,7 @@ function ChatWorkspace({
   );
 
   useEffect(() => {
+    if (liveKitPrimary) return;
     if (!activeRoomId || (callState !== "connecting_media" && callState !== "connected" && callState !== "ringing_outgoing")) {
       if (signalPollRef.current) {
         window.clearInterval(signalPollRef.current);
@@ -1427,9 +1491,10 @@ function ChatWorkspace({
         signalPollRef.current = null;
       }
     };
-  }, [activeRoomId, callState, handleIncomingSignal]);
+  }, [activeRoomId, callState, handleIncomingSignal, liveKitPrimary]);
 
   useEffect(() => {
+    if (liveKitPrimary) return;
     if (!activeCall || !activeRoomId || activeCall.id !== activeRoomId) return;
     if (callState !== "connected" && callState !== "connecting_media" && callState !== "ringing_outgoing") return;
     const myId = Number(currentUserId || 0);
@@ -1461,7 +1526,7 @@ function ChatWorkspace({
         peerConnectionsRef.current.delete(peerId);
       }
     }
-  }, [activeCall, activeRoomId, callState, currentUserId, ensurePeerConnection, sendSignal]);
+  }, [activeCall, activeRoomId, callState, currentUserId, ensurePeerConnection, sendSignal, liveKitPrimary]);
 
   useEffect(() => {
     signalCursorRef.current = 0;
@@ -1487,7 +1552,7 @@ function ChatWorkspace({
           setRingDismissedRoomId(null);
           setActiveRoomId(activeCall.id);
           setCallState("connecting_media");
-          await ensureLocalMedia();
+          await connectLiveKitRoom(conversation.id);
           setCallState("connected");
           onToast("Joined active call.", "success");
           void mutateCalendar();
@@ -1511,8 +1576,9 @@ function ChatWorkspace({
           setRingDismissedRoomId(null);
           setActiveRoomId(latest.id);
           setCallState("connecting_media");
-          await ensureLocalMedia();
+          await connectLiveKitRoom(conversation.id);
           setCallState("connected");
+          await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls/ring`, { method: "POST" }).catch(() => {});
         }
         onToast(data.user_message || (mode === "screenshare" ? "Screen share started." : "Call started."), "success");
         void mutateCalendar();
@@ -1520,13 +1586,14 @@ function ChatWorkspace({
         onMutateConversations();
         setDrawerView("calendar");
       } catch (error) {
+        setConnectionState("failed");
         const msg = error instanceof ApiError ? error.message : "Unable to start call.";
         onToast(msg, "error");
       } finally {
         setCallLoading(null);
       }
     },
-    [activeCall, conversation.id, ensureLocalMedia, mutateCalendar, mutateMessages, onMutateConversations, onToast]
+    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]
   );
 
   const endActiveCall = useCallback(
@@ -1536,8 +1603,10 @@ function ChatWorkspace({
           await sendSignal(eventId, "leave", {});
         }
         await apiFetchJson(`/api/chat/calls/${eventId}/leave`, { method: "POST" }).catch(() => {});
-        await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls?event_id=${eventId}`, {
-          method: "DELETE",
+        await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls/end`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: "ended" }),
         });
         setCallState("idle");
         setActiveRoomId(null);
@@ -1562,7 +1631,7 @@ function ChatWorkspace({
         setRingDismissedRoomId(null);
         setActiveRoomId(roomId);
         setCallState("connecting_media");
-        await ensureLocalMedia();
+        await connectLiveKitRoom(conversation.id);
         setCallState("connected");
         onToast(successMessage, "success");
         void mutateCalendar();
@@ -1575,11 +1644,12 @@ function ChatWorkspace({
           void mutateCalendar();
           return;
         }
+        setConnectionState("failed");
         const msg = error instanceof ApiError ? error.message : "Unable to join call.";
         onToast(msg, "error");
       }
     },
-    [ensureLocalMedia, mutateCalendar, onToast]
+    [connectLiveKitRoom, conversation.id, mutateCalendar, onToast]
   );
 
   const dismissIncomingCall = useCallback((roomId: number, toastMessage = "Call dismissed.") => {
@@ -2048,6 +2118,8 @@ function ChatWorkspace({
               Call is active • {activeCallDuration} • {Number(activeCall.joined_count || 0)} participant{Number(activeCall.joined_count || 0) === 1 ? "" : "s"}
             </span>
             {callState === "connecting_media" ? <span className="text-[11px] text-emerald-200/90">Connecting audio…</span> : null}
+            {connectionState === "reconnecting" ? <span className="text-[11px] text-amber-200/90">Reconnecting…</span> : null}
+            {connectionState === "failed" ? <span className="text-[11px] text-rose-200/90">Connection failed</span> : null}
             {mediaError ? <span className="max-w-[220px] truncate text-[11px] text-rose-200">{mediaError}</span> : null}
             {callState === "connected" ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 px-2 py-0.5 text-[11px] text-emerald-100/90">
@@ -2087,6 +2159,9 @@ function ChatWorkspace({
                 onClick={() => {
                   setMicEnabled((prev) => {
                     const next = !prev;
+                    if (liveKitRoomRef.current?.localParticipant) {
+                      void liveKitRoomRef.current.localParticipant.setMicrophoneEnabled(next).catch(() => {});
+                    }
                     if (localStreamRef.current) {
                       for (const track of localStreamRef.current.getAudioTracks()) track.enabled = next;
                     }
@@ -2103,8 +2178,18 @@ function ChatWorkspace({
               type="button"
               onClick={async () => {
                 if (activeRoomId === activeCall.id || callState === "connected") {
-                  await sendSignal(activeCall.id, "presenting", { enabled: true });
-                  onToast("Screen share requested.", "info");
+                  if (liveKitRoomRef.current?.localParticipant?.setScreenShareEnabled) {
+                    try {
+                      await liveKitRoomRef.current.localParticipant.setScreenShareEnabled(true);
+                      await sendSignal(activeCall.id, "presenting", { enabled: true });
+                      onToast("Screen sharing started.", "success");
+                    } catch (error) {
+                      const msg = error instanceof Error ? error.message : "Screen share unavailable.";
+                      onToast(msg, "error");
+                    }
+                  } else {
+                    onToast("Screen share is not available in this session.", "error");
+                  }
                   return;
                 }
                 await launchCall("screenshare");
