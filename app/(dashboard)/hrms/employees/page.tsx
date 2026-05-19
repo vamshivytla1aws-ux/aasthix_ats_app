@@ -56,7 +56,7 @@ export default function EmployeeDirectoryPage() {
   const [departmentFilter, setDepartmentFilter] = React.useState("all");
   const [form, setForm] = React.useState(EMPTY_FORM);
   const [editingId, setEditingId] = React.useState<number | null>(null);
-  const [assignManagerLater, setAssignManagerLater] = React.useState(false);
+  const [assignManagerLater, setAssignManagerLater] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [toast, setToast] = React.useState<{ message: string; variant: "success" | "error" | "blocked" } | null>(null);
   const [importRows, setImportRows] = React.useState<EmployeeImportRowResult[]>([]);
@@ -84,7 +84,7 @@ export default function EmployeeDirectoryPage() {
   function resetForm() {
     setForm(EMPTY_FORM);
     setEditingId(null);
-    setAssignManagerLater(false);
+    setAssignManagerLater(true);
   }
 
   function startEdit(employee: Employee) {

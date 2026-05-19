@@ -587,46 +587,6 @@ export default function PipelineBoard({
   }, []);
 
   useEffect(() => {
-    if (!scheduleOpen || !scheduleApp || !scheduleDate || !scheduleTime) return;
-    const timer = window.setTimeout(() => {
-      void generateScheduleInviteDraft();
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [
-    scheduleOpen,
-    scheduleApp,
-    scheduleDate,
-    scheduleTime,
-    scheduleTimezone,
-    scheduleDurationMinutes,
-    scheduleMeetingMode,
-    scheduleMeetingLocation,
-    scheduleAttendees,
-    scheduleNotes,
-    generateScheduleInviteDraft,
-  ]);
-
-  useEffect(() => {
-    if (!rescheduleOpen || !rescheduleApp || !rescheduleDate || !rescheduleTime) return;
-    const timer = window.setTimeout(() => {
-      void generateRescheduleInviteDraft();
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [
-    rescheduleOpen,
-    rescheduleApp,
-    rescheduleDate,
-    rescheduleTime,
-    rescheduleTimezone,
-    rescheduleDurationMinutes,
-    rescheduleMeetingMode,
-    rescheduleMeetingLocation,
-    rescheduleAttendees,
-    rescheduleNotes,
-    generateRescheduleInviteDraft,
-  ]);
-
-  useEffect(() => {
     const target = localApplications.filter((x) => x.stage === "Screening" || x.stage === "Screening Failed");
     if (target.length === 0) {
       setScreeningByApplication({});
@@ -741,8 +701,7 @@ export default function PipelineBoard({
     void loadChecklist(app.id);
   }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  async function generateScheduleInviteDraft() {
+  const generateScheduleInviteDraft = useCallback(async () => {
     if (!scheduleApp || !scheduleDate || !scheduleTime) return;
     setScheduleDraftBusy(true);
     setScheduleDraftError(null);
@@ -783,7 +742,17 @@ export default function PipelineBoard({
     } finally {
       setScheduleDraftBusy(false);
     }
-  }
+  }, [
+    scheduleApp,
+    scheduleDate,
+    scheduleTime,
+    scheduleTimezone,
+    scheduleDurationMinutes,
+    scheduleMeetingMode,
+    scheduleMeetingLocation,
+    scheduleAttendees,
+    scheduleNotes,
+  ]);
 
   async function loadChecklist(appId: number) {
     setChecklistLoading(true);
@@ -1130,7 +1099,7 @@ export default function PipelineBoard({
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  async function generateRescheduleInviteDraft() {
+  const generateRescheduleInviteDraft = useCallback(async () => {
     if (!rescheduleApp || !rescheduleDate || !rescheduleTime) return;
     setRescheduleDraftBusy(true);
     setRescheduleDraftError(null);
@@ -1171,7 +1140,57 @@ export default function PipelineBoard({
     } finally {
       setRescheduleDraftBusy(false);
     }
-  }
+  }, [
+    rescheduleApp,
+    rescheduleDate,
+    rescheduleTime,
+    rescheduleTimezone,
+    rescheduleDurationMinutes,
+    rescheduleMeetingMode,
+    rescheduleMeetingLocation,
+    rescheduleAttendees,
+    rescheduleNotes,
+  ]);
+
+  useEffect(() => {
+    if (!scheduleOpen || !scheduleApp || !scheduleDate || !scheduleTime) return;
+    const timer = window.setTimeout(() => {
+      void generateScheduleInviteDraft();
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    scheduleOpen,
+    scheduleApp,
+    scheduleDate,
+    scheduleTime,
+    scheduleTimezone,
+    scheduleDurationMinutes,
+    scheduleMeetingMode,
+    scheduleMeetingLocation,
+    scheduleAttendees,
+    scheduleNotes,
+    generateScheduleInviteDraft,
+  ]);
+
+  useEffect(() => {
+    if (!rescheduleOpen || !rescheduleApp || !rescheduleDate || !rescheduleTime) return;
+    const timer = window.setTimeout(() => {
+      void generateRescheduleInviteDraft();
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    rescheduleOpen,
+    rescheduleApp,
+    rescheduleDate,
+    rescheduleTime,
+    rescheduleTimezone,
+    rescheduleDurationMinutes,
+    rescheduleMeetingMode,
+    rescheduleMeetingLocation,
+    rescheduleAttendees,
+    rescheduleNotes,
+    generateRescheduleInviteDraft,
+  ]);
 
   async function submitInterviewReschedule(sendInvite = false) {
     if (!rescheduleApp) return;

@@ -1065,6 +1065,11 @@ function ChatWorkspace({
   const launchCall = useCallback(
     async (mode: "call" | "screenshare") => {
       try {
+        if (activeCall?.meet_link) {
+          window.open(activeCall.meet_link, "_blank", "noopener,noreferrer");
+          onToast("Joining active call.", "success");
+          return;
+        }
         setCallLoading(mode);
         const data = await apiFetchJson<{ join_link: string | null; user_message?: string }>(
           `/api/chat/conversations/${conversation.id}/calls`,
@@ -1077,7 +1082,11 @@ function ChatWorkspace({
         if (data.join_link) {
           window.open(data.join_link, "_blank", "noopener,noreferrer");
         }
-        onToast(data.user_message || (mode === "screenshare" ? "Screen share started." : "Call started."), "success");
+        onToast(
+          `${data.user_message || (mode === "screenshare" ? "Screen share started." : "Call started.")} If Meet shows waiting room, join with invited Google account or ask organizer to admit.`,
+          "success",
+        );
+        void mutateCalendar();
         void mutateMessages();
         onMutateConversations();
         setDrawerView("calendar");
@@ -1088,7 +1097,7 @@ function ChatWorkspace({
         setCallLoading(null);
       }
     },
-    [conversation.id, mutateMessages, onMutateConversations, onToast]
+    [activeCall, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]
   );
 
   const endActiveCall = useCallback(

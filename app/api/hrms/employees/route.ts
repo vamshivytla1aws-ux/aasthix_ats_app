@@ -67,12 +67,19 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code || "") : "";
+    const message = error instanceof Error ? error.message : "Failed to create employee.";
+    const isDuplicate = code === "23505" || /duplicate key|already exists|unique/i.test(message);
     return NextResponse.json(
       {
-        operation_status: code === "MANAGER_NOT_FOUND" ? "blocked" : "error",
-        user_message: error instanceof Error ? error.message : "Failed to create employee.",
+        operation_status: code === "MANAGER_NOT_FOUND" || isDuplicate ? "blocked" : "error",
+        user_message:
+          code === "MANAGER_NOT_FOUND"
+            ? message
+            : isDuplicate
+              ? "Employee email or employee ID already exists."
+              : message,
       },
-      { status: code === "MANAGER_NOT_FOUND" ? 400 : 500 },
+      { status: code === "MANAGER_NOT_FOUND" || isDuplicate ? 400 : 500 },
     );
   }
 }

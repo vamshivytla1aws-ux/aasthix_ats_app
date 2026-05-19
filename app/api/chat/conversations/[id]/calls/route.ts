@@ -127,19 +127,41 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       return NextResponse.json({ error: "Event does not belong to this conversation." }, { status: 403 });
     }
 
-    const cancelled = await cancelTeamCalendarEvent(access.user_id, eventId);
+    let cancelledTitle = event.title;
+    let cancelledWithFallback = false;
+    try {
+      const cancelled = await cancelTeamCalendarEvent(access.user_id, eventId);
+      cancelledTitle = cancelled.title;
+    } catch (syncError) {
+      cancelledWithFallback = true;
+      const syncMessage = syncError instanceof Error ? syncError.message : "Calendar cancellation sync failed.";
+      await query(
+        `
+        UPDATE team_calendar_events
+        SET
+          status = 'cancelled',
+          calendar_sync_status = 'sync_failed',
+          calendar_sync_error = $2,
+          updated_by_user_id = $3,
+          updated_at = NOW()
+        WHERE id = $1
+        `,
+        [eventId, syncMessage, access.user_id],
+      );
+    }
     await query(
       `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-      [conversationId, access.user_id, `Call ended: ${cancelled.title}`],
+      [conversationId, access.user_id, `Call ended: ${cancelledTitle}`],
     );
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
 
     return NextResponse.json({
       operation_status: "success",
-      user_message: "Call ended successfully.",
+      user_message: cancelledWithFallback
+        ? "Call ended in chat. Calendar provider sync failed; shared Google connection may need attention."
+        : "Call ended successfully.",
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to end call." }, { status: 400 });
   }
 }
-
