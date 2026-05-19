@@ -20,6 +20,17 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
     const access = gate.access;
     const roomId = Number(params.roomId);
     if (!Number.isFinite(roomId)) return NextResponse.json({ error: "Invalid room id." }, { status: 400 });
+    const roomRes = await query(
+      `SELECT id, conversation_id FROM chat_call_rooms WHERE id = $1 LIMIT 1`,
+      [roomId],
+    );
+    const room = roomRes.rows[0] as { id: number; conversation_id: number } | undefined;
+    if (!room) return NextResponse.json({ error: "Call room not found." }, { status: 404 });
+    const memberRes = await query(
+      `SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2 LIMIT 1`,
+      [room.conversation_id, access.user_id],
+    );
+    if (!memberRes.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
 
     const url = new URL(request.url);
     const afterId = Number(url.searchParams.get("after_id") || "0");
@@ -49,6 +60,20 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     const access = gate.access;
     const roomId = Number(params.roomId);
     if (!Number.isFinite(roomId)) return NextResponse.json({ error: "Invalid room id." }, { status: 400 });
+    const roomRes = await query(
+      `SELECT id, conversation_id, status FROM chat_call_rooms WHERE id = $1 LIMIT 1`,
+      [roomId],
+    );
+    const room = roomRes.rows[0] as { id: number; conversation_id: number; status: string } | undefined;
+    if (!room) return NextResponse.json({ error: "Call room not found." }, { status: 404 });
+    if (room.status === "ended" || room.status === "cancelled") {
+      return NextResponse.json({ error: "Call is no longer active." }, { status: 409 });
+    }
+    const memberRes = await query(
+      `SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2 LIMIT 1`,
+      [room.conversation_id, access.user_id],
+    );
+    if (!memberRes.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
 
     const body = await request.json().catch(() => ({}));
     const signalType = normalizeSignalType(body?.signal_type);
@@ -69,4 +94,3 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to publish signal." }, { status: 400 });
   }
 }
-

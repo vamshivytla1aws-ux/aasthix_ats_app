@@ -21,6 +21,8 @@ import {
   Info,
   MessageSquare,
   MonitorUp,
+  Mic,
+  MicOff,
   Paperclip,
   Pin,
   Plus,
@@ -148,6 +150,16 @@ type ExternalInvite = {
   external_name: string;
   expires_at: string;
   revoked_at: string | null;
+  created_at: string;
+};
+
+type CallSignal = {
+  id: number;
+  room_id: number;
+  from_user_id: number;
+  to_user_id: number | null;
+  signal_type: "offer" | "answer" | "ice" | "leave" | "presenting";
+  payload: Record<string, unknown>;
   created_at: string;
 };
 
@@ -319,6 +331,22 @@ function playTone(kind: "message" | "ring", durationMs = 180) {
   gain.connect(ctx.destination);
   osc.start();
   osc.stop(ctx.currentTime + durationMs / 1000 + 0.02);
+}
+
+function getRtcIceServers() {
+  const fromEnv =
+    typeof process !== "undefined" && process.env.NEXT_PUBLIC_CHAT_ICE_SERVERS
+      ? process.env.NEXT_PUBLIC_CHAT_ICE_SERVERS
+      : "";
+  if (fromEnv) {
+    try {
+      const parsed = JSON.parse(fromEnv);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // fallback below
+    }
+  }
+  return [{ urls: "stun:stun.l.google.com:19302" }];
 }
 
 export default function ChatPage() {
@@ -718,9 +746,12 @@ function ChatWorkspace({
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [drawerView, setDrawerView] = useState<DrawerView | null>(null);
   const [callLoading, setCallLoading] = useState<null | "call" | "screenshare">(null);
-  const [callState, setCallState] = useState<"idle" | "ringing_outgoing" | "ringing_incoming" | "connected">("idle");
+  const [callState, setCallState] = useState<"idle" | "ringing_outgoing" | "ringing_incoming" | "connecting_media" | "connected">("idle");
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
   const [ringDismissedRoomId, setRingDismissedRoomId] = useState<number | null>(null);
+  const [micEnabled, setMicEnabled] = useState(true);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [nowTick, setNowTick] = useState(Date.now());
@@ -730,6 +761,13 @@ function ChatWorkspace({
   const lastSeenMessageIdRef = useRef<number>(0);
   const ringIntervalRef = useRef<number | null>(null);
   const unansweredTimeoutRef = useRef<number | null>(null);
+  const signalCursorRef = useRef(0);
+  const peerConnectionsRef = useRef<Map<number, RTCPeerConnection>>(new Map());
+  const remoteAudioRef = useRef<Map<number, HTMLAudioElement>>(new Map());
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const signalPollRef = useRef<number | null>(null);
+  const connectingPeersRef = useRef<Set<number>>(new Set());
+  const analyzerRef = useRef<{ raf: number; audioCtx: AudioContext; analyser: AnalyserNode } | null>(null);
   const resizeComposer = useCallback(() => {
     if (!textareaRef.current) return;
     textareaRef.current.style.height = "auto";
@@ -807,7 +845,7 @@ function ChatWorkspace({
   const { data: calendarData, mutate: mutateCalendar } = useSWR<{ events: ChatCalendarEvent[] }>(
     `/api/chat/conversations/${conversation.id}/calendar?limit=40`,
     dashboardFetcher,
-    { refreshInterval: 20_000 }
+    { refreshInterval: callState === "idle" ? 20_000 : 2_000 }
   );
 
   useEffect(() => {
@@ -1052,6 +1090,7 @@ function ChatWorkspace({
     const events = calendarData?.events ?? [];
     const ranked = events
       .filter((event) => {
+        if (event.status !== "active" && event.status !== "scheduled") return false;
         const joinUrl = event.join_url || event.meet_link;
         if (!joinUrl) return false;
         const start = new Date(event.start_at).getTime() - 5 * 60_000;
@@ -1086,6 +1125,7 @@ function ChatWorkspace({
       try {
         await apiFetchJson(`/api/chat/calls/${initialRoomId}/join`, { method: "POST" });
         if (cancelled) return;
+        setRingDismissedRoomId(null);
         setActiveRoomId(initialRoomId);
         setCallState("connected");
       } catch {
@@ -1108,18 +1148,25 @@ function ChatWorkspace({
       return;
     }
     const roomId = activeCall.id;
-    if (ringDismissedRoomId === roomId) return;
     const isHost = Number(activeCall.created_by_user_id || 0) === Number(currentUserId || 0);
     const joinedUserIds = activeCall.joined_user_ids ?? [];
     const meJoined = joinedUserIds.includes(Number(currentUserId || 0));
-    if (activeCall.status === "active") {
+    const dismissed = ringDismissedRoomId === roomId;
+    if (activeCall.status === "ended" || activeCall.status === "cancelled") {
+      setCallState("idle");
+      setActiveRoomId(null);
+    } else if (activeCall.status === "active") {
       if (meJoined || activeRoomId === roomId) {
-        setCallState("connected");
-      } else {
+        if (callState !== "connecting_media") setCallState("connected");
+      } else if (!dismissed) {
         setCallState("ringing_incoming");
+      } else {
+        setCallState("idle");
       }
     } else if (activeCall.status === "scheduled" && isHost) {
-      setCallState("ringing_outgoing");
+      if (!dismissed) setCallState("ringing_outgoing");
+    } else if (dismissed) {
+      setCallState("idle");
     }
     if (prefData?.user?.desktop_sound && (callState === "ringing_incoming" || callState === "ringing_outgoing")) {
       if (!ringIntervalRef.current) {
@@ -1178,12 +1225,269 @@ function ChatWorkspace({
     };
   }, [activeCall, callState, currentUserId, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]);
 
+  const stopMediaSession = useCallback(() => {
+    if (signalPollRef.current) {
+      window.clearInterval(signalPollRef.current);
+      signalPollRef.current = null;
+    }
+    connectingPeersRef.current.clear();
+    for (const [, pc] of peerConnectionsRef.current.entries()) {
+      try {
+        pc.onicecandidate = null;
+        pc.ontrack = null;
+        pc.onconnectionstatechange = null;
+        pc.close();
+      } catch {
+        // no-op
+      }
+    }
+    peerConnectionsRef.current.clear();
+    for (const [, audio] of remoteAudioRef.current.entries()) {
+      try {
+        audio.pause();
+      } catch {
+        // no-op
+      }
+    }
+    remoteAudioRef.current.clear();
+    if (localStreamRef.current) {
+      for (const track of localStreamRef.current.getTracks()) track.stop();
+      localStreamRef.current = null;
+    }
+    if (analyzerRef.current) {
+      cancelAnimationFrame(analyzerRef.current.raf);
+      analyzerRef.current.audioCtx.close().catch(() => {});
+      analyzerRef.current = null;
+    }
+    setAudioLevel(0);
+    setMediaError(null);
+  }, []);
+
+  const sendSignal = useCallback(
+    async (
+      roomId: number,
+      signalType: "offer" | "answer" | "ice" | "leave" | "presenting",
+      payload: Record<string, unknown>,
+      toUserId?: number
+    ) => {
+      await apiFetchJson(`/api/chat/calls/${roomId}/signal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          signal_type: signalType,
+          payload,
+          to_user_id: Number.isFinite(Number(toUserId)) ? Number(toUserId) : null,
+        }),
+      });
+    },
+    []
+  );
+
+  const ensureLocalMedia = useCallback(async () => {
+    if (localStreamRef.current) return localStreamRef.current;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      localStreamRef.current = stream;
+      const audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 1) {
+          const n = (data[i] - 128) / 128;
+          sum += n * n;
+        }
+        setAudioLevel(Math.min(1, Math.sqrt(sum / data.length) * 2));
+        analyzerRef.current!.raf = requestAnimationFrame(tick);
+      };
+      analyzerRef.current = { raf: requestAnimationFrame(tick), audioCtx, analyser };
+      setMediaError(null);
+      return stream;
+    } catch (error) {
+      setMediaError(error instanceof Error ? error.message : "Microphone access failed.");
+      throw error;
+    }
+  }, []);
+
+  const ensurePeerConnection = useCallback(
+    async (roomId: number, remoteUserId: number) => {
+      const existing = peerConnectionsRef.current.get(remoteUserId);
+      if (existing) return existing;
+      const pc = new RTCPeerConnection({ iceServers: getRtcIceServers() as RTCIceServer[] });
+      const stream = await ensureLocalMedia();
+      for (const track of stream.getTracks()) pc.addTrack(track, stream);
+      pc.onicecandidate = (event) => {
+        if (!event.candidate) return;
+        void sendSignal(roomId, "ice", { candidate: event.candidate }, remoteUserId).catch(() => {});
+      };
+      pc.ontrack = (event) => {
+        const streamIn = event.streams[0];
+        if (!streamIn) return;
+        let audio = remoteAudioRef.current.get(remoteUserId);
+        if (!audio) {
+          audio = new Audio();
+          audio.autoplay = true;
+          remoteAudioRef.current.set(remoteUserId, audio);
+        }
+        audio.srcObject = streamIn;
+        void audio.play().catch(() => {});
+      };
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+          try {
+            pc.restartIce();
+          } catch {
+            // no-op
+          }
+        }
+      };
+      peerConnectionsRef.current.set(remoteUserId, pc);
+      return pc;
+    },
+    [ensureLocalMedia, sendSignal]
+  );
+
+  const handleIncomingSignal = useCallback(
+    async (roomId: number, signal: CallSignal) => {
+      const fromUserId = Number(signal.from_user_id || 0);
+      if (!fromUserId || fromUserId === Number(currentUserId || 0)) return;
+      if (signal.signal_type === "leave") {
+        const pc = peerConnectionsRef.current.get(fromUserId);
+        if (pc) {
+          pc.close();
+          peerConnectionsRef.current.delete(fromUserId);
+        }
+        const audio = remoteAudioRef.current.get(fromUserId);
+        if (audio) {
+          audio.pause();
+          remoteAudioRef.current.delete(fromUserId);
+        }
+        return;
+      }
+      const pc = await ensurePeerConnection(roomId, fromUserId);
+      if (signal.signal_type === "offer") {
+        const sdp = signal.payload?.sdp as RTCSessionDescriptionInit | undefined;
+        if (!sdp) return;
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await sendSignal(roomId, "answer", { sdp: answer }, fromUserId);
+        return;
+      }
+      if (signal.signal_type === "answer") {
+        const sdp = signal.payload?.sdp as RTCSessionDescriptionInit | undefined;
+        if (!sdp || !pc.localDescription) return;
+        if (!pc.currentRemoteDescription) {
+          await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        }
+        connectingPeersRef.current.delete(fromUserId);
+        setCallState("connected");
+        return;
+      }
+      if (signal.signal_type === "ice") {
+        const candidate = signal.payload?.candidate as RTCIceCandidateInit | undefined;
+        if (!candidate) return;
+        await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+      }
+    },
+    [currentUserId, ensurePeerConnection, sendSignal]
+  );
+
+  useEffect(() => {
+    if (!activeRoomId || (callState !== "connecting_media" && callState !== "connected" && callState !== "ringing_outgoing")) {
+      if (signalPollRef.current) {
+        window.clearInterval(signalPollRef.current);
+        signalPollRef.current = null;
+      }
+      return;
+    }
+    if (signalPollRef.current) return;
+    const pollSignals = async () => {
+      try {
+        const data = await apiFetchJson<{ signals: CallSignal[] }>(
+          `/api/chat/calls/${activeRoomId}/signal?after_id=${signalCursorRef.current}`,
+        );
+        for (const signal of data.signals || []) {
+          signalCursorRef.current = Math.max(signalCursorRef.current, Number(signal.id || 0));
+          await handleIncomingSignal(activeRoomId, signal);
+        }
+      } catch {
+        // no-op
+      }
+    };
+    void pollSignals();
+    signalPollRef.current = window.setInterval(() => void pollSignals(), 1200);
+    return () => {
+      if (signalPollRef.current) {
+        window.clearInterval(signalPollRef.current);
+        signalPollRef.current = null;
+      }
+    };
+  }, [activeRoomId, callState, handleIncomingSignal]);
+
+  useEffect(() => {
+    if (!activeCall || !activeRoomId || activeCall.id !== activeRoomId) return;
+    if (callState !== "connected" && callState !== "connecting_media" && callState !== "ringing_outgoing") return;
+    const myId = Number(currentUserId || 0);
+    if (!myId) return;
+    const peers = (activeCall.joined_user_ids ?? []).filter((id) => id !== myId);
+    for (const peerId of peers) {
+      if (peerConnectionsRef.current.has(peerId) || connectingPeersRef.current.has(peerId)) continue;
+      const shouldOffer = myId < peerId;
+      void (async () => {
+        connectingPeersRef.current.add(peerId);
+        try {
+          const pc = await ensurePeerConnection(activeRoomId, peerId);
+          if (shouldOffer) {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await sendSignal(activeRoomId, "offer", { sdp: offer }, peerId);
+            setCallState("connecting_media");
+          }
+        } catch {
+          // no-op
+        } finally {
+          if (!shouldOffer) connectingPeersRef.current.delete(peerId);
+        }
+      })();
+    }
+    for (const [peerId, pc] of peerConnectionsRef.current.entries()) {
+      if (!peers.includes(peerId)) {
+        pc.close();
+        peerConnectionsRef.current.delete(peerId);
+      }
+    }
+  }, [activeCall, activeRoomId, callState, currentUserId, ensurePeerConnection, sendSignal]);
+
+  useEffect(() => {
+    signalCursorRef.current = 0;
+  }, [activeRoomId]);
+
+  useEffect(() => {
+    if (callState === "idle") {
+      stopMediaSession();
+    }
+  }, [callState, stopMediaSession]);
+
+  useEffect(() => {
+    return () => {
+      stopMediaSession();
+    };
+  }, [stopMediaSession]);
+
   const launchCall = useCallback(
     async (mode: "call" | "screenshare") => {
       try {
         if (activeCall) {
           await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
+          setRingDismissedRoomId(null);
           setActiveRoomId(activeCall.id);
+          setCallState("connecting_media");
+          await ensureLocalMedia();
           setCallState("connected");
           onToast("Joined active call.", "success");
           void mutateCalendar();
@@ -1204,7 +1508,10 @@ function ChatWorkspace({
           .find((e) => (e.join_url || e.meet_link) && (e.status === "active" || e.status === "scheduled"));
         if (latest?.id) {
           await apiFetchJson(`/api/chat/calls/${latest.id}/join`, { method: "POST" });
+          setRingDismissedRoomId(null);
           setActiveRoomId(latest.id);
+          setCallState("connecting_media");
+          await ensureLocalMedia();
           setCallState("connected");
         }
         onToast(data.user_message || (mode === "screenshare" ? "Screen share started." : "Call started."), "success");
@@ -1219,12 +1526,15 @@ function ChatWorkspace({
         setCallLoading(null);
       }
     },
-    [activeCall, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]
+    [activeCall, conversation.id, ensureLocalMedia, mutateCalendar, mutateMessages, onMutateConversations, onToast]
   );
 
   const endActiveCall = useCallback(
     async (eventId: number) => {
       try {
+        if (activeRoomId === eventId) {
+          await sendSignal(eventId, "leave", {});
+        }
         await apiFetchJson(`/api/chat/calls/${eventId}/leave`, { method: "POST" }).catch(() => {});
         await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls?event_id=${eventId}`, {
           method: "DELETE",
@@ -1232,6 +1542,7 @@ function ChatWorkspace({
         setCallState("idle");
         setActiveRoomId(null);
         setRingDismissedRoomId(eventId);
+        stopMediaSession();
         onToast("Call ended.", "success");
         void mutateCalendar();
         void mutateMessages();
@@ -1241,8 +1552,45 @@ function ChatWorkspace({
         onToast(msg, "error");
       }
     },
-    [conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]
+    [activeRoomId, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast, sendSignal, stopMediaSession]
   );
+
+  const joinCallRoom = useCallback(
+    async (roomId: number, successMessage = "Joined call.") => {
+      try {
+        await apiFetchJson(`/api/chat/calls/${roomId}/join`, { method: "POST" });
+        setRingDismissedRoomId(null);
+        setActiveRoomId(roomId);
+        setCallState("connecting_media");
+        await ensureLocalMedia();
+        setCallState("connected");
+        onToast(successMessage, "success");
+        void mutateCalendar();
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409) {
+          setCallState("idle");
+          setActiveRoomId(null);
+          setRingDismissedRoomId(roomId);
+          onToast("This call has already ended.", "info");
+          void mutateCalendar();
+          return;
+        }
+        const msg = error instanceof ApiError ? error.message : "Unable to join call.";
+        onToast(msg, "error");
+      }
+    },
+    [ensureLocalMedia, mutateCalendar, onToast]
+  );
+
+  const dismissIncomingCall = useCallback((roomId: number, toastMessage = "Call dismissed.") => {
+    setRingDismissedRoomId(roomId);
+    setCallState("idle");
+    if (ringIntervalRef.current) {
+      window.clearInterval(ringIntervalRef.current);
+      ringIntervalRef.current = null;
+    }
+    onToast(toastMessage, "success");
+  }, [onToast]);
 
   const setManualPresence = useCallback(
     async (manualPresence: "available" | "busy") => {
@@ -1692,61 +2040,78 @@ function ChatWorkspace({
         </div>
       ) : null}
 
-      {activeCall ? (
+      {activeCall && !(ringDismissedRoomId === activeCall.id && callState === "idle") ? (
         <div className="pointer-events-none absolute bottom-24 right-6 z-40">
           <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-2 shadow-[0_10px_30px_rgba(16,185,129,0.25)] backdrop-blur">
             <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
             <span className="text-xs font-semibold text-emerald-100">
               Call is active • {activeCallDuration} • {Number(activeCall.joined_count || 0)} participant{Number(activeCall.joined_count || 0) === 1 ? "" : "s"}
             </span>
+            {callState === "connecting_media" ? <span className="text-[11px] text-emerald-200/90">Connecting audio…</span> : null}
+            {mediaError ? <span className="max-w-[220px] truncate text-[11px] text-rose-200">{mediaError}</span> : null}
+            {callState === "connected" ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 px-2 py-0.5 text-[11px] text-emerald-100/90">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" style={{ opacity: Math.max(0.2, audioLevel) }} />
+                Mic {micEnabled ? "on" : "off"}
+              </span>
+            ) : null}
             {callState === "ringing_incoming" ? (
               <>
                 <button
                   type="button"
-                  onClick={async () => {
-                    await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
-                    setActiveRoomId(activeCall.id);
-                    setCallState("connected");
-                    void mutateCalendar();
-                    onToast("Call accepted.", "success");
-                  }}
+                  onClick={async () => joinCallRoom(activeCall.id, "Call accepted.")}
                   className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-400"
                 >
                   Accept
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setRingDismissedRoomId(activeCall.id);
-                    setCallState("idle");
-                    onToast("Call declined.", "success");
-                  }}
+                  onClick={() => dismissIncomingCall(activeCall.id, "Call declined.")}
                   className="rounded-full border border-rose-400/50 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-500/25"
                 >
                   Decline
                 </button>
               </>
-            ) : (
+            ) : callState !== "connected" ? (
               <button
                 type="button"
-                onClick={async () => {
-                  await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
-                  setActiveRoomId(activeCall.id);
-                  setCallState("connected");
-                  void mutateCalendar();
-                  onToast("Joined call.", "success");
-                }}
+                onClick={async () => joinCallRoom(activeCall.id, "Joined call.")}
                 className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-400"
               >
                 Join now
               </button>
-            )}
+            ) : null}
+            {callState === "connected" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMicEnabled((prev) => {
+                    const next = !prev;
+                    if (localStreamRef.current) {
+                      for (const track of localStreamRef.current.getAudioTracks()) track.enabled = next;
+                    }
+                    return next;
+                  });
+                }}
+                className="rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-semibold text-sky-100 hover:bg-sky-500/25"
+              >
+                {micEnabled ? <Mic className="mr-1 inline-block h-3.5 w-3.5" /> : <MicOff className="mr-1 inline-block h-3.5 w-3.5" />}
+                {micEnabled ? "Mute" : "Unmute"}
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={async () => launchCall(activeCall.session_mode === "screenshare" ? "call" : "screenshare")}
+              onClick={async () => {
+                if (activeRoomId === activeCall.id || callState === "connected") {
+                  await sendSignal(activeCall.id, "presenting", { enabled: true });
+                  onToast("Screen share requested.", "info");
+                  return;
+                }
+                await launchCall("screenshare");
+              }}
               className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/25"
             >
-              {activeCall.session_mode === "screenshare" ? "Switch to call" : "Present"}
+              Share Screen
             </button>
             <button
               type="button"
@@ -1755,8 +2120,7 @@ function ChatWorkspace({
                   await endActiveCall(activeCall.id);
                   return;
                 }
-                setRingDismissedRoomId(activeCall.id);
-                setCallState("idle");
+                dismissIncomingCall(activeCall.id, "Call dismissed.");
               }}
               className="rounded-full border border-rose-400/50 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-500/25"
             >

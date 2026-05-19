@@ -118,7 +118,17 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       return NextResponse.json({ error: "Call room does not belong to this conversation." }, { status: 403 });
     }
 
-    await endChatCallRoom(eventId, access.user_id);
+    const ended = await endChatCallRoom(eventId, access.user_id);
+    if (!ended) {
+      return NextResponse.json(
+        {
+          operation_status: "blocked",
+          user_message: "This call is already ended.",
+          room_closed_reason: "ended",
+        },
+        { status: 409 },
+      );
+    }
     await query(
       `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`,
       [eventId],
