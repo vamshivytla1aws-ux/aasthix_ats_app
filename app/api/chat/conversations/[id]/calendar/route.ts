@@ -32,12 +32,38 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const limitRaw = Number(url.searchParams.get("limit"));
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.trunc(limitRaw), 100) : 25;
     const rooms = await listConversationCallRooms(conversationId, limit);
+    const roomIds = rooms.map((room) => Number(room.id)).filter((id) => Number.isFinite(id) && id > 0);
+    const participantsByRoom = new Map<number, Array<{ user_id: number; full_name: string }>>();
+
+    if (roomIds.length > 0) {
+      const participantRes = await query(
+        `
+        SELECT
+          p.room_id,
+          p.user_id,
+          COALESCE(u.full_name, 'Unknown user') AS full_name
+        FROM chat_call_participants p
+        LEFT JOIN users u ON u.id = p.user_id
+        WHERE p.room_id = ANY($1::bigint[])
+          AND p.left_at IS NULL
+        ORDER BY p.joined_at ASC
+        `,
+        [roomIds],
+      );
+      for (const row of participantRes.rows as Array<{ room_id: number; user_id: number; full_name: string }>) {
+        const roomId = Number(row.room_id);
+        const list = participantsByRoom.get(roomId) ?? [];
+        list.push({ user_id: Number(row.user_id), full_name: String(row.full_name || "Unknown user") });
+        participantsByRoom.set(roomId, list);
+      }
+    }
 
     const events = rooms.map((room) => {
       const start = new Date(room.start_at).getTime() - 5 * 60_000;
       const end = new Date(room.end_at).getTime();
       const activeByWindow = Date.now() >= start && Date.now() <= end;
       const isActive = room.status === "active" || (room.status === "scheduled" && activeByWindow);
+      const joined = participantsByRoom.get(Number(room.id)) ?? [];
       return {
         id: room.id,
         title: room.title,
@@ -50,6 +76,10 @@ export async function GET(request: Request, { params }: { params: { id: string }
         provider: room.provider,
         session_mode: room.mode,
         is_active: isActive,
+        created_by_user_id: room.created_by_user_id ?? null,
+        joined_count: joined.length,
+        joined_user_ids: joined.map((p) => p.user_id),
+        joined_participants: joined,
         status_kind: isActive ? (room.mode === "screenshare" ? "presenting" : "in_call") : "none",
         status_priority: isActive ? (room.mode === "screenshare" ? 1 : 2) : 999,
       };
@@ -118,4 +148,3 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
   }
 }
-

@@ -135,6 +135,9 @@ type ChatCalendarEvent = {
   is_active?: boolean;
   provider?: "ats_native" | string | null;
   created_by_user_id?: number | null;
+  joined_count?: number;
+  joined_user_ids?: number[];
+  joined_participants?: Array<{ user_id: number; full_name: string }>;
 };
 type ConversationLiveStatus = {
   conversation_id: number;
@@ -726,6 +729,7 @@ function ChatWorkspace({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastSeenMessageIdRef = useRef<number>(0);
   const ringIntervalRef = useRef<number | null>(null);
+  const unansweredTimeoutRef = useRef<number | null>(null);
   const resizeComposer = useCallback(() => {
     if (!textareaRef.current) return;
     textareaRef.current.style.height = "auto";
@@ -839,11 +843,13 @@ function ChatWorkspace({
     const conversationMuted = Boolean(
       prefData?.conversations?.find((pref) => pref.conversation_id === conversation.id)?.muted,
     );
-    if (previous > 0 && prefData?.user?.desktop_sound && !conversationMuted) {
+    const latestMessage = messages[messages.length - 1];
+    const isIncoming = Number(latestMessage?.sender_id || 0) !== Number(currentUserId || 0);
+    if (previous > 0 && prefData?.user?.desktop_sound && !conversationMuted && isIncoming) {
       playTone("message", 120);
     }
     lastSeenMessageIdRef.current = latestId;
-  }, [messages, prefData, conversation.id]);
+  }, [messages, prefData, conversation.id, currentUserId]);
 
   const resetComposer = () => {
     setShowEmoji(false);
@@ -1044,8 +1050,8 @@ function ChatWorkspace({
   const activeCall = useMemo(() => {
     const now = nowTick;
     const events = calendarData?.events ?? [];
-    return (
-      events.find((event) => {
+    const ranked = events
+      .filter((event) => {
         const joinUrl = event.join_url || event.meet_link;
         if (!joinUrl) return false;
         const start = new Date(event.start_at).getTime() - 5 * 60_000;
@@ -1053,8 +1059,14 @@ function ChatWorkspace({
         const isWindowActive = now >= start && now <= end;
         if (event.status === "active") return true;
         return isWindowActive;
-      }) ?? null
-    );
+      })
+      .sort((a, b) => {
+        const score = (event: ChatCalendarEvent) => (event.status === "active" ? 0 : 1);
+        const byStatus = score(a) - score(b);
+        if (byStatus !== 0) return byStatus;
+        return new Date(b.start_at).getTime() - new Date(a.start_at).getTime();
+      });
+    return ranked[0] ?? null;
   }, [calendarData, nowTick]);
 
   const activeCallDuration = useMemo(() => {
@@ -1098,10 +1110,16 @@ function ChatWorkspace({
     const roomId = activeCall.id;
     if (ringDismissedRoomId === roomId) return;
     const isHost = Number(activeCall.created_by_user_id || 0) === Number(currentUserId || 0);
+    const joinedUserIds = activeCall.joined_user_ids ?? [];
+    const meJoined = joinedUserIds.includes(Number(currentUserId || 0));
     if (activeCall.status === "active") {
-      setCallState((prev) => (prev === "connected" ? prev : "ringing_incoming"));
+      if (meJoined || activeRoomId === roomId) {
+        setCallState("connected");
+      } else {
+        setCallState("ringing_incoming");
+      }
     } else if (activeCall.status === "scheduled" && isHost) {
-      setCallState((prev) => (prev === "connected" ? prev : "ringing_outgoing"));
+      setCallState("ringing_outgoing");
     }
     if (prefData?.user?.desktop_sound && (callState === "ringing_incoming" || callState === "ringing_outgoing")) {
       if (!ringIntervalRef.current) {
@@ -1120,22 +1138,55 @@ function ChatWorkspace({
     };
   }, [
     activeCall,
+    activeRoomId,
     callState,
     currentUserId,
     prefData?.user?.desktop_sound,
     ringDismissedRoomId,
   ]);
 
+  useEffect(() => {
+    if (unansweredTimeoutRef.current) {
+      window.clearTimeout(unansweredTimeoutRef.current);
+      unansweredTimeoutRef.current = null;
+    }
+    if (!activeCall) return;
+    const isHost = Number(activeCall.created_by_user_id || 0) === Number(currentUserId || 0);
+    const joined = Number(activeCall.joined_count || 0);
+    if (!isHost || callState !== "connected" || joined > 1) return;
+    unansweredTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls?event_id=${activeCall.id}`, {
+          method: "DELETE",
+        });
+        setCallState("idle");
+        setActiveRoomId(null);
+        setRingDismissedRoomId(activeCall.id);
+        onToast("No one joined. Call ended automatically.", "info");
+        void mutateCalendar();
+        void mutateMessages();
+        onMutateConversations();
+      } catch {
+        // no-op
+      }
+    }, 35_000);
+    return () => {
+      if (unansweredTimeoutRef.current) {
+        window.clearTimeout(unansweredTimeoutRef.current);
+        unansweredTimeoutRef.current = null;
+      }
+    };
+  }, [activeCall, callState, currentUserId, conversation.id, mutateCalendar, mutateMessages, onMutateConversations, onToast]);
+
   const launchCall = useCallback(
     async (mode: "call" | "screenshare") => {
       try {
         if (activeCall) {
-          const joinUrl = activeCall.join_url || activeCall.meet_link;
           await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
           setActiveRoomId(activeCall.id);
           setCallState("connected");
-          if (joinUrl) window.open(joinUrl, "_blank", "noopener,noreferrer");
           onToast("Joined active call.", "success");
+          void mutateCalendar();
           return;
         }
         setCallLoading(mode);
@@ -1147,9 +1198,6 @@ function ChatWorkspace({
             body: JSON.stringify({ mode, duration_minutes: 30 }),
           }
         );
-        if (data.join_link) {
-          window.open(data.join_link, "_blank", "noopener,noreferrer");
-        }
         const currentEvents = (await mutateCalendar())?.events ?? [];
         const latest = [...currentEvents]
           .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime())
@@ -1157,7 +1205,7 @@ function ChatWorkspace({
         if (latest?.id) {
           await apiFetchJson(`/api/chat/calls/${latest.id}/join`, { method: "POST" });
           setActiveRoomId(latest.id);
-          setCallState("ringing_outgoing");
+          setCallState("connected");
         }
         onToast(data.user_message || (mode === "screenshare" ? "Screen share started." : "Call started."), "success");
         void mutateCalendar();
@@ -1649,7 +1697,7 @@ function ChatWorkspace({
           <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-2 shadow-[0_10px_30px_rgba(16,185,129,0.25)] backdrop-blur">
             <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
             <span className="text-xs font-semibold text-emerald-100">
-              Call is active • {activeCallDuration} • {conversation.members.length} participant{conversation.members.length === 1 ? "" : "s"}
+              Call is active • {activeCallDuration} • {Number(activeCall.joined_count || 0)} participant{Number(activeCall.joined_count || 0) === 1 ? "" : "s"}
             </span>
             {callState === "ringing_incoming" ? (
               <>
@@ -1659,8 +1707,7 @@ function ChatWorkspace({
                     await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
                     setActiveRoomId(activeCall.id);
                     setCallState("connected");
-                    const joinUrl = activeCall.join_url || activeCall.meet_link;
-                    if (joinUrl) window.open(joinUrl, "_blank", "noopener,noreferrer");
+                    void mutateCalendar();
                     onToast("Call accepted.", "success");
                   }}
                   className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-400"
@@ -1686,8 +1733,7 @@ function ChatWorkspace({
                   await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, { method: "POST" });
                   setActiveRoomId(activeCall.id);
                   setCallState("connected");
-                  const joinUrl = activeCall.join_url || activeCall.meet_link;
-                  if (joinUrl) window.open(joinUrl, "_blank", "noopener,noreferrer");
+                  void mutateCalendar();
                   onToast("Joined call.", "success");
                 }}
                 className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-400"
