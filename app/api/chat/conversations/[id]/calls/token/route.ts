@@ -35,6 +35,19 @@ export async function POST(_request: Request, { params }: { params: { id: string
       [conversationId, access.user_id],
     );
     if (!memberRes.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
+    const iceConfigRaw = String(process.env.NEXT_PUBLIC_CHAT_ICE_SERVERS || "");
+    const turnConfigured = /turns?:/i.test(iceConfigRaw);
+    if (!turnConfigured) {
+      return NextResponse.json(
+        {
+          operation_status: "blocked",
+          user_message: "TURN server is not configured for enterprise calling.",
+          hint: "Set NEXT_PUBLIC_CHAT_ICE_SERVERS with at least one TURN/TURNS entry.",
+          media_state: "failed",
+        },
+        { status: 503 },
+      );
+    }
 
     const roomRes = await query(
       `SELECT id, conversation_id FROM chat_call_rooms WHERE conversation_id = $1 AND status IN ('active','scheduled') ORDER BY id DESC LIMIT 1`,
@@ -62,6 +75,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
       livekit_url: liveKitUrl(),
       token,
       media_state: "ready",
+      turn_ready: true,
     });
   } catch (error) {
     return NextResponse.json(
@@ -70,4 +84,3 @@ export async function POST(_request: Request, { params }: { params: { id: string
     );
   }
 }
-
