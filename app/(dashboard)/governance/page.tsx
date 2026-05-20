@@ -32,6 +32,12 @@ type HrmsSchemaDiagnostics = {
   checked_at: string;
   recommended_migrations: string[];
 };
+type ChatCallPolicy = {
+  call_start_scope: "all" | "manager_plus" | "admin_plus";
+  call_share_scope: "all" | "host_only" | "host_manager";
+  max_call_participants: number;
+  allow_external_live_calls: boolean;
+};
 
 const EXPECTED_RETENTION = ["candidates", "jobs", "applications", "notes", "chat", "attendance", "timesheet"];
 
@@ -75,6 +81,12 @@ export default function GovernancePage() {
     dashboardFetcher,
   );
   const { data: chatCallMetrics } = useSWR("/api/chat/calls/metrics", dashboardFetcher, { refreshInterval: 30000 });
+  const { data: chatCallPolicy, mutate: mutateChatCallPolicy } = useSWR<{ policy: ChatCallPolicy }>(
+    "/api/chat/calls/policy",
+    dashboardFetcher,
+    { refreshInterval: 30000 },
+  );
+  const [policyBusy, setPolicyBusy] = useState(false);
 
   const workspaceRows = Array.isArray((workspaces as any)?.workspaces) ? (workspaces as any).workspaces : [];
   const accessRows = Array.isArray((accessPolicies as any)?.policies) ? (accessPolicies as any).policies : [];
@@ -162,7 +174,44 @@ export default function GovernancePage() {
       mutateAiModels(),
       mutateAiAudit(),
       mutateHrmsSchema(),
+      mutateChatCallPolicy(),
     ]);
+  }
+
+  async function saveChatCallPolicy(patch: Partial<ChatCallPolicy>) {
+    const current = chatCallPolicy?.policy;
+    if (!current) return;
+    const next = {
+      call_start_scope: patch.call_start_scope ?? current.call_start_scope,
+      call_share_scope: patch.call_share_scope ?? current.call_share_scope,
+      max_call_participants: patch.max_call_participants ?? current.max_call_participants,
+      allow_external_live_calls: patch.allow_external_live_calls ?? current.allow_external_live_calls,
+    };
+    try {
+      setPolicyBusy(true);
+      const response = await apiFetchJson<{ operation_status?: Tone; user_message?: string; hint?: string; policy?: ChatCallPolicy }>(
+        "/api/chat/calls/policy",
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(next),
+        },
+      );
+      setResult({
+        tone: response.operation_status || "success",
+        message: response.user_message || "Chat call policy updated.",
+        hint: response.hint,
+      });
+      await mutateChatCallPolicy();
+    } catch (error) {
+      setResult({
+        tone: "error",
+        message: "Failed to update chat call policy.",
+        hint: error instanceof Error ? error.message : "Unknown failure",
+      });
+    } finally {
+      setPolicyBusy(false);
+    }
   }
 
   async function runRecompute() {
@@ -383,12 +432,88 @@ export default function GovernancePage() {
               <div>Join success: {Math.round(Number((chatCallMetrics as any).metrics.join_success_rate || 0) * 100)}%</div>
               <div>Drop rate: {Math.round(Number((chatCallMetrics as any).metrics.drop_rate || 0) * 100)}%</div>
               <div>Avg reconnects: {Number((chatCallMetrics as any).metrics.avg_reconnects_per_attempt || 0).toFixed(2)}</div>
+              <div>One-way audio proxy: {Math.round(Number((chatCallMetrics as any).metrics.one_way_audio_incident_rate || 0) * 100)}%</div>
+              <div>Media fail rate: {Math.round(Number((chatCallMetrics as any).metrics.media_fail_rate || 0) * 100)}%</div>
               <div>Median duration: {Math.round(Number((chatCallMetrics as any).metrics.median_call_duration_seconds || 0))}s</div>
               <div>Avg participants: {Number((chatCallMetrics as any).metrics.avg_participants || 0).toFixed(2)}</div>
               <div>Total call events: {Number((chatCallMetrics as any).metrics.total_events || 0)}</div>
             </div>
           ) : (
             <div className="mt-2 text-xs text-[var(--ats-text-muted)]">Call metrics are unavailable for this user or environment.</div>
+          )}
+        </section>
+
+        <section className={UI.enterprise.elevatedCard + " mb-4 p-4"}>
+          <div className="text-sm font-semibold text-[var(--ats-text)]">Chat call policy</div>
+          {chatCallPolicy?.policy ? (
+            <div className="mt-2 grid gap-3 text-xs text-[var(--ats-text-muted)] sm:grid-cols-2">
+              <label className="space-y-1">
+                <div className="font-semibold text-[var(--ats-text)]">Who can start calls</div>
+                <select
+                  className="w-full rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-xs text-[var(--ats-text)]"
+                  value={chatCallPolicy.policy.call_start_scope}
+                  disabled={policyBusy}
+                  onChange={(event) =>
+                    void saveChatCallPolicy({
+                      call_start_scope: event.target.value as ChatCallPolicy["call_start_scope"],
+                    })
+                  }
+                >
+                  <option value="all">All members</option>
+                  <option value="manager_plus">Manager plus</option>
+                  <option value="admin_plus">Admin only</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <div className="font-semibold text-[var(--ats-text)]">Who can share screen</div>
+                <select
+                  className="w-full rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-xs text-[var(--ats-text)]"
+                  value={chatCallPolicy.policy.call_share_scope}
+                  disabled={policyBusy}
+                  onChange={(event) =>
+                    void saveChatCallPolicy({
+                      call_share_scope: event.target.value as ChatCallPolicy["call_share_scope"],
+                    })
+                  }
+                >
+                  <option value="all">All members</option>
+                  <option value="host_only">Host only</option>
+                  <option value="host_manager">Host and managers</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <div className="font-semibold text-[var(--ats-text)]">Max participants</div>
+                <input
+                  type="number"
+                  min={2}
+                  max={200}
+                  className="w-full rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-xs text-[var(--ats-text)]"
+                  value={chatCallPolicy.policy.max_call_participants}
+                  disabled={policyBusy}
+                  onBlur={(event) =>
+                    void saveChatCallPolicy({
+                      max_call_participants: Math.max(2, Math.min(200, Number(event.target.value || 25))),
+                    })
+                  }
+                  onChange={() => {}}
+                />
+              </label>
+              <label className="inline-flex items-center gap-2 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-xs text-[var(--ats-text)]">
+                <input
+                  type="checkbox"
+                  checked={chatCallPolicy.policy.allow_external_live_calls}
+                  disabled={policyBusy}
+                  onChange={(event) =>
+                    void saveChatCallPolicy({
+                      allow_external_live_calls: event.target.checked,
+                    })
+                  }
+                />
+                Allow external guests in live calls
+              </label>
+            </div>
+          ) : (
+            <div className="mt-2 text-xs text-[var(--ats-text-muted)]">Call policy unavailable.</div>
           )}
         </section>
 

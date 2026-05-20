@@ -36,10 +36,20 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     }
 
     const body = await request.json().catch(() => ({}));
+    const requestKey = request.headers.get("x-idempotency-key")?.trim() || "";
     const action = String(body?.action || "") as Action;
     const targetUserId = Number(body?.target_user_id);
 
     if (action === "end_for_all") {
+      if (requestKey) {
+        const existing = await query(
+          `SELECT 1 FROM chat_call_events WHERE room_id = $1 AND event_key = $2 LIMIT 1`,
+          [roomId, requestKey],
+        );
+        if (existing.rowCount) {
+          return NextResponse.json({ operation_status: "success", user_message: "Call already ended for all." });
+        }
+      }
       const ended = await endChatCallRoom(roomId, access.user_id);
       if (!ended) return NextResponse.json({ operation_status: "blocked", user_message: "Call already ended." }, { status: 409 });
       await query(`UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`, [roomId]);
@@ -54,7 +64,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         userId: access.user_id,
         eventType: "end",
         metadata: { reason: "moderator_end" },
-        eventKey: `moderator_end:${roomId}:${access.user_id}`,
+        eventKey: requestKey || `moderator_end:${roomId}:${access.user_id}`,
       });
       return NextResponse.json({ operation_status: "success", user_message: "Call ended for all." });
     }
@@ -64,6 +74,15 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     }
 
     if (action === "remove_participant") {
+      if (requestKey) {
+        const existing = await query(
+          `SELECT 1 FROM chat_call_events WHERE room_id = $1 AND event_key = $2 LIMIT 1`,
+          [roomId, requestKey],
+        );
+        if (existing.rowCount) {
+          return NextResponse.json({ operation_status: "success", user_message: "Participant already removed." });
+        }
+      }
       await query(
         `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
         [roomId, targetUserId],
@@ -89,11 +108,21 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         userId: access.user_id,
         eventType: "remove_participant",
         metadata: { target_user_id: targetUserId },
+        eventKey: requestKey || `participant_removed:${roomId}:${targetUserId}:${access.user_id}`,
       });
       return NextResponse.json({ operation_status: "success", user_message: "Participant removed." });
     }
 
     if (action === "mute_participant") {
+      if (requestKey) {
+        const existing = await query(
+          `SELECT 1 FROM chat_call_events WHERE room_id = $1 AND event_key = $2 LIMIT 1`,
+          [roomId, requestKey],
+        );
+        if (existing.rowCount) {
+          return NextResponse.json({ operation_status: "success", user_message: "Participant already muted." });
+        }
+      }
       await query(
         `UPDATE chat_call_participants SET muted = TRUE WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
         [roomId, targetUserId],
@@ -114,6 +143,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         userId: access.user_id,
         eventType: "mute_participant",
         metadata: { target_user_id: targetUserId },
+        eventKey: requestKey || `participant_muted:${roomId}:${targetUserId}:${access.user_id}`,
       });
       return NextResponse.json({ operation_status: "success", user_message: "Participant muted." });
     }

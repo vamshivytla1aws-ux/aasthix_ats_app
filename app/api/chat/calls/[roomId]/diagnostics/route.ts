@@ -39,6 +39,9 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
        LIMIT 50`,
       [roomId],
     );
+    const activeParticipants = (participantsRes.rows as Array<{ user_id: number; full_name: string; left_at: string | null }>)
+      .filter((row) => !row.left_at)
+      .map((row) => ({ user_id: Number(row.user_id), full_name: String(row.full_name || "Unknown user") }));
     const eventsRes = await query(
       `SELECT event_type, metadata, created_at, user_id
        FROM chat_call_events
@@ -50,11 +53,21 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     const recentErrors = (eventsRes.rows as Array<{ event_type: string; metadata: unknown; created_at: string }>)
       .filter((e) => e.event_type.includes("fail") || e.event_type.includes("blocked"))
       .slice(0, 8);
+    const closeReasonRow = (eventsRes.rows as Array<{ event_type: string; metadata?: { reason?: string } }>)
+      .find((row) => row.event_type === "end");
+    const roomClosedReason = String(closeReasonRow?.metadata?.reason || "");
 
     return NextResponse.json({
       operation_status: "success",
       diagnostics: {
-        room,
+        room: {
+          ...room,
+          joined_count: activeParticipants.length,
+          joined_participants: activeParticipants,
+          room_closed_reason: roomClosedReason || null,
+          connection_state: room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle",
+          media_state: "ok",
+        },
         participants: participantsRes.rows,
         recent_events: eventsRes.rows,
         recent_errors: recentErrors,
