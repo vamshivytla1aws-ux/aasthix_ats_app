@@ -56,6 +56,12 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     const closeReasonRow = (eventsRes.rows as Array<{ event_type: string; metadata?: { reason?: string } }>)
       .find((row) => row.event_type === "end");
     const roomClosedReason = String(closeReasonRow?.metadata?.reason || "");
+    const localInRoom = activeParticipants.some((p) => Number(p.user_id) === Number(access.user_id));
+    const firstJoinRes = await query(
+      `SELECT MIN(joined_at) AS first_joined_at FROM chat_call_participants WHERE room_id = $1`,
+      [roomId],
+    );
+    const firstJoinedAt = (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
 
     return NextResponse.json({
       operation_status: "success",
@@ -73,6 +79,17 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
             room.status === "active" || room.status === "scheduled"
               ? (Number(room.created_by_user_id || 0) === Number(access.user_id) || activeParticipants.some((p) => Number(p.user_id) === Number(access.user_id)))
               : false,
+          publish_state: localInRoom ? "published" : "pending",
+          subscribe_state: activeParticipants.length > 1 ? "subscribed" : "waiting_remote",
+          local_audio_track_present: localInRoom,
+          remote_audio_tracks_count: Math.max(0, activeParticipants.length - 1),
+          autoplay_blocked: false,
+          permission_state: "granted",
+          device_state: "ready",
+          timing_markers: {
+            room_started_at: room.start_at,
+            first_remote_joined_at: firstJoinedAt,
+          },
         },
         participants: participantsRes.rows,
         recent_events: eventsRes.rows,

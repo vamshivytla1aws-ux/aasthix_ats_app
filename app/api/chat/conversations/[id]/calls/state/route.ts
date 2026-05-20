@@ -110,6 +110,13 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       [room.id],
     );
     const roomClosedReason = String((endEventRes.rows[0] as { metadata?: { reason?: string } } | undefined)?.metadata?.reason || "");
+    const firstJoinRes = await query(
+      `SELECT MIN(joined_at) AS first_joined_at FROM chat_call_participants WHERE room_id = $1`,
+      [room.id],
+    );
+    const firstJoinedAt = (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
+    const publishState = participants.some((p) => Number(p.user_id) === Number(access.user_id)) ? "published" : "pending";
+    const subscribeState = participants.length > 1 ? "subscribed" : "waiting_remote";
     return NextResponse.json({
       operation_status: "success",
       call: {
@@ -126,6 +133,17 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         media_state: "ok",
         can_join: !isTerminal && isActiveLike,
         can_end: !isTerminal && (Number(room.created_by_user_id || 0) === Number(access.user_id) || meJoined),
+        publish_state: publishState,
+        subscribe_state: subscribeState,
+        local_audio_track_present: publishState === "published",
+        remote_audio_tracks_count: Math.max(0, participants.length - 1),
+        autoplay_blocked: false,
+        permission_state: "granted",
+        device_state: "ready",
+        timing_markers: {
+          room_started_at: room.start_at,
+          first_remote_joined_at: firstJoinedAt,
+        },
       },
     });
   } catch (error) {

@@ -761,7 +761,7 @@ function ChatWorkspace({
   onMutateConversations: () => void;
   onToast: (message: string, tone?: ToastTone) => void;
 }) {
-  const liveKitPrimary = Boolean(process.env.NEXT_PUBLIC_LIVEKIT_URL);
+  const liveKitPrimary = true;
   const [messageInput, setMessageInput] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGif, setShowGif] = useState(false);
@@ -797,6 +797,7 @@ function ChatWorkspace({
   const signalCursorRef = useRef(0);
   const peerConnectionsRef = useRef<Map<number, RTCPeerConnection>>(new Map());
   const remoteAudioRef = useRef<Map<number, HTMLAudioElement>>(new Map());
+  const liveKitAudioRef = useRef<Map<string, HTMLMediaElement>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const signalPollRef = useRef<number | null>(null);
   const connectingPeersRef = useRef<Set<number>>(new Set());
@@ -895,6 +896,23 @@ function ChatWorkspace({
     dashboardFetcher,
     { refreshInterval: callState === "idle" ? 10_000 : 1_500 }
   );
+
+  useEffect(() => {
+    const stream = new EventSource(`/api/chat/realtime?conversation_id=${conversation.id}`);
+    const onCallishEvent = () => {
+      void mutateCallState();
+      void mutateCalendar();
+    };
+    stream.addEventListener("message.created", onCallishEvent);
+    stream.addEventListener("message.updated", onCallishEvent);
+    stream.addEventListener("thread.reply", onCallishEvent);
+    return () => {
+      stream.removeEventListener("message.created", onCallishEvent);
+      stream.removeEventListener("message.updated", onCallishEvent);
+      stream.removeEventListener("thread.reply", onCallishEvent);
+      stream.close();
+    };
+  }, [conversation.id, mutateCallState, mutateCalendar]);
 
   useEffect(() => {
     if (conversation.unread_count > 0) {
@@ -1356,6 +1374,14 @@ function ChatWorkspace({
       }
     }
     remoteAudioRef.current.clear();
+    for (const [, mediaEl] of liveKitAudioRef.current.entries()) {
+      try {
+        mediaEl.pause();
+      } catch {
+        // no-op
+      }
+    }
+    liveKitAudioRef.current.clear();
     if (localStreamRef.current) {
       for (const track of localStreamRef.current.getTracks()) track.stop();
       localStreamRef.current = null;
@@ -1373,6 +1399,27 @@ function ChatWorkspace({
   const connectLiveKitRoom = useCallback(
     async (conversationId: number) => {
       setConnectionState("connecting");
+      if (typeof navigator !== "undefined" && navigator.mediaDevices) {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const hasMic = devices.some((d) => d.kind === "audioinput");
+          if (!hasMic) {
+            setMediaError("No microphone device found.");
+          }
+        } catch {
+          // no-op
+        }
+      }
+      if (typeof navigator !== "undefined" && (navigator as any).permissions?.query) {
+        try {
+          const perm = await (navigator as any).permissions.query({ name: "microphone" as PermissionName });
+          if (perm?.state === "denied") {
+            throw new ApiError("Microphone permission is denied. Please allow microphone access.", 403);
+          }
+        } catch (error) {
+          if (error instanceof ApiError) throw error;
+        }
+      }
       const tokenData = await apiFetchJson<LiveKitSessionToken>(
         `/api/chat/conversations/${conversationId}/calls/token`,
         { method: "POST" },
@@ -1422,6 +1469,38 @@ function ChatWorkspace({
         else if (state === "reconnecting") setConnectionState("reconnecting");
         else if (state === "disconnected") setConnectionState("failed");
       });
+      room.on(livekit.RoomEvent.TrackSubscribed, (track: any, publication: any, participant: any) => {
+        try {
+          if (track?.kind !== "audio") return;
+          const mediaEl = track.attach() as HTMLMediaElement;
+          mediaEl.autoplay = true;
+          mediaEl.muted = false;
+          liveKitAudioRef.current.set(String(publication?.trackSid || `${participant?.identity || "p"}-${Date.now()}`), mediaEl);
+          void mediaEl.play().catch(() => {
+            setMediaError("Remote audio was blocked by browser autoplay. Click anywhere and try Join now again.");
+          });
+          setMediaError(null);
+        } catch {
+          setMediaError("Unable to attach remote audio track.");
+        }
+      });
+      room.on(livekit.RoomEvent.TrackUnsubscribed, (track: any, publication: any) => {
+        try {
+          const key = String(publication?.trackSid || "");
+          const mediaEl = key ? liveKitAudioRef.current.get(key) : null;
+          if (mediaEl) {
+            mediaEl.pause();
+            try {
+              track?.detach?.(mediaEl);
+            } catch {
+              // no-op
+            }
+            liveKitAudioRef.current.delete(key);
+          }
+        } catch {
+          // no-op
+        }
+      });
       await room.connect(tokenData.livekit_url, tokenData.token, {
         autoSubscribe: true,
       });
@@ -1433,6 +1512,11 @@ function ChatWorkspace({
       setCameraEnabled(false);
       setConnectionState("connected");
       reconnectAttemptedRef.current = false;
+      window.setTimeout(() => {
+        if (liveKitAudioRef.current.size === 0 && callStateRef.current === "connected") {
+          setMediaError("Connected, but waiting for remote audio track...");
+        }
+      }, 5000);
       return room;
     },
     [],
