@@ -53,7 +53,16 @@ async function startWeb() {
     await run('node', ['scripts/runMigrations.mjs']);
   }
 
-  if (!(await hasNextBuild())) {
+  const built = await hasNextBuild();
+  const isProductionLike = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT_ID);
+
+  if (!built && isProductionLike) {
+    throw new Error(
+      'Missing .next/BUILD_ID in production startup. Ensure build phase runs `npm run build` and do not rebuild during runtime start.',
+    );
+  }
+
+  if (!built && !isProductionLike) {
     await run('npm', ['run', 'build']);
   }
 

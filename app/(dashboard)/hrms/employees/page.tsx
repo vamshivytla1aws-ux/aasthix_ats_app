@@ -206,7 +206,7 @@ export default function EmployeeDirectoryPage() {
         <section className={UI.card + " p-4 sm:p-5"}>
           <h2 className="text-base font-semibold text-[var(--ats-text)]">{editingId ? "Edit employee" : "Add employee"}</h2>
           <div className="mt-2 text-xs text-[var(--ats-text-muted)]">
-            Sections: Identity, Employment, Reporting, and Access. Use "Assign manager later" if manager/director is not created yet.
+            Sections: Identity, Employment, Reporting, and Access. Use &quot;Assign manager later&quot; if manager/director is not created yet.
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <input className={UI.input} placeholder="Employee ID" value={form.employeeIdCode} onChange={(e) => setForm((s) => ({ ...s, employeeIdCode: e.target.value }))} />
