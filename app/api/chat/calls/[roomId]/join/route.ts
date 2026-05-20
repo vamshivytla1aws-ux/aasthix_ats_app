@@ -77,7 +77,8 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       `SELECT 1 FROM chat_call_participants WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL LIMIT 1`,
       [roomId, access.user_id],
     );
-    if (!activeRowRes.rowCount) {
+    const alreadyJoined = Boolean(activeRowRes.rowCount);
+    if (!alreadyJoined) {
       await query(
         `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
         [roomId, access.user_id],
@@ -94,17 +95,19 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       `UPDATE chat_call_rooms SET status = 'active', updated_at = NOW() WHERE id = $1 AND status IN ('scheduled','active')`,
       [roomId],
     );
-    await query(
-      `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-      [room.conversation_id, access.user_id, "call_joined: Joined call"],
-    );
-    await logCallEvent({
-      roomId,
-      conversationId: room.conversation_id,
-      userId: access.user_id,
-      eventType: "join_success",
-      eventKey: requestKey || `join_success:${roomId}:${access.user_id}`,
-    });
+    if (!alreadyJoined) {
+      await query(
+        `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+        [room.conversation_id, access.user_id, "call_joined: Joined call"],
+      );
+      await logCallEvent({
+        roomId,
+        conversationId: room.conversation_id,
+        userId: access.user_id,
+        eventType: "join_success",
+        eventKey: requestKey || `join_success:${roomId}:${access.user_id}`,
+      });
+    }
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [room.conversation_id]);
 
     const countRes = await query(

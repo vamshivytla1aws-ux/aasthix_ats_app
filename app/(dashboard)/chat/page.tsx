@@ -2599,6 +2599,7 @@ function ChatWorkspace({
             void mutatePrefs();
             onMutateConversations();
           }}
+          onToast={onToast}
         />
       ) : null}
 
@@ -3018,6 +3019,7 @@ function ChatContextDrawer({
   onExternalInvitesChanged,
   onPinnedChanged,
   onPreferencesSaved,
+  onToast,
 }: {
   view: DrawerView;
   onClose: () => void;
@@ -3034,6 +3036,7 @@ function ChatContextDrawer({
   onExternalInvitesChanged: () => void;
   onPinnedChanged: () => void;
   onPreferencesSaved: () => void;
+  onToast: (message: string, tone?: ToastTone) => void;
 }) {
   const conversationPreference = preferences?.conversations.find((pref) => pref.conversation_id === conversationId);
   const [scheduleTitle, setScheduleTitle] = useState("Scheduled chat call");
@@ -3101,7 +3104,12 @@ function ChatContextDrawer({
   async function createScheduledCall() {
     try {
       setCalendarBusy(true);
-      const startIso = new Date(scheduleStart).toISOString();
+      const parsed = new Date(scheduleStart);
+      if (Number.isNaN(parsed.getTime())) {
+        onToast("Please choose a valid start date/time.", "error");
+        return;
+      }
+      const startIso = parsed.toISOString();
       await apiFetchJson(`/api/chat/conversations/${conversationId}/calendar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3112,6 +3120,10 @@ function ChatContextDrawer({
         }),
       });
       onCalendarChanged();
+      onToast("Call scheduled successfully.", "success");
+    } catch (error) {
+      const msg = error instanceof ApiError ? error.message : "Unable to schedule call.";
+      onToast(msg, "error");
     } finally {
       setCalendarBusy(false);
     }

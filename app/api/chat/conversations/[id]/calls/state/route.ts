@@ -111,10 +111,14 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     );
     const roomClosedReason = String((endEventRes.rows[0] as { metadata?: { reason?: string } } | undefined)?.metadata?.reason || "");
     const firstJoinRes = await query(
-      `SELECT MIN(joined_at) AS first_joined_at FROM chat_call_participants WHERE room_id = $1`,
-      [room.id],
+      `SELECT MIN(joined_at) AS first_joined_at
+       FROM chat_call_participants
+       WHERE room_id = $1
+         AND user_id <> $2`,
+      [room.id, access.user_id],
     );
-    const firstJoinedAt = (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
+    const firstJoinedAt =
+      (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
     const publishState = participants.some((p) => Number(p.user_id) === Number(access.user_id)) ? "published" : "pending";
     const subscribeState = participants.length > 1 ? "subscribed" : "waiting_remote";
     return NextResponse.json({

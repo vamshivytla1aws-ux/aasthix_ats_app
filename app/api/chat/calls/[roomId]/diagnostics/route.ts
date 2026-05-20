@@ -58,10 +58,14 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     const roomClosedReason = String(closeReasonRow?.metadata?.reason || "");
     const localInRoom = activeParticipants.some((p) => Number(p.user_id) === Number(access.user_id));
     const firstJoinRes = await query(
-      `SELECT MIN(joined_at) AS first_joined_at FROM chat_call_participants WHERE room_id = $1`,
-      [roomId],
+      `SELECT MIN(joined_at) AS first_joined_at
+       FROM chat_call_participants
+       WHERE room_id = $1
+         AND user_id <> $2`,
+      [roomId, access.user_id],
     );
-    const firstJoinedAt = (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
+    const firstJoinedAt =
+      (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
 
     return NextResponse.json({
       operation_status: "success",
