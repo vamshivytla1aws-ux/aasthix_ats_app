@@ -7,7 +7,7 @@ import { endChatCallRoom } from "@/lib/chatCalls";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Action = "end_for_all" | "remove_participant" | "mute_participant";
+type Action = "end_for_all" | "remove_participant" | "mute_participant" | "unmute_participant";
 
 async function canTargetParticipant(conversationId: number, targetUserId: number) {
   if (!Number.isFinite(targetUserId) || targetUserId <= 0) return false;
@@ -153,30 +153,38 @@ export async function POST(request: Request, { params }: { params: { roomId: str
       return NextResponse.json({ operation_status: "success", user_message: "Participant removed." });
     }
 
-    if (action === "mute_participant") {
+    if (action === "mute_participant" || action === "unmute_participant") {
       if (requestKey) {
         const existing = await query(
           `SELECT 1 FROM chat_call_events WHERE room_id = $1 AND event_key = $2 LIMIT 1`,
           [roomId, requestKey],
         );
         if (existing.rowCount) {
-          return NextResponse.json({ operation_status: "success", user_message: "Participant already muted." });
+          return NextResponse.json({
+            operation_status: "success",
+            user_message: action === "mute_participant" ? "Participant already muted." : "Participant already unmuted.",
+          });
         }
       }
+      const muteFlag = action === "mute_participant";
       await query(
-        `UPDATE chat_call_participants SET muted = TRUE WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
+        `UPDATE chat_call_participants SET muted = $3 WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
+        [roomId, targetUserId, muteFlag],
+      );
+      await query(
+        `UPDATE chat_call_participants SET muted = FALSE WHERE room_id = $1 AND user_id = $2 AND left_at IS NOT NULL`,
         [roomId, targetUserId],
       );
       await query(`INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`, [
         room.conversation_id,
         access.user_id,
-        "Participant muted by moderator.",
+        muteFlag ? "Participant muted by moderator." : "Participant unmuted by moderator.",
       ]);
       try {
         await query(
           `INSERT INTO chat_call_signals (room_id, from_user_id, to_user_id, signal_type, payload)
-           VALUES ($1, $2, $3, 'moderation_mute', '{}'::jsonb)`,
-          [roomId, access.user_id, targetUserId],
+           VALUES ($1, $2, $3, $4, '{}'::jsonb)`,
+          [roomId, access.user_id, targetUserId, muteFlag ? "moderation_mute" : "moderation_unmute"],
         );
       } catch {
         // Avoid breaking moderator flow if target disappears between validation and signal insert.
@@ -185,11 +193,16 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         roomId,
         conversationId: room.conversation_id,
         userId: access.user_id,
-        eventType: "mute_participant",
+        eventType: muteFlag ? "mute_participant" : "unmute_participant",
         metadata: { target_user_id: targetUserId },
-        eventKey: requestKey || `participant_muted:${roomId}:${targetUserId}:${access.user_id}`,
+        eventKey:
+          requestKey ||
+          `${muteFlag ? "participant_muted" : "participant_unmuted"}:${roomId}:${targetUserId}:${access.user_id}`,
       });
-      return NextResponse.json({ operation_status: "success", user_message: "Participant muted." });
+      return NextResponse.json({
+        operation_status: "success",
+        user_message: muteFlag ? "Participant muted." : "Participant unmuted.",
+      });
     }
 
     return NextResponse.json({ operation_status: "blocked", user_message: "Unsupported moderation action." }, { status: 400 });

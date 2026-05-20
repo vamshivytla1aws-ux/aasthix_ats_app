@@ -141,7 +141,7 @@ type ChatCalendarEvent = {
   created_by_user_id?: number | null;
   joined_count?: number;
   joined_user_ids?: number[];
-  joined_participants?: Array<{ user_id: number; full_name: string }>;
+  joined_participants?: Array<{ user_id: number; full_name: string; muted?: boolean }>;
   room_closed_reason?: "ended" | "missed" | "declined" | "timeout" | null;
   connection_state?: "idle" | "connecting" | "connected" | "reconnecting" | "failed";
   media_state?: "ok" | "permission_denied" | "device_missing" | "failed" | "ready";
@@ -165,7 +165,16 @@ type CallSignal = {
   room_id: number;
   from_user_id: number;
   to_user_id: number | null;
-  signal_type: "offer" | "answer" | "ice" | "leave" | "presenting" | "moderation_mute" | "moderation_remove" | "moderation_end";
+  signal_type:
+    | "offer"
+    | "answer"
+    | "ice"
+    | "leave"
+    | "presenting"
+    | "moderation_mute"
+    | "moderation_unmute"
+    | "moderation_remove"
+    | "moderation_end";
   payload: Record<string, unknown>;
   created_at: string;
 };
@@ -886,7 +895,7 @@ function ChatWorkspace({
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [isPresenting, setIsPresenting] = useState(false);
-  const [moderationBusy, setModerationBusy] = useState<null | "mute" | "remove" | "end_all">(null);
+  const [moderationBusy, setModerationBusy] = useState<null | "mute" | "unmute" | "remove" | "end_all">(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
   const [ringVolume, setRingVolume] = useState(0.85);
@@ -1412,7 +1421,8 @@ function ChatWorkspace({
   useEffect(() => {
     if (!activeCall) return;
     const joined = Number(activeCall.joined_count || 0) > 0;
-    if ((callState === "connected" || liveKitConnectedRef.current) && joined) {
+    const callConnectedByServer = activeCall.connection_state === "connected";
+    if ((callState === "connected" || liveKitConnectedRef.current || callConnectedByServer) && joined) {
       if (connectionState === "failed") setConnectionState("connected");
       if (mediaError && !/autoplay|permission|microphone|device/i.test(mediaError)) {
         setMediaError(null);
@@ -1802,6 +1812,17 @@ function ChatWorkspace({
         onToast("You were muted by moderator.", "info");
         return;
       }
+      if (signal.signal_type === "moderation_unmute") {
+        if (liveKitRoomRef.current?.localParticipant) {
+          await liveKitRoomRef.current.localParticipant.setMicrophoneEnabled(true).catch(() => {});
+        }
+        if (localStreamRef.current) {
+          for (const track of localStreamRef.current.getAudioTracks()) track.enabled = true;
+        }
+        setMicEnabled(true);
+        onToast("You were unmuted by moderator.", "info");
+        return;
+      }
       const pc = await ensurePeerConnection(roomId, fromUserId);
       if (signal.signal_type === "offer") {
         const sdp = signal.payload?.sdp as RTCSessionDescriptionInit | undefined;
@@ -2130,9 +2151,16 @@ function ChatWorkspace({
   }, [onToast]);
 
   const moderateCall = useCallback(
-    async (action: "mute_participant" | "remove_participant" | "end_for_all", targetUserId?: number) => {
+    async (action: "mute_participant" | "unmute_participant" | "remove_participant" | "end_for_all", targetUserId?: number) => {
       if (!activeCall) return;
-      const busyKey = action === "end_for_all" ? "end_all" : action === "remove_participant" ? "remove" : "mute";
+      const busyKey =
+        action === "end_for_all"
+          ? "end_all"
+          : action === "remove_participant"
+            ? "remove"
+            : action === "unmute_participant"
+              ? "unmute"
+              : "mute";
       setModerationBusy(busyKey);
       try {
         const res = await apiFetchJson<{ operation_status?: string; user_message?: string; hint?: string }>(
@@ -2828,11 +2856,11 @@ function ChatWorkspace({
                         type="button"
                         disabled={moderationBusy !== null}
                         onClick={async () => {
-                          await moderateCall("mute_participant", p.user_id);
+                          await moderateCall(p.muted ? "unmute_participant" : "mute_participant", p.user_id);
                         }}
                         className="rounded px-1 text-[10px] text-amber-200 hover:bg-amber-500/20"
                       >
-                        Mute
+                        {p.muted ? "Unmute" : "Mute"}
                       </button>
                       <button
                         type="button"

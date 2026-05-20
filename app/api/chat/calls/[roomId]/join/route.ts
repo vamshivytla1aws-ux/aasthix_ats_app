@@ -108,9 +108,14 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       );
       await query(
         `
-        INSERT INTO chat_call_participants (room_id, user_id, joined_at, left_at)
-        VALUES ($1, $2, NOW(), NULL)
+        INSERT INTO chat_call_participants (room_id, user_id, joined_at, left_at, muted)
+        VALUES ($1, $2, NOW(), NULL, FALSE)
         `,
+        [roomId, access.user_id],
+      );
+    } else {
+      await query(
+        `UPDATE chat_call_participants SET muted = FALSE WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
         [roomId, access.user_id],
       );
     }

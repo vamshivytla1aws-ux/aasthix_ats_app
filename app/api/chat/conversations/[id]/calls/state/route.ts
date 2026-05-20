@@ -43,7 +43,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     const participantsRes = await query(
       `
-      SELECT p.user_id, COALESCE(u.full_name, 'Unknown user') AS full_name
+      SELECT p.user_id, COALESCE(u.full_name, 'Unknown user') AS full_name, COALESCE(p.muted, FALSE) AS muted
       FROM chat_call_participants p
       LEFT JOIN users u ON u.id = p.user_id
       WHERE p.room_id = $1 AND p.left_at IS NULL
@@ -51,9 +51,10 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       `,
       [room.id],
     );
-    const participants = (participantsRes.rows as Array<{ user_id: number; full_name: string }>).map((p) => ({
+    const participants = (participantsRes.rows as Array<{ user_id: number; full_name: string; muted?: boolean }>).map((p) => ({
       user_id: Number(p.user_id),
       full_name: String(p.full_name || "Unknown user"),
+      muted: Boolean(p.muted),
     }));
     const isTerminal = room.status === "ended" || room.status === "cancelled";
     const isActiveLike = room.status === "active" || room.status === "scheduled";

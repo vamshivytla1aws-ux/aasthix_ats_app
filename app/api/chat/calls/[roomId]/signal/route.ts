@@ -6,11 +6,31 @@ import { canShareByPolicy, getChatCallPolicy, logCallEvent } from "@/lib/chatCal
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type SignalType = "offer" | "answer" | "ice" | "leave" | "presenting" | "moderation_mute" | "moderation_remove" | "moderation_end";
+type SignalType =
+  | "offer"
+  | "answer"
+  | "ice"
+  | "leave"
+  | "presenting"
+  | "moderation_mute"
+  | "moderation_unmute"
+  | "moderation_remove"
+  | "moderation_end";
 
 function normalizeSignalType(value: unknown): SignalType {
   const v = String(value || "").toLowerCase();
-  if (v === "offer" || v === "answer" || v === "ice" || v === "leave" || v === "presenting" || v === "moderation_mute" || v === "moderation_remove" || v === "moderation_end") return v;
+  if (
+    v === "offer" ||
+    v === "answer" ||
+    v === "ice" ||
+    v === "leave" ||
+    v === "presenting" ||
+    v === "moderation_mute" ||
+    v === "moderation_unmute" ||
+    v === "moderation_remove" ||
+    v === "moderation_end"
+  )
+    return v;
   return "ice";
 }
 
