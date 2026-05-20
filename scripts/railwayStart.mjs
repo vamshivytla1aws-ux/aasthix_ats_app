@@ -57,9 +57,10 @@ async function startWeb() {
   const isProductionLike = process.env.NODE_ENV === 'production' || Boolean(process.env.RAILWAY_ENVIRONMENT_ID);
 
   if (!built && isProductionLike) {
-    throw new Error(
-      'Missing .next/BUILD_ID in production startup. Ensure build phase runs `npm run build` and do not rebuild during runtime start.',
+    console.warn(
+      "[startup] Missing .next/BUILD_ID in production runtime. Falling back to one-time `npm run build`.",
     );
+    await run("npm", ["run", "build"]);
   }
 
   if (!built && !isProductionLike) {
