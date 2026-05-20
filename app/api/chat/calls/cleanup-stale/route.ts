@@ -42,7 +42,7 @@ export async function POST() {
       await query(
         `INSERT INTO messages (conversation_id, sender_id, content, is_system)
          VALUES ($1, NULL, $2, TRUE)`,
-        [row.conversation_id, "call_ended: Call ended due to stale timeout"],
+        [row.conversation_id, "Call ended due to stale timeout."],
       );
       await logCallEvent({
         roomId: row.id,

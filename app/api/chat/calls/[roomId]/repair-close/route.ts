@@ -33,7 +33,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     await query(
       `INSERT INTO messages (conversation_id, sender_id, content, is_system)
        VALUES ($1, NULL, $2, TRUE)`,
-      [room.conversation_id, "call_ended: Call force-closed by admin repair"],
+      [room.conversation_id, "Call force-closed by admin repair."],
     );
     await logCallEvent({
       roomId,

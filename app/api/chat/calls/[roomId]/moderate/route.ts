@@ -73,7 +73,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
       await query(`INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`, [
         room.conversation_id,
         access.user_id,
-        `call_ended_by_host: Call ended by moderator: ${room.title}`,
+        "Call ended by moderator.",
       ]);
       await logCallEvent({
         roomId,
@@ -131,7 +131,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
       await query(`INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`, [
         room.conversation_id,
         access.user_id,
-        `participant_removed: Participant removed from call`,
+        "Participant removed from call by moderator.",
       ]);
       try {
         await query(
@@ -170,7 +170,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
       await query(`INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`, [
         room.conversation_id,
         access.user_id,
-        `participant_muted: Participant muted by moderator`,
+        "Participant muted by moderator.",
       ]);
       try {
         await query(

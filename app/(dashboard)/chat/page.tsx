@@ -414,7 +414,7 @@ function avatarColor(seed: number) {
   return AVATAR_COLORS[Math.abs(seed) % AVATAR_COLORS.length];
 }
 
-function playTone(kind: "message" | "ring", durationMs = 180) {
+function playTone(kind: "message" | "ring", durationMs = 180, volume = 1) {
   if (typeof window === "undefined") return;
   const Ctx = (window as typeof window & { webkitAudioContext?: typeof AudioContext }).AudioContext ||
     (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -422,10 +422,12 @@ function playTone(kind: "message" | "ring", durationMs = 180) {
   const ctx = new Ctx();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  osc.type = kind === "ring" ? "sine" : "triangle";
-  osc.frequency.value = kind === "ring" ? 720 : 920;
+  osc.type = kind === "ring" ? "square" : "triangle";
+  osc.frequency.value = kind === "ring" ? 860 : 1040;
   gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(kind === "ring" ? 0.08 : 0.04, ctx.currentTime + 0.02);
+  const clampedVolume = Math.min(1, Math.max(0, volume));
+  const peak = (kind === "ring" ? 0.18 : 0.08) * clampedVolume;
+  gain.gain.exponentialRampToValueAtTime(peak, ctx.currentTime + 0.02);
   gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationMs / 1000);
   osc.connect(gain);
   gain.connect(ctx.destination);
@@ -887,6 +889,7 @@ function ChatWorkspace({
   const [moderationBusy, setModerationBusy] = useState<null | "mute" | "remove" | "end_all">(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [ringVolume, setRingVolume] = useState(0.85);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [nowTick, setNowTick] = useState(Date.now());
@@ -916,6 +919,21 @@ function ChatWorkspace({
   });
   const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "connected" | "reconnecting" | "failed">("idle");
   const callStateRef = useRef(callState);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("ats_chat_ring_volume");
+    if (!raw) return;
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) {
+      setRingVolume(Math.min(1, Math.max(0.1, parsed)));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("ats_chat_ring_volume", String(ringVolume));
+  }, [ringVolume]);
   const resizeComposer = useCallback(() => {
     if (!textareaRef.current) return;
     textareaRef.current.style.height = "auto";
@@ -1060,7 +1078,7 @@ function ChatWorkspace({
     const latestMessage = messages[messages.length - 1];
     const isIncoming = Number(latestMessage?.sender_id || 0) !== Number(currentUserId || 0);
     if (previous > 0 && prefData?.user?.desktop_sound && !conversationMuted && isIncoming) {
-      playTone("message", 120);
+      playTone("message", 120, Math.max(0.4, ringVolume * 0.6));
     }
     if (previous > 0 && (prefData?.user?.desktop_toast ?? true) && !conversationMuted && isIncoming) {
       const latestMessageId = Number(latestMessage?.id || 0);
@@ -1089,7 +1107,7 @@ function ChatWorkspace({
       }
     }
     lastSeenMessageIdRef.current = latestId;
-  }, [messages, prefData, conversation.id, currentUserId, conversation]);
+  }, [messages, prefData, conversation.id, currentUserId, conversation, ringVolume]);
 
   const resetComposer = () => {
     setShowEmoji(false);
@@ -1368,8 +1386,8 @@ function ChatWorkspace({
     if (nextState !== callState) setCallState(nextState);
     if ((prefData?.user?.desktop_sound ?? true) && (nextState === "ringing_incoming" || nextState === "ringing_outgoing")) {
       if (!ringIntervalRef.current) {
-        playTone("ring", 240);
-        ringIntervalRef.current = window.setInterval(() => playTone("ring", 240), 1200);
+        playTone("ring", 260, ringVolume);
+        ringIntervalRef.current = window.setInterval(() => playTone("ring", 260, ringVolume), 1200);
       }
     } else if (ringIntervalRef.current) {
       window.clearInterval(ringIntervalRef.current);
@@ -1388,7 +1406,19 @@ function ChatWorkspace({
     currentUserId,
     prefData?.user?.desktop_sound,
     ringDismissedRoomId,
+    ringVolume,
   ]);
+
+  useEffect(() => {
+    if (!activeCall) return;
+    const joined = Number(activeCall.joined_count || 0) > 0;
+    if ((callState === "connected" || liveKitConnectedRef.current) && joined) {
+      if (connectionState === "failed") setConnectionState("connected");
+      if (mediaError && !/autoplay|permission|microphone|device/i.test(mediaError)) {
+        setMediaError(null);
+      }
+    }
+  }, [activeCall, callState, connectionState, mediaError]);
 
   useEffect(() => {
     if (!activeCall) return;
@@ -1891,22 +1921,33 @@ function ChatWorkspace({
       try {
         callActionRef.current.joining = true;
         if (activeCall) {
-          await apiFetchJson(`/api/chat/calls/${activeCall.id}/join`, {
+          const joinRes = await apiFetchJson<{ operation_status?: string; user_message?: string }>(`/api/chat/calls/${activeCall.id}/join`, {
             method: "POST",
             headers: buildCallMutationHeaders(),
           });
           setRingDismissedRoomId(null);
           setActiveRoomId(activeCall.id);
           setCallState("connecting_media");
-          await connectLiveKitRoom(conversation.id);
-          setCallState("connected");
-          onToast("Joined active call.", "success");
+          setConnectionState("connecting");
+          try {
+            await connectLiveKitRoom(conversation.id);
+            setCallState("connected");
+            setConnectionState("connected");
+            setMediaError(null);
+            onToast(joinRes.user_message || "Joined active call.", "success");
+          } catch (connectError) {
+            setCallState("connected");
+            setConnectionState("reconnecting");
+            const msg = connectError instanceof ApiError ? connectError.message : "Joined call, but audio is still connecting.";
+            setMediaError(msg);
+            onToast(msg, "info");
+          }
           void mutateCalendar();
           void mutateCallState();
           return;
         }
         setCallLoading(mode);
-        const data = await apiFetchJson<{ join_link: string | null; user_message?: string }>(
+        const data = await apiFetchJson<{ join_link: string | null; user_message?: string; room?: { id?: number } }>(
           `/api/chat/conversations/${conversation.id}/calls`,
           {
             method: "POST",
@@ -1914,20 +1955,29 @@ function ChatWorkspace({
             body: JSON.stringify({ mode, duration_minutes: 30 }),
           }
         );
-        const currentEvents = (await mutateCalendar())?.events ?? [];
-        const latest = [...currentEvents]
-          .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime())
-          .find((e) => (e.join_url || e.meet_link) && (e.status === "active" || e.status === "scheduled"));
-        if (latest?.id) {
-          await apiFetchJson(`/api/chat/calls/${latest.id}/join`, {
+        const roomIdFromCreate = Number(data?.room?.id || 0);
+        const roomId = roomIdFromCreate > 0 ? roomIdFromCreate : null;
+        if (roomId) {
+          await apiFetchJson(`/api/chat/calls/${roomId}/join`, {
             method: "POST",
             headers: buildCallMutationHeaders(),
           });
           setRingDismissedRoomId(null);
-          setActiveRoomId(latest.id);
+          setActiveRoomId(roomId);
           setCallState("connecting_media");
-          await connectLiveKitRoom(conversation.id);
-          setCallState("connected");
+          setConnectionState("connecting");
+          try {
+            await connectLiveKitRoom(conversation.id);
+            setCallState("connected");
+            setConnectionState("connected");
+            setMediaError(null);
+          } catch (connectError) {
+            setCallState("connected");
+            setConnectionState("reconnecting");
+            const msg = connectError instanceof ApiError ? connectError.message : "Call started, but audio is still connecting.";
+            setMediaError(msg);
+            onToast(msg, "info");
+          }
           await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls/ring`, { method: "POST" }).catch(() => {});
         }
         onToast(data.user_message || (mode === "screenshare" ? "Screen share started." : "Call started."), "success");
@@ -1937,7 +1987,6 @@ function ChatWorkspace({
         onMutateConversations();
         setDrawerView("calendar");
       } catch (error) {
-        setConnectionState("failed");
         const msg = error instanceof ApiError ? error.message : "Unable to start call.";
         onToast(msg, "error");
       } finally {
@@ -1951,6 +2000,11 @@ function ChatWorkspace({
   const endActiveCall = useCallback(
     async (eventId: number) => {
       if (callActionRef.current.ending) return;
+      setCallState("idle");
+      setActiveRoomId(null);
+      setRingDismissedRoomId(eventId);
+      setConnectionState("idle");
+      setMediaError(null);
       try {
         callActionRef.current.ending = true;
         if (activeRoomId === eventId) {
@@ -1965,9 +2019,6 @@ function ChatWorkspace({
           headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
           body: JSON.stringify({ reason: "ended" }),
         });
-        setCallState("idle");
-        setActiveRoomId(null);
-        setRingDismissedRoomId(eventId);
         stopMediaSession();
         onToast("Call ended.", "success");
         void mutateCalendar();
@@ -1975,6 +2026,7 @@ function ChatWorkspace({
         void mutateMessages();
         onMutateConversations();
       } catch (error) {
+        setConnectionState("failed");
         const msg = error instanceof ApiError ? error.message : "Unable to end call.";
         onToast(msg, "error");
       } finally {
@@ -1997,16 +2049,27 @@ function ChatWorkspace({
       }
       try {
         callActionRef.current.joining = true;
-        await apiFetchJson(`/api/chat/calls/${roomId}/join`, {
+        const joinRes = await apiFetchJson<{ operation_status?: string; user_message?: string }>(`/api/chat/calls/${roomId}/join`, {
           method: "POST",
           headers: buildCallMutationHeaders(),
         });
         setRingDismissedRoomId(null);
         setActiveRoomId(roomId);
         setCallState("connecting_media");
-        await connectLiveKitRoom(conversation.id);
-        setCallState("connected");
-        onToast(successMessage, "success");
+        setConnectionState("connecting");
+        try {
+          await connectLiveKitRoom(conversation.id);
+          setCallState("connected");
+          setConnectionState("connected");
+          setMediaError(null);
+          onToast(joinRes.user_message || successMessage, "success");
+        } catch (connectError) {
+          setCallState("connected");
+          setConnectionState("reconnecting");
+          const msg = connectError instanceof ApiError ? connectError.message : "Joined call, but audio is still connecting.";
+          setMediaError(msg);
+          onToast(msg, "info");
+        }
         void mutateCalendar();
         void mutateCallState();
       } catch (error) {
@@ -2019,7 +2082,6 @@ function ChatWorkspace({
           void mutateCallState();
           return;
         }
-        setConnectionState("failed");
         const msg = error instanceof ApiError ? error.message : "Unable to join call.";
         onToast(msg, "error");
       } finally {
@@ -2044,6 +2106,8 @@ function ChatWorkspace({
       setCallState("connecting_media");
       await connectLiveKitRoom(conversation.id);
       setCallState("connected");
+      setConnectionState("connected");
+      setMediaError(null);
       void mutateCalendar();
       void mutateCallState();
       onToast("Reconnected to call.", "success");
@@ -2599,6 +2663,8 @@ function ChatWorkspace({
             void mutatePrefs();
             onMutateConversations();
           }}
+          ringVolume={ringVolume}
+          onRingVolumeChange={setRingVolume}
           onToast={onToast}
         />
       ) : null}
@@ -3019,6 +3085,8 @@ function ChatContextDrawer({
   onExternalInvitesChanged,
   onPinnedChanged,
   onPreferencesSaved,
+  ringVolume,
+  onRingVolumeChange,
   onToast,
 }: {
   view: DrawerView;
@@ -3036,6 +3104,8 @@ function ChatContextDrawer({
   onExternalInvitesChanged: () => void;
   onPinnedChanged: () => void;
   onPreferencesSaved: () => void;
+  ringVolume: number;
+  onRingVolumeChange: (next: number) => void;
   onToast: (message: string, tone?: ToastTone) => void;
 }) {
   const conversationPreference = preferences?.conversations.find((pref) => pref.conversation_id === conversationId);
@@ -3308,6 +3378,21 @@ function ChatContextDrawer({
               checked={preferences?.user.desktop_sound ?? true}
               onChange={async (checked) => savePreference({ desktop_sound: checked })}
             />
+            <div className="rounded-lg border border-[#33405d] bg-[#121a30] px-3 py-2">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-sm text-slate-200">Ringtone volume</span>
+                <span className="text-[11px] text-slate-400">{Math.round(ringVolume * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min={10}
+                max={100}
+                step={5}
+                value={Math.round(ringVolume * 100)}
+                onChange={(e) => onRingVolumeChange(Math.min(1, Math.max(0.1, Number(e.target.value) / 100)))}
+                className="w-full accent-indigo-500"
+              />
+            </div>
             <ToggleRow
               label="Email digest"
               checked={preferences?.user.email_digest ?? false}

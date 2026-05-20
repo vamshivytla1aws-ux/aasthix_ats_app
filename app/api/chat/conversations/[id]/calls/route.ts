@@ -69,26 +69,39 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     const systemMessage =
       mode === "screenshare"
-        ? `call_started: Screen share session started. Join: ${room.join_url}`
-        : `call_started: Call started. Join: ${room.join_url}`;
-    await query(
-      `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-      [conversationId, access.user_id, systemMessage],
-    );
-    await logCallEvent({
-      roomId: Number(room.id),
-      conversationId,
-      userId: access.user_id,
-      eventType: "call_start",
-      eventKey: requestKey || `call_start:${room.id}:${access.user_id}`,
-      metadata: { session_mode: mode },
-    });
-    await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+        ? "Screen share started."
+        : "Call started.";
+    try {
+      await query(
+        `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+        [conversationId, access.user_id, systemMessage],
+      );
+    } catch (error) {
+      console.warn("[chat-calls] failed to write call start system message", error);
+    }
+    try {
+      await logCallEvent({
+        roomId: Number(room.id),
+        conversationId,
+        userId: access.user_id,
+        eventType: "call_start",
+        eventKey: requestKey || `call_start:${room.id}:${access.user_id}`,
+        metadata: { session_mode: mode },
+      });
+    } catch (error) {
+      console.warn("[chat-calls] failed to write call_start event", error);
+    }
+    try {
+      await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+    } catch (error) {
+      console.warn("[chat-calls] failed to touch conversation timestamp", error);
+    }
 
     return NextResponse.json({
       operation_status: "success",
       user_message: `${modeLabel} created successfully.`,
-      event: room,
+      room,
+      room_state: room,
       join_link: room.join_url || null,
       session_mode: mode,
       is_active: true,
@@ -100,9 +113,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json(
       {
         operation_status: "error",
+        user_message: "Unable to start call.",
         error: error instanceof Error ? error.message : "Failed to start call.",
       },
-      { status: 400 },
+      { status: 500 },
     );
   }
 }
@@ -151,29 +165,53 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
         { status: 409 },
       );
     }
-    await query(
-      `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`,
-      [eventId],
-    );
-    await query(
-      `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-      [conversationId, access.user_id, `call_ended: Call ended: ${event.title}`],
-    );
-    await logCallEvent({
-      roomId: Number(event.id),
-      conversationId,
-      userId: access.user_id,
-      eventType: "end",
-      eventKey: requestKey || `call_end:${event.id}:${access.user_id}`,
-      metadata: { reason: "ended" },
-    });
-    await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+    try {
+      await query(
+        `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`,
+        [eventId],
+      );
+    } catch (error) {
+      console.warn("[chat-calls] failed to close open participants on call end", error);
+    }
+    try {
+      await query(
+        `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+        [conversationId, access.user_id, "Call ended."],
+      );
+    } catch (error) {
+      console.warn("[chat-calls] failed to write call end system message", error);
+    }
+    try {
+      await logCallEvent({
+        roomId: Number(event.id),
+        conversationId,
+        userId: access.user_id,
+        eventType: "end",
+        eventKey: requestKey || `call_end:${event.id}:${access.user_id}`,
+        metadata: { reason: "ended" },
+      });
+    } catch (error) {
+      console.warn("[chat-calls] failed to write call end event", error);
+    }
+    try {
+      await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+    } catch (error) {
+      console.warn("[chat-calls] failed to touch conversation timestamp on call end", error);
+    }
 
     return NextResponse.json({
       operation_status: "success",
       user_message: "Call ended successfully.",
+      room_closed_reason: "ended",
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to end call." }, { status: 400 });
+    return NextResponse.json(
+      {
+        operation_status: "error",
+        user_message: "Unable to end call.",
+        error: error instanceof Error ? error.message : "Failed to end call.",
+      },
+      { status: 500 },
+    );
   }
 }

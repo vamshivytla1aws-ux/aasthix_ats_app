@@ -81,7 +81,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
           await query(
             `INSERT INTO messages (conversation_id, sender_id, content, is_system)
              VALUES ($1, NULL, $2, TRUE)`,
-            [conversationId, "call_ended: Call ended due to no participants"],
+            [conversationId, "Call ended due to no participants."],
           );
           return NextResponse.json({ operation_status: "success", call: null });
         }
