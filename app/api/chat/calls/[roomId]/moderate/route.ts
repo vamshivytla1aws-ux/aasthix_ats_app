@@ -9,6 +9,23 @@ export const dynamic = "force-dynamic";
 
 type Action = "end_for_all" | "remove_participant" | "mute_participant";
 
+async function canTargetParticipant(conversationId: number, targetUserId: number) {
+  if (!Number.isFinite(targetUserId) || targetUserId <= 0) return false;
+  const targetRes = await query(
+    `
+    SELECT 1
+    FROM users u
+    JOIN conversation_members cm
+      ON cm.user_id = u.id
+    WHERE u.id = $1
+      AND cm.conversation_id = $2
+    LIMIT 1
+    `,
+    [targetUserId, conversationId],
+  );
+  return targetRes.rowCount > 0;
+}
+
 export async function POST(request: Request, { params }: { params: { roomId: string } }) {
   try {
     const gate = await requirePermission("chat.view");
@@ -72,6 +89,15 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     if (!Number.isFinite(targetUserId) || targetUserId <= 0) {
       return NextResponse.json({ operation_status: "blocked", user_message: "Target participant is required." }, { status: 400 });
     }
+    if (!(await canTargetParticipant(room.conversation_id, targetUserId))) {
+      return NextResponse.json(
+        {
+          operation_status: "blocked",
+          user_message: "Target participant is invalid or no longer in this conversation.",
+        },
+        { status: 409 },
+      );
+    }
 
     if (action === "remove_participant") {
       if (requestKey) {
@@ -107,11 +133,15 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         access.user_id,
         `participant_removed: Participant removed from call`,
       ]);
-      await query(
-        `INSERT INTO chat_call_signals (room_id, from_user_id, to_user_id, signal_type, payload)
-         VALUES ($1, $2, $3, 'moderation_remove', '{}'::jsonb)`,
-        [roomId, access.user_id, targetUserId],
-      );
+      try {
+        await query(
+          `INSERT INTO chat_call_signals (room_id, from_user_id, to_user_id, signal_type, payload)
+           VALUES ($1, $2, $3, 'moderation_remove', '{}'::jsonb)`,
+          [roomId, access.user_id, targetUserId],
+        );
+      } catch {
+        // Avoid breaking moderator flow if target disappears between validation and signal insert.
+      }
       await logCallEvent({
         roomId,
         conversationId: room.conversation_id,
@@ -142,11 +172,15 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         access.user_id,
         `participant_muted: Participant muted by moderator`,
       ]);
-      await query(
-        `INSERT INTO chat_call_signals (room_id, from_user_id, to_user_id, signal_type, payload)
-         VALUES ($1, $2, $3, 'moderation_mute', '{}'::jsonb)`,
-        [roomId, access.user_id, targetUserId],
-      );
+      try {
+        await query(
+          `INSERT INTO chat_call_signals (room_id, from_user_id, to_user_id, signal_type, payload)
+           VALUES ($1, $2, $3, 'moderation_mute', '{}'::jsonb)`,
+          [roomId, access.user_id, targetUserId],
+        );
+      } catch {
+        // Avoid breaking moderator flow if target disappears between validation and signal insert.
+      }
       await logCallEvent({
         roomId,
         conversationId: room.conversation_id,

@@ -14,6 +14,36 @@ function normalizeSignalType(value: unknown): SignalType {
   return "ice";
 }
 
+async function resolveTargetUserId(roomId: number, conversationId: number, rawTarget: unknown) {
+  const parsed = Number(rawTarget);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  const targetId = Math.trunc(parsed);
+  const targetRes = await query(
+    `
+    SELECT u.id
+    FROM users u
+    JOIN conversation_members cm
+      ON cm.user_id = u.id
+    WHERE u.id = $1
+      AND cm.conversation_id = $2
+    LIMIT 1
+    `,
+    [targetId, conversationId],
+  );
+  if (!targetRes.rowCount) {
+    await logCallEvent({
+      roomId,
+      conversationId,
+      userId: null,
+      eventType: "signal_target_invalid",
+      metadata: { target_user_id: targetId },
+      eventKey: `signal_target_invalid:${roomId}:${targetId}:${Date.now()}`,
+    });
+    return null;
+  }
+  return targetId;
+}
+
 export async function GET(request: Request, { params }: { params: { roomId: string } }) {
   try {
     const gate = await requirePermission("chat.view");
@@ -78,8 +108,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
 
     const body = await request.json().catch(() => ({}));
     const signalType = normalizeSignalType(body?.signal_type);
-    const toUserIdRaw = Number(body?.to_user_id);
-    const toUserId = Number.isFinite(toUserIdRaw) ? toUserIdRaw : null;
+    const toUserId = await resolveTargetUserId(roomId, room.conversation_id, body?.to_user_id);
     const payload = body?.payload && typeof body.payload === "object" ? body.payload : {};
     if (signalType === "presenting") {
       const policy = await getChatCallPolicy();
