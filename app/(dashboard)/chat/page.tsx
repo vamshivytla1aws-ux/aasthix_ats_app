@@ -827,26 +827,6 @@ function ChatWorkspace({
   );
   const messages = useMemo(() => messageData?.messages ?? [], [messageData]);
 
-  useEffect(() => {
-    const stream = new EventSource(`/api/chat/realtime?conversation_id=${conversation.id}`);
-    const onEvent = () => {
-      void mutateMessages();
-      onMutateConversations();
-    };
-    stream.addEventListener("message.created", onEvent);
-    stream.addEventListener("message.updated", onEvent);
-    stream.addEventListener("message.deleted", onEvent);
-    stream.addEventListener("thread.reply", onEvent);
-    stream.addEventListener("error", () => {});
-    return () => {
-      stream.removeEventListener("message.created", onEvent);
-      stream.removeEventListener("message.updated", onEvent);
-      stream.removeEventListener("message.deleted", onEvent);
-      stream.removeEventListener("thread.reply", onEvent);
-      stream.close();
-    };
-  }, [conversation.id, mutateMessages, onMutateConversations]);
-
   const { data: searchData } = useSWR<{ results: SearchResult[] }>(
     searchQ.trim().length < 2
       ? null
@@ -899,20 +879,45 @@ function ChatWorkspace({
 
   useEffect(() => {
     const stream = new EventSource(`/api/chat/realtime?conversation_id=${conversation.id}`);
-    const onCallishEvent = () => {
+    const onMessageEvent = () => {
+      void mutateMessages();
+      onMutateConversations();
+    };
+    const onCallEvent = () => {
       void mutateCallState();
       void mutateCalendar();
+      void mutateMessages();
+      onMutateConversations();
     };
-    stream.addEventListener("message.created", onCallishEvent);
-    stream.addEventListener("message.updated", onCallishEvent);
-    stream.addEventListener("thread.reply", onCallishEvent);
+    stream.addEventListener("message.created", onMessageEvent);
+    stream.addEventListener("message.updated", onMessageEvent);
+    stream.addEventListener("message.deleted", onMessageEvent);
+    stream.addEventListener("thread.reply", onMessageEvent);
+    stream.addEventListener("call.state", onCallEvent);
+    stream.addEventListener("call.call_start", onCallEvent);
+    stream.addEventListener("call.join_success", onCallEvent);
+    stream.addEventListener("call.leave", onCallEvent);
+    stream.addEventListener("call.end", onCallEvent);
+    stream.addEventListener("call.decline", onCallEvent);
+    stream.addEventListener("call.declined", onCallEvent);
+    stream.addEventListener("call.timeout", onCallEvent);
+    stream.addEventListener("error", () => {});
     return () => {
-      stream.removeEventListener("message.created", onCallishEvent);
-      stream.removeEventListener("message.updated", onCallishEvent);
-      stream.removeEventListener("thread.reply", onCallishEvent);
+      stream.removeEventListener("message.created", onMessageEvent);
+      stream.removeEventListener("message.updated", onMessageEvent);
+      stream.removeEventListener("message.deleted", onMessageEvent);
+      stream.removeEventListener("thread.reply", onMessageEvent);
+      stream.removeEventListener("call.state", onCallEvent);
+      stream.removeEventListener("call.call_start", onCallEvent);
+      stream.removeEventListener("call.join_success", onCallEvent);
+      stream.removeEventListener("call.leave", onCallEvent);
+      stream.removeEventListener("call.end", onCallEvent);
+      stream.removeEventListener("call.decline", onCallEvent);
+      stream.removeEventListener("call.declined", onCallEvent);
+      stream.removeEventListener("call.timeout", onCallEvent);
       stream.close();
     };
-  }, [conversation.id, mutateCallState, mutateCalendar]);
+  }, [conversation.id, mutateMessages, mutateCallState, mutateCalendar, onMutateConversations]);
 
   useEffect(() => {
     if (conversation.unread_count > 0) {
@@ -1955,7 +1960,7 @@ function ChatWorkspace({
           `/api/chat/calls/${activeCall.id}/moderate`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
             body: JSON.stringify({ action, target_user_id: targetUserId ?? null }),
           }
         );
