@@ -87,11 +87,21 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
         [roomId, targetUserId],
       );
-      await query(
-        `INSERT INTO chat_call_removed_participants (room_id, user_id, removed_by_user_id) VALUES ($1, $2, $3)
-         ON CONFLICT (room_id, user_id) DO UPDATE SET removed_by_user_id = EXCLUDED.removed_by_user_id, created_at = NOW()`,
-        [roomId, targetUserId, access.user_id],
+      const existingRemoved = await query(
+        `SELECT 1 FROM chat_call_removed_participants WHERE room_id = $1 AND user_id = $2 LIMIT 1`,
+        [roomId, targetUserId],
       );
+      if (existingRemoved.rowCount) {
+        await query(
+          `UPDATE chat_call_removed_participants SET removed_by_user_id = $3, created_at = NOW() WHERE room_id = $1 AND user_id = $2`,
+          [roomId, targetUserId, access.user_id],
+        );
+      } else {
+        await query(
+          `INSERT INTO chat_call_removed_participants (room_id, user_id, removed_by_user_id) VALUES ($1, $2, $3)`,
+          [roomId, targetUserId, access.user_id],
+        );
+      }
       await query(`INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`, [
         room.conversation_id,
         access.user_id,

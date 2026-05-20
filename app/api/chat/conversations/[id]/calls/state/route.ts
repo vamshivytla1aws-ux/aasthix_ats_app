@@ -27,7 +27,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         SELECT id, status, mode AS session_mode, start_at, end_at, created_by_user_id
         FROM chat_call_rooms
         WHERE conversation_id = $1
-        ORDER BY id DESC
+        ORDER BY
+          CASE WHEN status IN ('active', 'scheduled') THEN 0 ELSE 1 END,
+          id DESC
         LIMIT 1
       ) t
       `,
