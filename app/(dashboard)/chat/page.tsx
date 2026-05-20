@@ -143,6 +143,8 @@ type ChatCalendarEvent = {
   room_closed_reason?: "ended" | "missed" | "declined" | "timeout" | null;
   connection_state?: "idle" | "connecting" | "connected" | "reconnecting" | "failed";
   media_state?: "ok" | "permission_denied" | "device_missing" | "failed" | "ready";
+  can_join?: boolean;
+  can_end?: boolean;
 };
 type ConversationLiveStatus = {
   conversation_id: number;
@@ -1153,28 +1155,9 @@ function ChatWorkspace({
     [uploadFiles]
   );
   const activeCall = useMemo(() => {
-    if (callStateData?.call) return callStateData.call;
-    const now = nowTick;
-    const events = calendarData?.events ?? [];
-    const ranked = events
-      .filter((event) => {
-        if (event.status !== "active" && event.status !== "scheduled") return false;
-        const joinUrl = event.join_url || event.meet_link;
-        if (!joinUrl) return false;
-        const start = new Date(event.start_at).getTime() - 5 * 60_000;
-        const end = new Date(event.end_at).getTime();
-        const isWindowActive = now >= start && now <= end;
-        if (event.status === "active") return true;
-        return isWindowActive;
-      })
-      .sort((a, b) => {
-        const score = (event: ChatCalendarEvent) => (event.status === "active" ? 0 : 1);
-        const byStatus = score(a) - score(b);
-        if (byStatus !== 0) return byStatus;
-        return new Date(b.start_at).getTime() - new Date(a.start_at).getTime();
-      });
-    return ranked[0] ?? null;
-  }, [callStateData, calendarData, nowTick]);
+    const call = callStateData?.call ?? null;
+    return call && call.is_active ? call : null;
+  }, [callStateData]);
 
   const activeCallDuration = useMemo(() => {
     if (!activeCall) return "00:00";
@@ -1237,23 +1220,20 @@ function ChatWorkspace({
       (activeCall.joined_participants ?? []).map((member) => Number(member.user_id));
     const meJoined = joinedUserIds.includes(Number(currentUserId || 0));
     const dismissed = ringDismissedRoomId === roomId;
-    if (activeCall.status === "ended" || activeCall.status === "cancelled") {
-      setCallState("idle");
+    let nextState: "idle" | "ringing_outgoing" | "ringing_incoming" | "connecting_media" | "connected" = "idle";
+    if (activeCall.status === "ended" || activeCall.status === "cancelled" || activeCall.is_active === false) {
       setActiveRoomId(null);
     } else if (activeCall.status === "active") {
       if (meJoined || activeRoomId === roomId) {
-        if (callState !== "connecting_media") setCallState("connected");
-      } else if (!dismissed) {
-        setCallState("ringing_incoming");
-      } else {
-        setCallState("idle");
+        nextState = callState === "connecting_media" ? "connecting_media" : "connected";
+      } else if (!dismissed && activeCall.can_join !== false) {
+        nextState = "ringing_incoming";
       }
-    } else if (activeCall.status === "scheduled" && isHost) {
-      if (!dismissed) setCallState("ringing_outgoing");
-    } else if (dismissed) {
-      setCallState("idle");
+    } else if (activeCall.status === "scheduled" && isHost && !dismissed) {
+      nextState = "ringing_outgoing";
     }
-    if ((prefData?.user?.desktop_sound ?? true) && (callState === "ringing_incoming" || callState === "ringing_outgoing")) {
+    if (nextState !== callState) setCallState(nextState);
+    if ((prefData?.user?.desktop_sound ?? true) && (nextState === "ringing_incoming" || nextState === "ringing_outgoing")) {
       if (!ringIntervalRef.current) {
         playTone("ring", 240);
         ringIntervalRef.current = window.setInterval(() => playTone("ring", 240), 1200);
@@ -1263,7 +1243,7 @@ function ChatWorkspace({
       ringIntervalRef.current = null;
     }
     return () => {
-      if (ringIntervalRef.current && callState === "connected") {
+      if (ringIntervalRef.current && nextState === "connected") {
         window.clearInterval(ringIntervalRef.current);
         ringIntervalRef.current = null;
       }
@@ -1803,6 +1783,14 @@ function ChatWorkspace({
   const joinCallRoom = useCallback(
     async (roomId: number, successMessage = "Joined call.") => {
       if (callActionRef.current.joining) return;
+      if (activeCall && Number(activeCall.id) === Number(roomId) && activeCall.can_join === false) {
+        setCallState("idle");
+        setActiveRoomId(null);
+        setRingDismissedRoomId(roomId);
+        onToast("This call is no longer active.", "info");
+        void mutateCallState();
+        return;
+      }
       try {
         callActionRef.current.joining = true;
         await apiFetchJson(`/api/chat/calls/${roomId}/join`, {
@@ -1834,7 +1822,7 @@ function ChatWorkspace({
         callActionRef.current.joining = false;
       }
     },
-    [connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast]
+    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast]
   );
 
   const retryCallConnection = useCallback(async () => {
@@ -2461,7 +2449,7 @@ function ChatWorkspace({
                   Decline
                 </button>
               </>
-            ) : callState !== "connected" ? (
+            ) : callState !== "connected" && activeCall.can_join !== false ? (
               <button
                 type="button"
                 onClick={async () => joinCallRoom(activeCall.id, "Joined call.")}
@@ -2511,15 +2499,15 @@ function ChatWorkspace({
             <button
               type="button"
               onClick={async () => {
-                if (activeRoomId === activeCall.id || callState === "connected") {
-                  if (liveKitRoomRef.current?.localParticipant?.setScreenShareEnabled) {
-                    await toggleScreenShare(activeCall.id);
-                  } else {
-                    onToast("Screen share is not available in this session.", "error");
-                  }
+                if (!(activeRoomId === activeCall.id || callState === "connected")) {
+                  onToast("Join the active call first to share your screen.", "info");
                   return;
                 }
-                await launchCall("screenshare");
+                if (liveKitRoomRef.current?.localParticipant?.setScreenShareEnabled) {
+                  await toggleScreenShare(activeCall.id);
+                } else {
+                  onToast("Screen share is not available in this session.", "error");
+                }
               }}
               className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/25"
             >

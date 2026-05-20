@@ -73,17 +73,23 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     }
 
     const requestKey = _request.headers.get("x-idempotency-key")?.trim() || "";
-    await query(
-      `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
+    const activeRowRes = await query(
+      `SELECT 1 FROM chat_call_participants WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL LIMIT 1`,
       [roomId, access.user_id],
     );
-    await query(
-      `
-      INSERT INTO chat_call_participants (room_id, user_id, joined_at, left_at)
-      VALUES ($1, $2, NOW(), NULL)
-      `,
-      [roomId, access.user_id],
-    );
+    if (!activeRowRes.rowCount) {
+      await query(
+        `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
+        [roomId, access.user_id],
+      );
+      await query(
+        `
+        INSERT INTO chat_call_participants (room_id, user_id, joined_at, left_at)
+        VALUES ($1, $2, NOW(), NULL)
+        `,
+        [roomId, access.user_id],
+      );
+    }
     await query(
       `UPDATE chat_call_rooms SET status = 'active', updated_at = NOW() WHERE id = $1 AND status IN ('scheduled','active')`,
       [roomId],

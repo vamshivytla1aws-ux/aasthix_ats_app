@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { buildLiveKitRoomName } from "@/lib/livekit";
+import { logCallEvent } from "@/lib/chatCallGovernance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +55,38 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       user_id: Number(p.user_id),
       full_name: String(p.full_name || "Unknown user"),
     }));
+    const isTerminal = room.status === "ended" || room.status === "cancelled";
+    const isActiveLike = room.status === "active" || room.status === "scheduled";
+    const meJoined = participants.some((p) => Number(p.user_id) === Number(access.user_id));
+
+    if (room.status === "active" && participants.length === 0) {
+      const ageMs = Date.now() - new Date(room.start_at).getTime();
+      if (ageMs >= 60_000) {
+        const closeRes = await query(
+          `UPDATE chat_call_rooms
+           SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+           WHERE id = $1 AND status = 'active'
+           RETURNING id`,
+          [room.id],
+        );
+        if (closeRes.rowCount) {
+          await query(`UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`, [room.id]);
+          await logCallEvent({
+            roomId: room.id,
+            conversationId,
+            eventType: "end",
+            metadata: { reason: "timeout" },
+            eventKey: `auto_timeout:${room.id}`,
+          });
+          await query(
+            `INSERT INTO messages (conversation_id, sender_id, content, is_system)
+             VALUES ($1, NULL, $2, TRUE)`,
+            [conversationId, "call_ended: Call ended due to no participants"],
+          );
+          return NextResponse.json({ operation_status: "success", call: null });
+        }
+      }
+    }
     const presentingRes = await query(
       `
       SELECT from_user_id, payload
@@ -84,13 +117,15 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         room_name: buildLiveKitRoomName(conversationId, Number(room.id)),
         joined_count: participants.length,
         joined_participants: participants,
-        is_active: room.status === "active" || room.status === "scheduled",
+        is_active: isActiveLike && !isTerminal,
         status_kind: isPresenting || room.session_mode === "screenshare" ? "presenting" : "in_call",
         is_presenting: isPresenting,
         presenter_user_id: presenterUserId,
         room_closed_reason: roomClosedReason || null,
         connection_state: room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle",
         media_state: "ok",
+        can_join: !isTerminal && isActiveLike,
+        can_end: !isTerminal && (Number(room.created_by_user_id || 0) === Number(access.user_id) || meJoined),
       },
     });
   } catch (error) {

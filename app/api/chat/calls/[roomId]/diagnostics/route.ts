@@ -67,6 +67,12 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
           room_closed_reason: roomClosedReason || null,
           connection_state: room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle",
           media_state: "ok",
+          is_active: room.status === "active" || room.status === "scheduled",
+          can_join: room.status === "active" || room.status === "scheduled",
+          can_end:
+            room.status === "active" || room.status === "scheduled"
+              ? (Number(room.created_by_user_id || 0) === Number(access.user_id) || activeParticipants.some((p) => Number(p.user_id) === Number(access.user_id)))
+              : false,
         },
         participants: participantsRes.rows,
         recent_events: eventsRes.rows,

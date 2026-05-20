@@ -11,11 +11,21 @@ export async function POST() {
     const gate = await requireAdmin();
     if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
     const staleRes = await query(
-      `SELECT id, conversation_id
-       FROM chat_call_rooms
-       WHERE status IN ('active', 'scheduled')
-         AND end_at < NOW() - INTERVAL '5 minutes'
-       LIMIT 200`,
+      `
+      SELECT r.id, r.conversation_id
+      FROM chat_call_rooms r
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS active_count
+        FROM chat_call_participants p
+        WHERE p.room_id = r.id AND p.left_at IS NULL
+      ) c ON TRUE
+      WHERE r.status IN ('active', 'scheduled')
+        AND (
+          r.end_at < NOW() - INTERVAL '5 minutes'
+          OR (r.status = 'active' AND COALESCE(c.active_count, 0) = 0 AND r.start_at < NOW() - INTERVAL '60 seconds')
+        )
+      LIMIT 200
+      `,
     );
     let closed = 0;
     for (const row of staleRes.rows as Array<{ id: number; conversation_id: number }>) {
@@ -38,7 +48,7 @@ export async function POST() {
         roomId: row.id,
         conversationId: row.conversation_id,
         eventType: "end",
-        metadata: { reason: "stale_timeout" },
+        metadata: { reason: "timeout" },
         eventKey: `stale_end:${row.id}`,
       });
     }

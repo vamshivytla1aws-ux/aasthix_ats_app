@@ -28,11 +28,19 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
     const room = roomRes.rows[0] as { id: number; title: string } | undefined;
     if (!room) {
-      return NextResponse.json({ operation_status: "blocked", user_message: "No active call to end." }, { status: 409 });
+      return NextResponse.json({
+        operation_status: "success",
+        user_message: "Call already ended.",
+        room_closed_reason: "ended",
+      });
     }
     const ended = await endChatCallRoom(Number(room.id), access.user_id);
     if (!ended) {
-      return NextResponse.json({ operation_status: "blocked", user_message: "Call already ended.", room_closed_reason: "ended" }, { status: 409 });
+      return NextResponse.json({
+        operation_status: "success",
+        user_message: "Call already ended.",
+        room_closed_reason: "ended",
+      });
     }
     await query(`UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`, [room.id]);
     await query(
@@ -53,4 +61,3 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
   }
 }
-
