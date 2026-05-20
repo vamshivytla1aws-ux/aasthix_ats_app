@@ -1467,35 +1467,7 @@ function ChatWorkspace({
       window.clearTimeout(unansweredTimeoutRef.current);
       unansweredTimeoutRef.current = null;
     }
-    if (!activeCall) return;
-    const isHost = Number(activeCall.created_by_user_id || 0) === Number(currentUserId || 0);
-    const joined = Number(activeCall.joined_count || 0);
-    if (!isHost || callState !== "ringing_outgoing" || joined > 1) return;
-    unansweredTimeoutRef.current = window.setTimeout(async () => {
-      try {
-        await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls?event_id=${activeCall.id}`, {
-          method: "DELETE",
-          headers: buildCallMutationHeaders(),
-        });
-        setCallState("idle");
-        setActiveRoomId(null);
-        setRingDismissedRoomId(activeCall.id);
-        onToast("No one joined. Call ended automatically.", "info");
-        void mutateCalendar();
-        void mutateCallState();
-        void mutateMessages();
-        onMutateConversations();
-      } catch {
-        // no-op
-      }
-    }, 35_000);
-    return () => {
-      if (unansweredTimeoutRef.current) {
-        window.clearTimeout(unansweredTimeoutRef.current);
-        unansweredTimeoutRef.current = null;
-      }
-    };
-  }, [activeCall, callState, currentUserId, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast]);
+  }, [activeCall, callState]);
 
   const stopMediaSession = useCallback(() => {
     setIsPresenting(false);
@@ -1635,6 +1607,17 @@ function ChatWorkspace({
           const mediaEl = track.attach() as HTMLMediaElement;
           mediaEl.autoplay = true;
           mediaEl.muted = false;
+          mediaEl.volume = 1;
+          mediaEl.setAttribute("playsinline", "true");
+          if (!mediaEl.parentElement && typeof document !== "undefined") {
+            mediaEl.style.position = "fixed";
+            mediaEl.style.width = "1px";
+            mediaEl.style.height = "1px";
+            mediaEl.style.opacity = "0";
+            mediaEl.style.pointerEvents = "none";
+            mediaEl.setAttribute("aria-hidden", "true");
+            document.body.appendChild(mediaEl);
+          }
           liveKitAudioRef.current.set(String(publication?.trackSid || `${participant?.identity || "p"}-${Date.now()}`), mediaEl);
           void mediaEl.play().catch(() => {
             setMediaError("Remote audio was blocked by browser autoplay. Click anywhere and try Join now again.");
@@ -1655,6 +1638,9 @@ function ChatWorkspace({
             } catch {
               // no-op
             }
+            if (mediaEl.parentElement) {
+              mediaEl.parentElement.removeChild(mediaEl);
+            }
             liveKitAudioRef.current.delete(key);
           }
         } catch {
@@ -1664,7 +1650,9 @@ function ChatWorkspace({
       await room.connect(tokenData.livekit_url, tokenData.token, {
         autoSubscribe: true,
       });
-      await room.localParticipant.setMicrophoneEnabled(true);
+      await room.localParticipant.setMicrophoneEnabled(true).catch((error: unknown) => {
+        setMediaError(error instanceof Error ? error.message : "Unable to publish microphone audio.");
+      });
       await room.localParticipant.setCameraEnabled(false).catch(() => {});
       liveKitRoomRef.current = room;
       liveKitConnectedRef.current = true;
@@ -2028,13 +2016,6 @@ function ChatWorkspace({
       setMediaError(null);
       try {
         callActionRef.current.ending = true;
-        if (activeRoomId === eventId) {
-          await sendSignal(eventId, "leave", {});
-        }
-        await apiFetchJson(`/api/chat/calls/${eventId}/leave`, {
-          method: "POST",
-          headers: buildCallMutationHeaders(),
-        }).catch(() => {});
         await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls/end`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
@@ -2054,7 +2035,7 @@ function ChatWorkspace({
         callActionRef.current.ending = false;
       }
     },
-    [activeRoomId, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast, sendSignal, stopMediaSession]
+    [conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast, stopMediaSession]
   );
 
   const joinCallRoom = useCallback(
