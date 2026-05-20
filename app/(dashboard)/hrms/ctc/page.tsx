@@ -9,7 +9,16 @@ import { dashboardFetcher } from "@/lib/swrFetcher";
 import { apiFetchJson } from "@/lib/apiClient";
 import { UI } from "@/lib/ui";
 
-type EmployeeOption = { id: number; full_name: string; email: string };
+type EmployeeOption = {
+  id: number;
+  full_name: string;
+  email: string;
+  employee_code?: string;
+  department?: string;
+  designation?: string;
+  joining_date?: string;
+  work_location?: string;
+};
 type CtcHistoryRow = {
   id: number;
   ctc_annual: number;
@@ -56,6 +65,14 @@ export default function HrmsCtcPage() {
   );
 
   const selectedEmployee = (employeesSwr.data?.employees || []).find((emp) => emp.id === employeeId);
+
+  React.useEffect(() => {
+    if (!selectedEmployee) return;
+    setEmployeeCode(String(selectedEmployee.employee_code || ""));
+    setDepartment(String(selectedEmployee.department || ""));
+    setDesignation(String(selectedEmployee.designation || ""));
+    setWorkLocation(String(selectedEmployee.work_location || ""));
+  }, [selectedEmployee]);
 
   React.useEffect(() => {
     const head = historySwr.data?.history?.[0];
@@ -175,6 +192,14 @@ export default function HrmsCtcPage() {
           <div className="mt-2 text-xs text-[var(--ats-text-muted)]">
             {selectedEmployee ? `Managing CTC for ${selectedEmployee.full_name}` : "Select an employee to view CTC history."}
           </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a className={UI.secondaryButton + " py-2 text-sm"} href="/hrms/payroll">
+              Open Payroll Control
+            </a>
+            <a className={UI.secondaryButton + " py-2 text-sm"} href="/salary">
+              Open Salary / Payslips
+            </a>
+          </div>
         </section>
 
         <section className={UI.card + " mt-4 p-4 sm:p-5"}>
@@ -229,4 +254,3 @@ export default function HrmsCtcPage() {
     </AccessGate>
   );
 }
-

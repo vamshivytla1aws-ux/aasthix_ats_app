@@ -11,7 +11,17 @@ import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import { getMonthDaysFromDateString } from "@/lib/salary/monthDays";
 
-type EmployeeOption = { id: number; full_name: string; email: string; role: string };
+type EmployeeOption = {
+  id: number;
+  full_name: string;
+  email: string;
+  role: string;
+  employee_code?: string;
+  department?: string;
+  designation?: string;
+  joining_date?: string;
+  work_location?: string;
+};
 type SalaryComponent = { key: string; name: string; type: "earning" | "deduction"; annual: number; monthly: number; amountForMonth?: number };
 type SalaryCalculation = {
   earningsAnnual: SalaryComponent[];
@@ -91,6 +101,15 @@ export default function SalaryPage() {
   );
 
   const selectedEmployee = (employeesSwr.data?.employees || []).find((e) => e.id === employeeId);
+
+  React.useEffect(() => {
+    if (!selectedEmployee || employeeId <= 0) return;
+    setEmployeeCode(String(selectedEmployee.employee_code || ""));
+    setDepartment(String(selectedEmployee.department || ""));
+    setDesignation(String(selectedEmployee.designation || ""));
+    setDateOfJoining(String(selectedEmployee.joining_date || ""));
+    setWorkLocation(String(selectedEmployee.work_location || ""));
+  }, [employeeId, selectedEmployee]);
 
   React.useEffect(() => {
     const structure = structureSwr.data?.structure;

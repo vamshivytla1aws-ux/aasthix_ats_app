@@ -5,11 +5,11 @@ import { deactivateEmployee, updateEmployee, type EmployeeDirectoryInput } from 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+export async function PATCH(request: Request, context: { params: { id: string } }) {
   try {
     const auth = await requirePermission("employee_directory.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-    const { id: idRaw } = await context.params;
+    const { id: idRaw } = context.params;
     const id = Number(idRaw);
     if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "Invalid employee id." }, { status: 400 });
     const body = (await request.json().catch(() => null)) as Partial<EmployeeDirectoryInput> | null;
@@ -52,10 +52,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 }
 
-export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(_request: Request, context: { params: { id: string } }) {
   const auth = await requirePermission("employee_directory.manage");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const { id: idRaw } = await context.params;
+  const { id: idRaw } = context.params;
   const id = Number(idRaw);
   if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "Invalid employee id." }, { status: 400 });
   try {

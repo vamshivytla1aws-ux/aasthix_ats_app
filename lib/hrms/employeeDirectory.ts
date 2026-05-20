@@ -94,13 +94,14 @@ async function requireResolvableReportingManager(
   throw error;
 }
 
-const usersColumnCache = new Map<string, boolean>();
+const USERS_COLUMN_CACHE_TTL_MS = 60_000;
+const usersColumnCache = new Map<string, { exists: boolean; checkedAt: number }>();
 
 async function hasUsersColumn(columnName: string) {
   const key = columnName.trim().toLowerCase();
   if (!key) return false;
   const cached = usersColumnCache.get(key);
-  if (typeof cached === "boolean") return cached;
+  if (cached && Date.now() - cached.checkedAt < USERS_COLUMN_CACHE_TTL_MS) return cached.exists;
   const res = await query(
     `
       SELECT 1
@@ -113,7 +114,7 @@ async function hasUsersColumn(columnName: string) {
     [key],
   );
   const exists = res.rowCount > 0;
-  usersColumnCache.set(key, exists);
+  usersColumnCache.set(key, { exists, checkedAt: Date.now() });
   return exists;
 }
 
@@ -249,7 +250,7 @@ export async function listEmployees(params: {
   } catch (error) {
     const missingColumn = extractMissingUsersColumn(error);
     if (!missingColumn) throw error;
-    usersColumnCache.set(missingColumn, false);
+    usersColumnCache.set(missingColumn, { exists: false, checkedAt: Date.now() });
     if (missingColumn === "employee_code") invalidateEmployeeCodeCache();
     caps = await getCaps();
     q = buildQuery(caps);
@@ -542,7 +543,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
   } catch (error) {
     const missingColumn = extractMissingUsersColumn(error);
     if (!missingColumn) throw error;
-    usersColumnCache.set(missingColumn, false);
+    usersColumnCache.set(missingColumn, { exists: false, checkedAt: Date.now() });
     return createOnce();
   }
 }
@@ -626,7 +627,7 @@ export async function updateEmployee(id: number, input: EmployeeDirectoryInput, 
   } catch (error) {
     const missingColumn = extractMissingUsersColumn(error);
     if (!missingColumn) throw error;
-    usersColumnCache.set(missingColumn, false);
+    usersColumnCache.set(missingColumn, { exists: false, checkedAt: Date.now() });
     await updateOnce();
   }
 }

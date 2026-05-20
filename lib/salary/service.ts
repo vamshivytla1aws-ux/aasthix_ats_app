@@ -4,15 +4,60 @@ import type { SalaryCalcInput, SalaryCalcResult } from "@/lib/salary/types";
 import { writeAuditLog } from "@/lib/auditLog";
 
 export async function listSalaryEmployees() {
-  const res = await query(
-    `SELECT id, full_name, email, role FROM users ORDER BY LOWER(full_name) ASC, id ASC`,
-    []
-  );
+  const selectWithOptionalColumns = async (withColumns: {
+    employee_code: boolean;
+    department: boolean;
+    designation: boolean;
+    joining_date: boolean;
+    work_location: boolean;
+  }) =>
+    query(
+      `
+      SELECT
+        id,
+        full_name,
+        email,
+        role,
+        ${withColumns.employee_code ? "COALESCE(employee_code, '')" : "''"} AS employee_code,
+        ${withColumns.department ? "COALESCE(department, '')" : "''"} AS department,
+        ${withColumns.designation ? "COALESCE(designation, '')" : "''"} AS designation,
+        ${withColumns.joining_date ? "joining_date" : "NULL::date"} AS joining_date,
+        ${withColumns.work_location ? "COALESCE(work_location, '')" : "''"} AS work_location
+      FROM users
+      ORDER BY LOWER(full_name) ASC, id ASC
+      `,
+      [],
+    );
+
+  let res;
+  try {
+    res = await selectWithOptionalColumns({
+      employee_code: true,
+      department: true,
+      designation: true,
+      joining_date: true,
+      work_location: true,
+    });
+  } catch {
+    res = await selectWithOptionalColumns({
+      employee_code: false,
+      department: false,
+      designation: false,
+      joining_date: false,
+      work_location: false,
+    });
+  }
+
   return res.rows.map((row: any) => ({
     id: Number(row.id),
     full_name: String(row.full_name || ""),
     email: String(row.email || ""),
     role: String(row.role || "user"),
+    employee_code: String(row.employee_code || ""),
+    department: String(row.department || ""),
+    designation: String(row.designation || ""),
+    joining_date: row.joining_date ? String(row.joining_date).slice(0, 10) : "",
+    work_location: String(row.work_location || ""),
   }));
 }
 
