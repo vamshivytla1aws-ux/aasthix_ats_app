@@ -12,6 +12,7 @@ type SignalType =
   | "ice"
   | "leave"
   | "presenting"
+  | "media_repair"
   | "moderation_mute"
   | "moderation_unmute"
   | "moderation_remove"
@@ -25,6 +26,7 @@ function normalizeSignalType(value: unknown): SignalType {
     v === "ice" ||
     v === "leave" ||
     v === "presenting" ||
+    v === "media_repair" ||
     v === "moderation_mute" ||
     v === "moderation_unmute" ||
     v === "moderation_remove" ||

@@ -81,6 +81,29 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       `,
       [roomId],
     );
+    const latestTelemetry = telemetryRes.rows as Array<{
+      user_id: number;
+      full_name: string;
+      created_at: string;
+      metadata?: Record<string, unknown> | null;
+    }>;
+    const telemetryStates = latestTelemetry.map((row) => row.metadata || {});
+    const anyWaitingRemote = telemetryStates.some((m) => String(m.subscribe_state || "") === "waiting_remote");
+    const anyRemoteZero = telemetryStates.some((m) => Number(m.remote_audio_tracks_count || 0) <= 0);
+    const anyAutoplayBlocked = telemetryStates.some((m) => Boolean(m.autoplay_blocked));
+    const anyPublishMissing = telemetryStates.some(
+      (m) => String(m.publish_state || "") !== "published" || !Boolean(m.local_audio_track_present),
+    );
+    const allReconnecting =
+      telemetryStates.length > 0 && telemetryStates.every((m) => String(m.connection_state || "") === "reconnecting");
+    const lastMediaFailure = telemetryStates
+      .map((m) => String(m.media_error || "").trim())
+      .find((value) => Boolean(value));
+    let mediaHealth: "ok" | "reconnect_loop" | "no_remote_tracks" | "playback_blocked" | "publish_missing" = "ok";
+    if (allReconnecting) mediaHealth = "reconnect_loop";
+    else if (anyAutoplayBlocked) mediaHealth = "playback_blocked";
+    else if (anyPublishMissing) mediaHealth = "publish_missing";
+    else if (anyWaitingRemote || anyRemoteZero) mediaHealth = "no_remote_tracks";
     const recentErrors = (eventsRes.rows as Array<{ event_type: string; metadata: unknown; created_at: string }>)
       .filter((e) => e.event_type.includes("fail") || e.event_type.includes("blocked"))
       .slice(0, 8);
@@ -121,6 +144,10 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
           autoplay_blocked: false,
           permission_state: "granted",
           device_state: "ready",
+          media_health: mediaHealth,
+          remote_track_seen: activeParticipants.length > 1 && !anyRemoteZero,
+          playback_started: !anyAutoplayBlocked && activeParticipants.length > 1 && !anyRemoteZero,
+          last_media_failure_reason: lastMediaFailure || null,
           timing_markers: {
             room_started_at: room.start_at,
             first_remote_joined_at: firstJoinedAt,
