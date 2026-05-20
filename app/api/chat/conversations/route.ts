@@ -74,7 +74,19 @@ export async function GET(request: Request) {
       [access.user_id]
     );
 
-    let conversations = res.rows as Array<Record<string, unknown>>;
+    let conversations: Array<Record<string, unknown>> = (res.rows as Array<Record<string, unknown>>).map((row) => {
+      const members = Array.isArray(row.members) ? row.members : [];
+      if (!Array.isArray(row.members) && Math.random() < 0.05) {
+        console.warn("[chat/conversations] normalized malformed members payload", {
+          conversation_id: row.id,
+          had_members: typeof row.members,
+        });
+      }
+      return {
+        ...row,
+        members,
+      };
+    });
 
     if (search) {
       const lc = search.toLowerCase();

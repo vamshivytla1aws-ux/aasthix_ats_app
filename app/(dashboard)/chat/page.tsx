@@ -57,6 +57,8 @@ type Conversation = {
   } | null;
   members: Member[];
 };
+
+type ConversationLike = Partial<Conversation> & { id: number };
 type Message = {
   id: number;
   conversation_id: number;
@@ -209,12 +211,94 @@ function formatFileSize(bytes: number | null) {
 }
 
 function convLabel(conv: Conversation, currentUserId: number | null): string {
+  const safeMembers = Array.isArray(conv.members) ? conv.members : [];
   if (conv.name) return conv.name;
   if (conv.type === "direct") {
-    const other = conv.members.find((m) => m.user_id !== currentUserId);
+    const other = safeMembers.find((m) => m.user_id !== currentUserId);
     return other?.full_name ?? "Direct message";
   }
-  return conv.members.map((m) => m.full_name.split(" ")[0]).join(", ");
+  return safeMembers.map((m) => m.full_name.split(" ")[0]).join(", ") || "Group chat";
+}
+
+function normalizeConversation(conv: ConversationLike): Conversation {
+  return {
+    id: Number(conv.id),
+    name: typeof conv.name === "string" ? conv.name : null,
+    type: conv.type === "group" ? "group" : "direct",
+    created_by: Number(conv.created_by ?? 0),
+    created_at: String(conv.created_at ?? new Date(0).toISOString()),
+    updated_at: String(conv.updated_at ?? new Date(0).toISOString()),
+    last_read_at: String(conv.last_read_at ?? new Date(0).toISOString()),
+    unread_count: Number(conv.unread_count ?? 0),
+    pin_count: Number(conv.pin_count ?? 0),
+    muted: Boolean(conv.muted),
+    mention_only: Boolean(conv.mention_only),
+    last_message:
+      conv.last_message && typeof conv.last_message === "object"
+        ? {
+            id: Number((conv.last_message as Conversation["last_message"])?.id ?? 0),
+            content: String((conv.last_message as Conversation["last_message"])?.content ?? ""),
+            sender_id: Number((conv.last_message as Conversation["last_message"])?.sender_id ?? 0),
+            is_system: Boolean((conv.last_message as Conversation["last_message"])?.is_system),
+            created_at: String((conv.last_message as Conversation["last_message"])?.created_at ?? new Date(0).toISOString()),
+            sender_name: String((conv.last_message as Conversation["last_message"])?.sender_name ?? "Unknown"),
+          }
+        : null,
+    members: Array.isArray(conv.members)
+      ? conv.members.map((m) => ({
+          user_id: Number(m.user_id ?? 0),
+          full_name: String(m.full_name ?? "Unknown user"),
+          email: String(m.email ?? ""),
+        }))
+      : [],
+  };
+}
+
+class ChatPageBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; diagnostic: string }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, diagnostic: "" };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true, diagnostic: `${Date.now()}` };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[chat-page-crash]", {
+      message: error?.message,
+      stack: error?.stack,
+      componentStack: info?.componentStack,
+      route: typeof window !== "undefined" ? window.location.pathname : "/chat",
+      ts: new Date().toISOString(),
+    });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex min-h-[60vh] items-center justify-center p-6">
+          <div className="w-full max-w-lg rounded-2xl border border-red-200 bg-white p-6 text-center shadow-sm">
+            <p className="text-lg font-semibold text-slate-900">Chat hit an unexpected error</p>
+            <p className="mt-2 text-sm text-slate-600">Diagnostic ID: {this.state.diagnostic}</p>
+            <div className="mt-4 flex justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white"
+              >
+                Reload chat
+              </button>
+              <Link href="/dashboard" className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">
+                Go to dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function isImageAttachment(msg: Message) {
@@ -410,7 +494,24 @@ export default function ChatPage() {
     { refreshInterval: 6000 }
   );
 
-  const conversations = useMemo(() => convData?.conversations ?? [], [convData]);
+  const conversations = useMemo(
+    () =>
+      (convData?.conversations ?? [])
+        .map((c) => normalizeConversation(c as ConversationLike))
+        .filter((c) => Number.isFinite(c.id) && c.id > 0),
+    [convData]
+  );
+  useEffect(() => {
+    const raw = convData?.conversations ?? [];
+    if (!raw.length) return;
+    const malformed = raw.filter((c: any) => !Array.isArray(c?.members));
+    if (malformed.length > 0) {
+      console.warn("[chat-mobile-guard] normalized malformed conversation members", {
+        count: malformed.length,
+        sample_ids: malformed.slice(0, 5).map((c: any) => c?.id),
+      });
+    }
+  }, [convData]);
   const { data: threadInboxData } = useSWR<{ inbox: ThreadInboxItem[] }>(
     "/api/chat/threads/inbox",
     dashboardFetcher,
@@ -460,7 +561,8 @@ export default function ChatPage() {
   const unreadTotal = useMemo(() => conversations.reduce((sum, conv) => sum + (conv.unread_count ?? 0), 0), [conversations]);
 
   return (
-    <AccessGate permissionKey="chat.view">
+    <ChatPageBoundary>
+      <AccessGate permissionKey="chat.view">
       <div className={["font-['Sora','Manrope','Inter','Segoe_UI',sans-serif] flex overflow-hidden bg-[#0a0f1f]", desktopFullscreenFit ? "h-[calc(100vh-2px)] rounded-none border-0 shadow-none" : "h-[calc(100vh-7rem)] rounded-2xl border border-[#2c3342] shadow-[0_20px_60px_rgba(2,6,23,0.55)]"].join(" ")}>
         <aside
           className={[
@@ -686,7 +788,8 @@ export default function ChatPage() {
           onToast={(message, tone = "success") => setToast({ message, tone })}
         />
       ) : null}
-    </AccessGate>
+      </AccessGate>
+    </ChatPageBoundary>
   );
 }
 
@@ -762,6 +865,7 @@ function ChatWorkspace({
   onToast: (message: string, tone?: ToastTone) => void;
 }) {
   const liveKitPrimary = true;
+  const safeConversationMembers = Array.isArray(conversation.members) ? conversation.members : [];
   const [messageInput, setMessageInput] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGif, setShowGif] = useState(false);
@@ -878,6 +982,7 @@ function ChatWorkspace({
   );
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof window.EventSource === "undefined") return;
     const stream = new EventSource(`/api/chat/realtime?conversation_id=${conversation.id}`);
     const onMessageEvent = () => {
       void mutateMessages();
@@ -960,11 +1065,16 @@ function ChatWorkspace({
     if (previous > 0 && (prefData?.user?.desktop_toast ?? true) && !conversationMuted && isIncoming) {
       const latestMessageId = Number(latestMessage?.id || 0);
       if (latestMessageId > 0 && latestMessageId !== lastDesktopNotifiedMessageIdRef.current && typeof window !== "undefined" && "Notification" in window) {
-        const notify = () =>
-          new Notification(convLabel(conversation, currentUserId), {
-            body: latestMessage?.content?.slice(0, 140) || "New message",
-            tag: `chat-msg-${conversation.id}-${latestMessageId}`,
-          });
+        const notify = () => {
+          try {
+            return new Notification(convLabel(conversation, currentUserId), {
+              body: latestMessage?.content?.slice(0, 140) || "New message",
+              tag: `chat-msg-${conversation.id}-${latestMessageId}`,
+            });
+          } catch {
+            return null;
+          }
+        };
         if (Notification.permission === "granted") {
           notify();
           lastDesktopNotifiedMessageIdRef.current = latestMessageId;
@@ -1287,11 +1397,16 @@ function ChatWorkspace({
     const roomId = Number(activeCall.id || 0);
     if (!roomId || roomId === lastDesktopNotifiedCallRoomRef.current) return;
     if (typeof window === "undefined" || !("Notification" in window)) return;
-    const notify = () =>
-      new Notification(`Incoming call: ${convLabel(conversation, currentUserId)}`, {
-        body: "Tap Join now to answer.",
-        tag: `chat-call-${roomId}`,
-      });
+    const notify = () => {
+      try {
+        return new Notification(`Incoming call: ${convLabel(conversation, currentUserId)}`, {
+          body: "Tap Join now to answer.",
+          tag: `chat-call-${roomId}`,
+        });
+      } catch {
+        return null;
+      }
+    };
     if (Notification.permission === "granted") {
       notify();
       lastDesktopNotifiedCallRoomRef.current = roomId;
@@ -1988,7 +2103,7 @@ function ChatWorkspace({
     try {
       const data = await apiFetchJson<{ diagnostics: unknown }>(`/api/chat/calls/${activeCall.id}/diagnostics`);
       const text = JSON.stringify(data.diagnostics || {}, null, 2);
-      if (navigator?.clipboard?.writeText) {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
       }
       onToast("Call diagnostics copied.", "success");
@@ -2094,7 +2209,7 @@ function ChatWorkspace({
             <div className="min-w-0 flex-1">
               <p className="truncate text-base font-bold tracking-tight text-slate-100">{convLabel(conversation, currentUserId)}</p>
               <p className="text-[11px] text-slate-400">
-                {conversation.type === "group" ? `${conversation.members.length} members` : "Direct message"}
+                {conversation.type === "group" ? `${safeConversationMembers.length} members` : "Direct message"}
               </p>
             </div>
             <div className="hidden items-center gap-1 md:flex">
@@ -2236,7 +2351,7 @@ function ChatWorkspace({
               <span className="mx-2 text-slate-300">•</span>
               Last update {conversation.last_message?.created_at ? formatRelative(conversation.last_message.created_at) : "just now"}
               <span className="mx-2 text-slate-300">•</span>
-              {conversation.members.length} participant{conversation.members.length === 1 ? "" : "s"}
+              {safeConversationMembers.length} participant{safeConversationMembers.length === 1 ? "" : "s"}
             </div>
           ) : null}
           {grouped.length === 0 ? (
@@ -3020,7 +3135,9 @@ function ChatContextDrawer({
       );
       if (payload.invite_link) {
         try {
-          await navigator.clipboard.writeText(payload.invite_link);
+          if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(payload.invite_link);
+          }
         } catch {}
       }
       setExternalNameInput("");
@@ -3534,7 +3651,7 @@ function QuickCalendarModal({
             className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
           >
             {conversations
-              .filter((c) => c.members.some((m) => m.user_id !== currentUserId))
+              .filter((c) => (Array.isArray(c.members) ? c.members : []).some((m) => m.user_id !== currentUserId))
               .map((conv) => (
                 <option key={conv.id} value={conv.id}>
                   {convLabel(conv, currentUserId)}
