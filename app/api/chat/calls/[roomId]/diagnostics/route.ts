@@ -50,6 +50,37 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
        LIMIT 30`,
       [roomId],
     );
+    const telemetryRes = await query(
+      `
+      SELECT DISTINCT ON (e.user_id)
+        e.user_id,
+        COALESCE(u.full_name, 'Unknown user') AS full_name,
+        e.created_at,
+        e.metadata
+      FROM chat_call_events e
+      LEFT JOIN users u ON u.id = e.user_id
+      WHERE e.room_id = $1
+        AND e.event_type = 'media_telemetry'
+        AND e.user_id IS NOT NULL
+      ORDER BY e.user_id, e.created_at DESC
+      `,
+      [roomId],
+    );
+    const telemetryTimelineRes = await query(
+      `
+      SELECT e.user_id,
+             COALESCE(u.full_name, 'Unknown user') AS full_name,
+             e.created_at,
+             e.metadata
+      FROM chat_call_events e
+      LEFT JOIN users u ON u.id = e.user_id
+      WHERE e.room_id = $1
+        AND e.event_type = 'media_telemetry'
+      ORDER BY e.created_at DESC
+      LIMIT 40
+      `,
+      [roomId],
+    );
     const recentErrors = (eventsRes.rows as Array<{ event_type: string; metadata: unknown; created_at: string }>)
       .filter((e) => e.event_type.includes("fail") || e.event_type.includes("blocked"))
       .slice(0, 8);
@@ -96,6 +127,8 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
           },
         },
         participants: participantsRes.rows,
+        latest_telemetry_by_user: telemetryRes.rows,
+        telemetry_timeline: telemetryTimelineRes.rows,
         recent_events: eventsRes.rows,
         recent_errors: recentErrors,
       },

@@ -921,6 +921,8 @@ function ChatWorkspace({
   const reconnectAttemptedRef = useRef(false);
   const liveKitRoomRef = useRef<any | null>(null);
   const liveKitConnectedRef = useRef(false);
+  const telemetryIntervalRef = useRef<number | null>(null);
+  const lastTelemetrySignatureRef = useRef<string>("");
   const callActionRef = useRef<{ joining: boolean; ending: boolean; sharing: boolean }>({
     joining: false,
     ending: false,
@@ -1526,7 +1528,73 @@ function ChatWorkspace({
     setAudioLevel(0);
     setMediaError(null);
     reconnectAttemptedRef.current = false;
+    if (telemetryIntervalRef.current) {
+      window.clearInterval(telemetryIntervalRef.current);
+      telemetryIntervalRef.current = null;
+    }
   }, []);
+
+  const pushCallTelemetry = useCallback(
+    async (reason: string) => {
+      const roomId = Number(activeRoomId || activeCall?.id || 0);
+      if (!roomId) return;
+      const payload = {
+        reason,
+        call_state: callStateRef.current,
+        connection_state: connectionState,
+        media_state: mediaError ? "failed" : "ok",
+        publish_state: micEnabled ? "published" : "muted_or_unpublished",
+        subscribe_state: liveKitAudioRef.current.size > 0 ? "subscribed" : "waiting_remote",
+        local_audio_track_present: Boolean(micEnabled),
+        remote_audio_tracks_count: liveKitAudioRef.current.size,
+        audio_level: audioLevel,
+        mic_enabled: micEnabled,
+        camera_enabled: cameraEnabled,
+        autoplay_blocked: /autoplay/i.test(mediaError || ""),
+        device_state: mediaError && /device|microphone/i.test(mediaError) ? "device_error" : "ready",
+        permission_state: mediaError && /permission|denied/i.test(mediaError) ? "denied" : "granted",
+        media_error: mediaError || "",
+        joined_count_hint: Number(activeCall?.joined_count || 0),
+        client_ts: new Date().toISOString(),
+      };
+      const signature = JSON.stringify(payload);
+      if (reason !== "interval" && signature === lastTelemetrySignatureRef.current) return;
+      lastTelemetrySignatureRef.current = signature;
+      await apiFetchJson(`/api/chat/calls/${roomId}/telemetry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    },
+    [activeRoomId, activeCall?.id, activeCall?.joined_count, audioLevel, cameraEnabled, connectionState, mediaError, micEnabled],
+  );
+
+  useEffect(() => {
+    if (!activeCall || !activeCall.is_active) {
+      if (telemetryIntervalRef.current) {
+        window.clearInterval(telemetryIntervalRef.current);
+        telemetryIntervalRef.current = null;
+      }
+      return;
+    }
+    void pushCallTelemetry("state_change");
+    if (!telemetryIntervalRef.current) {
+      telemetryIntervalRef.current = window.setInterval(() => {
+        void pushCallTelemetry("interval");
+      }, 8000);
+    }
+    return () => {
+      if (telemetryIntervalRef.current) {
+        window.clearInterval(telemetryIntervalRef.current);
+        telemetryIntervalRef.current = null;
+      }
+    };
+  }, [activeCall, pushCallTelemetry]);
+
+  useEffect(() => {
+    if (!activeCall?.is_active) return;
+    void pushCallTelemetry("media_change");
+  }, [activeCall?.is_active, connectionState, mediaError, micEnabled, cameraEnabled, isPresenting, pushCallTelemetry]);
 
   const connectLiveKitRoom = useCallback(
     async (conversationId: number) => {
