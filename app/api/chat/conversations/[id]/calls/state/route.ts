@@ -3,10 +3,40 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { buildLiveKitRoomName } from "@/lib/livekit";
 import { logCallEvent } from "@/lib/chatCallGovernance";
-import { getChatCallSignalSchemaHealth } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+async function getSignalSchemaHealthInline() {
+  const requiredTypes = [
+    "offer",
+    "answer",
+    "ice",
+    "leave",
+    "presenting",
+    "media_repair",
+    "moderation_mute",
+    "moderation_unmute",
+    "moderation_remove",
+    "moderation_end",
+  ] as const;
+  const res = await query(
+    `
+    SELECT pg_get_constraintdef(oid) AS def
+    FROM pg_constraint
+    WHERE conname = 'chat_call_signals_type_chk'
+      AND conrelid = 'chat_call_signals'::regclass
+    LIMIT 1
+    `,
+  );
+  const def = String((res.rows[0] as { def?: string } | undefined)?.def || "");
+  const missingTypes = requiredTypes.filter((type) => !def.includes(`'${type}'`));
+  return {
+    schema_ready: missingTypes.length === 0,
+    missing_types: missingTypes,
+    required_types: [...requiredTypes],
+  };
+}
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
@@ -123,7 +153,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
     const publishState = participants.some((p) => Number(p.user_id) === Number(access.user_id)) ? "published" : "pending";
     const subscribeState = participants.length > 1 ? "subscribed" : "waiting_remote";
-    const signalSchema = await getChatCallSignalSchemaHealth().catch(() => ({
+    const signalSchema = await getSignalSchemaHealthInline().catch(() => ({
       schema_ready: false,
       missing_types: [] as string[],
       required_types: [] as string[],
