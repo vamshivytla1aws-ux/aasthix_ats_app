@@ -147,6 +147,7 @@ type ChatCalendarEvent = {
   media_state?: "ok" | "permission_denied" | "device_missing" | "failed" | "ready";
   can_join?: boolean;
   can_end?: boolean;
+  remote_audio_tracks_count?: number;
   signal_schema_ready?: boolean;
   effective_media_state?: "connected" | "reconnecting" | "publish_missing" | "waiting_remote" | "playback_blocked" | "idle";
 };
