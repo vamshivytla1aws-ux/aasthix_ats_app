@@ -100,10 +100,16 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       .map((m) => String(m.media_error || "").trim())
       .find((value) => Boolean(value));
     let mediaHealth: "ok" | "reconnect_loop" | "no_remote_tracks" | "playback_blocked" | "publish_missing" = "ok";
-    if (allReconnecting) mediaHealth = "reconnect_loop";
+    if (room.status === "ended" || room.status === "cancelled") {
+      mediaHealth = "ok";
+    } else if (allReconnecting) mediaHealth = "reconnect_loop";
     else if (anyAutoplayBlocked) mediaHealth = "playback_blocked";
     else if (anyPublishMissing) mediaHealth = "publish_missing";
     else if (anyWaitingRemote || anyRemoteZero) mediaHealth = "no_remote_tracks";
+    const latestConnectionState =
+      telemetryStates.find((m) => Boolean(m.connection_state))?.connection_state || null;
+    const latestMediaState =
+      telemetryStates.find((m) => Boolean(m.media_state))?.media_state || null;
     const recentErrors = (eventsRes.rows as Array<{ event_type: string; metadata: unknown; created_at: string }>)
       .filter((e) => e.event_type.includes("fail") || e.event_type.includes("blocked"))
       .slice(0, 8);
@@ -129,8 +135,9 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
           joined_count: activeParticipants.length,
           joined_participants: activeParticipants,
           room_closed_reason: roomClosedReason || null,
-          connection_state: room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle",
-          media_state: "ok",
+          connection_state:
+            String(latestConnectionState || "") || (room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle"),
+          media_state: String(latestMediaState || "") || "ok",
           is_active: room.status === "active" || room.status === "scheduled",
           can_join: room.status === "active" || room.status === "scheduled",
           can_end:

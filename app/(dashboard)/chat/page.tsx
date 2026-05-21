@@ -1392,7 +1392,8 @@ function ChatWorkspace({
       setActiveRoomId(null);
     } else if (activeCall.status === "active") {
       if (meJoined || activeRoomId === roomId) {
-        nextState = callState === "connecting_media" ? "connecting_media" : "connected";
+        const mediaConnected = liveKitConnectedRef.current || connectionState === "connected";
+        nextState = mediaConnected ? "connected" : "connecting_media";
       } else if (!dismissed && activeCall.can_join !== false) {
         nextState = "ringing_incoming";
       }
@@ -1419,6 +1420,7 @@ function ChatWorkspace({
     activeCall,
     activeRoomId,
     callState,
+    connectionState,
     currentUserId,
     prefData?.user?.desktop_sound,
     ringDismissedRoomId,
@@ -1548,15 +1550,43 @@ function ChatWorkspace({
     async (reason: string) => {
       const roomId = Number(activeRoomId || activeCall?.id || 0);
       if (!roomId) return;
+      const liveKitRoom = liveKitRoomRef.current;
+      const localAudioPublished = Boolean(
+        liveKitRoom?.localParticipant?.audioTrackPublications &&
+          Array.from(liveKitRoom.localParticipant.audioTrackPublications.values()).some(
+            (pub: any) => Boolean(pub?.track),
+          ),
+      );
+      const remoteAudioTrackCount = liveKitRoom
+        ? Array.from(liveKitRoom.remoteParticipants.values()).reduce((count: number, participant: any) => {
+            const published = Array.from(participant?.audioTrackPublications?.values?.() || []).filter((pub: any) =>
+              Boolean(pub?.track),
+            ).length;
+            return count + published;
+          }, 0)
+        : liveKitAudioRef.current.size;
+      const roomState = String(liveKitRoom?.state || "").toLowerCase();
+      const normalizedConnectionState: "idle" | "connecting" | "connected" | "reconnecting" | "failed" =
+        roomState.includes("reconnecting")
+          ? "reconnecting"
+          : roomState.includes("connected")
+            ? "connected"
+            : roomState.includes("connecting")
+              ? "connecting"
+              : roomState.includes("disconnected")
+                ? callStateRef.current === "idle"
+                  ? "idle"
+                  : "failed"
+                : connectionState;
       const payload = {
         reason,
         call_state: callStateRef.current,
-        connection_state: connectionState,
+        connection_state: normalizedConnectionState,
         media_state: mediaError ? "failed" : "ok",
         publish_state: micEnabled ? "published" : "muted_or_unpublished",
-        subscribe_state: liveKitAudioRef.current.size > 0 ? "subscribed" : "waiting_remote",
-        local_audio_track_present: Boolean(localStreamRef.current?.getAudioTracks?.().length),
-        remote_audio_tracks_count: liveKitAudioRef.current.size,
+        subscribe_state: remoteAudioTrackCount > 0 ? "subscribed" : "waiting_remote",
+        local_audio_track_present: localAudioPublished,
+        remote_audio_tracks_count: remoteAudioTrackCount,
         remote_track_seen: remoteTrackSeenRef.current,
         playback_started: playbackStartedRef.current,
         audio_level: audioLevel,

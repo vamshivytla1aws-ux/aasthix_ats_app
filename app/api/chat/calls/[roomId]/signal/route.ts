@@ -168,6 +168,17 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     );
     return NextResponse.json({ operation_status: "success", id: Number(ins.rows[0]?.id || 0) });
   } catch (error) {
+    const pgError = error as { code?: string; constraint?: string };
+    if (pgError?.code === "23514" && pgError?.constraint === "chat_call_signals_type_chk") {
+      return NextResponse.json(
+        {
+          operation_status: "blocked",
+          user_message: "Call signaling schema is outdated on this environment.",
+          hint: "Run latest DB migrations to allow new signal types.",
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to publish signal." }, { status: 400 });
   }
 }
