@@ -87,7 +87,13 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       created_at: string;
       metadata?: Record<string, unknown> | null;
     }>;
-    const telemetryStates = latestTelemetry.map((row) => row.metadata || {});
+    const nowMs = Date.now();
+    const freshTelemetry = latestTelemetry.filter((row) => {
+      const ageMs = Math.max(0, nowMs - new Date(row.created_at).getTime());
+      return ageMs <= 20_000;
+    });
+    const telemetryForHealth = freshTelemetry.length > 0 ? freshTelemetry : latestTelemetry;
+    const telemetryStates = telemetryForHealth.map((row) => row.metadata || {});
     const anyWaitingRemote = telemetryStates.some((m) => String(m.subscribe_state || "") === "waiting_remote");
     const anyRemoteZero = telemetryStates.some((m) => Number(m.remote_audio_tracks_count || 0) <= 0);
     const anyAutoplayBlocked = telemetryStates.some((m) => Boolean(m.autoplay_blocked));
@@ -110,6 +116,28 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       telemetryStates.find((m) => Boolean(m.connection_state))?.connection_state || null;
     const latestMediaState =
       telemetryStates.find((m) => Boolean(m.media_state))?.media_state || null;
+    const effectiveMediaByUser = latestTelemetry.map((row) => {
+      const metadata = (row.metadata || {}) as Record<string, unknown>;
+      const connection = String(metadata.connection_state || "");
+      const publishState = String(metadata.publish_state || "");
+      const subscribeState = String(metadata.subscribe_state || "");
+      const localTrack = Boolean(metadata.local_audio_track_present);
+      const remoteCount = Number(metadata.remote_audio_tracks_count || 0);
+      const autoplayBlocked = Boolean(metadata.autoplay_blocked);
+      let effective_media_state: "connected" | "reconnecting" | "publish_missing" | "waiting_remote" | "playback_blocked" | "idle" =
+        "idle";
+      if (connection === "reconnecting") effective_media_state = "reconnecting";
+      else if (autoplayBlocked) effective_media_state = "playback_blocked";
+      else if (publishState !== "published" || !localTrack) effective_media_state = "publish_missing";
+      else if (subscribeState !== "subscribed" || remoteCount <= 0) effective_media_state = "waiting_remote";
+      else effective_media_state = "connected";
+      return {
+        user_id: String(row.user_id),
+        full_name: String(row.full_name || "Unknown user"),
+        created_at: row.created_at,
+        effective_media_state,
+      };
+    });
     const recentErrors = (eventsRes.rows as Array<{ event_type: string; metadata: unknown; created_at: string }>)
       .filter((e) => e.event_type.includes("fail") || e.event_type.includes("blocked"))
       .slice(0, 8);
@@ -155,6 +183,18 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
           remote_track_seen: activeParticipants.length > 1 && !anyRemoteZero,
           playback_started: !anyAutoplayBlocked && activeParticipants.length > 1 && !anyRemoteZero,
           last_media_failure_reason: lastMediaFailure || null,
+          effective_media_state:
+            mediaHealth === "reconnect_loop"
+              ? "reconnecting"
+              : mediaHealth === "publish_missing"
+                ? "publish_missing"
+                : mediaHealth === "no_remote_tracks"
+                  ? "waiting_remote"
+                  : mediaHealth === "playback_blocked"
+                    ? "playback_blocked"
+                    : activeParticipants.length > 1
+                      ? "connected"
+                      : "idle",
           timing_markers: {
             room_started_at: room.start_at,
             first_remote_joined_at: firstJoinedAt,
@@ -162,6 +202,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
         },
         participants: participantsRes.rows,
         latest_telemetry_by_user: telemetryRes.rows,
+        effective_media_by_user: effectiveMediaByUser,
         telemetry_timeline: telemetryTimelineRes.rows,
         recent_events: eventsRes.rows,
         recent_errors: recentErrors,

@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { buildLiveKitRoomName } from "@/lib/livekit";
 import { logCallEvent } from "@/lib/chatCallGovernance";
+import { getChatCallSignalSchemaHealth } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -122,6 +123,19 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
     const publishState = participants.some((p) => Number(p.user_id) === Number(access.user_id)) ? "published" : "pending";
     const subscribeState = participants.length > 1 ? "subscribed" : "waiting_remote";
+    const signalSchema = await getChatCallSignalSchemaHealth().catch(() => ({
+      schema_ready: false,
+      missing_types: [] as string[],
+      required_types: [] as string[],
+    }));
+    const effectiveMediaState =
+      room.status !== "active"
+        ? "idle"
+        : publishState !== "published"
+          ? "publish_missing"
+          : subscribeState !== "subscribed"
+            ? "waiting_remote"
+            : "connected";
     return NextResponse.json({
       operation_status: "success",
       call: {
@@ -142,9 +156,11 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         subscribe_state: subscribeState,
         local_audio_track_present: publishState === "published",
         remote_audio_tracks_count: Math.max(0, participants.length - 1),
+        effective_media_state: effectiveMediaState,
         autoplay_blocked: false,
         permission_state: "granted",
         device_state: "ready",
+        signal_schema_ready: Boolean(signalSchema.schema_ready),
         timing_markers: {
           room_started_at: room.start_at,
           first_remote_joined_at: firstJoinedAt,

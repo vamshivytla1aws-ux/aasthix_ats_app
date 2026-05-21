@@ -147,6 +147,8 @@ type ChatCalendarEvent = {
   media_state?: "ok" | "permission_denied" | "device_missing" | "failed" | "ready";
   can_join?: boolean;
   can_end?: boolean;
+  signal_schema_ready?: boolean;
+  effective_media_state?: "connected" | "reconnecting" | "publish_missing" | "waiting_remote" | "playback_blocked" | "idle";
 };
 type ConversationLiveStatus = {
   conversation_id: number;
@@ -1340,6 +1342,14 @@ function ChatWorkspace({
     const role = String(currentUserRole || "").toLowerCase();
     return role === "admin" || role === "hr" || role === "coordinator";
   }, [activeCall, currentUserId, currentUserRole]);
+  const hasRemoteAudioActive = useMemo(
+    () =>
+      liveKitAudioRef.current.size > 0 ||
+      Number(activeCall?.remote_audio_tracks_count || 0) > 0 ||
+      activeCall?.effective_media_state === "connected",
+    [activeCall],
+  );
+  const schemaGateBlocked = activeCall?.signal_schema_ready === false;
 
   useEffect(() => {
     if (!initialRoomId || !activeCall) return;
@@ -1392,7 +1402,15 @@ function ChatWorkspace({
       setActiveRoomId(null);
     } else if (activeCall.status === "active") {
       if (meJoined || activeRoomId === roomId) {
-        const mediaConnected = liveKitConnectedRef.current || connectionState === "connected";
+        const hasRemoteAudio =
+          liveKitAudioRef.current.size > 0 ||
+          Number(activeCall.remote_audio_tracks_count || 0) > 0 ||
+          (activeCall.effective_media_state === "connected");
+        const expectsRemote = Number(activeCall.joined_count || 0) > 1;
+        const mediaConnected =
+          liveKitConnectedRef.current &&
+          connectionState === "connected" &&
+          (!expectsRemote || hasRemoteAudio);
         nextState = mediaConnected ? "connected" : "connecting_media";
       } else if (!dismissed && activeCall.can_join !== false) {
         nextState = "ringing_incoming";
@@ -1429,15 +1447,19 @@ function ChatWorkspace({
 
   useEffect(() => {
     if (!activeCall) return;
-    const joined = Number(activeCall.joined_count || 0) > 0;
-    const callConnectedByServer = activeCall.connection_state === "connected";
-    if ((callState === "connected" || liveKitConnectedRef.current || callConnectedByServer) && joined) {
-      if (connectionState === "failed") setConnectionState("connected");
-      if (mediaError && !/autoplay|permission|microphone|device/i.test(mediaError)) {
-        setMediaError(null);
-      }
+    const hasRemoteAudio =
+      liveKitAudioRef.current.size > 0 ||
+      Number(activeCall.remote_audio_tracks_count || 0) > 0 ||
+      Boolean(activeCall.effective_media_state === "connected");
+    const expectsRemote = Number(activeCall.joined_count || 0) > 1;
+    const stableConnected = liveKitConnectedRef.current && (!expectsRemote || hasRemoteAudio);
+    if (stableConnected && connectionState !== "connected") {
+      setConnectionState("connected");
     }
-  }, [activeCall, callState, connectionState, mediaError]);
+    if (stableConnected && mediaError && !/autoplay|permission|microphone|device/i.test(mediaError)) {
+      setMediaError(null);
+    }
+  }, [activeCall, connectionState, mediaError]);
 
   useEffect(() => {
     if (!activeCall) return;
@@ -1583,7 +1605,7 @@ function ChatWorkspace({
         call_state: callStateRef.current,
         connection_state: normalizedConnectionState,
         media_state: mediaError ? "failed" : "ok",
-        publish_state: micEnabled ? "published" : "muted_or_unpublished",
+        publish_state: localAudioPublished ? "published" : "muted_or_unpublished",
         subscribe_state: remoteAudioTrackCount > 0 ? "subscribed" : "waiting_remote",
         local_audio_track_present: localAudioPublished,
         remote_audio_tracks_count: remoteAudioTrackCount,
@@ -1690,8 +1712,9 @@ function ChatWorkspace({
           setConnectionState("reconnecting");
         });
         room.on(livekit.RoomEvent.Reconnected, () => {
+          const hasRemote = liveKitAudioRef.current.size > 0;
           setConnectionState("connected");
-          setMediaError(null);
+          if (hasRemote) setMediaError(null);
         });
         room.on(livekit.RoomEvent.Disconnected, () => {
           liveKitConnectedRef.current = false;
@@ -1710,7 +1733,9 @@ function ChatWorkspace({
         });
         room.on(livekit.RoomEvent.ConnectionStateChanged, (state: string) => {
           if (state === "connected") {
+            const hasRemote = liveKitAudioRef.current.size > 0;
             setConnectionState("connected");
+            if (hasRemote) setMediaError(null);
           } else if (state === "connecting") {
             setConnectionState("connecting");
           } else if (state === "reconnecting") {
@@ -1783,7 +1808,17 @@ function ChatWorkspace({
         reconnectAttemptedRef.current = false;
         window.setTimeout(() => {
           if (liveKitAudioRef.current.size === 0 && (callStateRef.current === "connected" || callStateRef.current === "connecting_media")) {
-            setMediaError("Connected, waiting for remote audio… tap Retry if it does not recover.");
+            if (!reconnectAttemptedRef.current && room?.localParticipant) {
+              reconnectAttemptedRef.current = true;
+              void room.localParticipant.setMicrophoneEnabled(false)
+                .then(() => room.localParticipant.setMicrophoneEnabled(true))
+                .then(() => {
+                  setMicEnabled(true);
+                })
+                .catch(() => {});
+            } else {
+              setMediaError("Connected, waiting for remote audio… tap Retry if it does not recover.");
+            }
           }
         }, 5000);
         return room;
@@ -2275,6 +2310,10 @@ function ChatWorkspace({
   const moderateCall = useCallback(
     async (action: "mute_participant" | "unmute_participant" | "remove_participant" | "end_for_all", targetUserId?: number) => {
       if (!activeCall) return;
+      if (activeCall.signal_schema_ready === false) {
+        onToast("Call control is temporarily gated. Run latest call migrations and retry.", "info");
+        return;
+      }
       const busyKey =
         action === "end_for_all"
           ? "end_all"
@@ -2329,6 +2368,10 @@ function ChatWorkspace({
 
   const requestVoiceRepair = useCallback(async () => {
     if (!activeCall) return;
+    if (activeCall.signal_schema_ready === false) {
+      onToast("Voice repair is disabled until call schema prerequisites are updated.", "info");
+      return;
+    }
     const roomId = Number(activeCall.id || 0);
     if (!roomId) return;
     try {
@@ -2855,6 +2898,9 @@ function ChatWorkspace({
               Call is active • {activeCallDuration} • {Number(activeCall.joined_count || 0)} participant{Number(activeCall.joined_count || 0) === 1 ? "" : "s"}
             </span>
             {callState === "connecting_media" ? <span className="text-[11px] text-emerald-200/90">Connecting audio…</span> : null}
+            {callState === "connected" && !hasRemoteAudioActive && Number(activeCall.joined_count || 0) > 1 ? (
+              <span className="text-[11px] text-amber-200/90">Waiting for remote audio…</span>
+            ) : null}
             {connectionState === "reconnecting" ? <span className="text-[11px] text-amber-200/90">Reconnecting…</span> : null}
             {connectionState === "failed" ? (
               <button
@@ -2866,6 +2912,9 @@ function ChatWorkspace({
               </button>
             ) : null}
             {mediaError ? <span className="max-w-[220px] truncate text-[11px] text-rose-200">{mediaError}</span> : null}
+            {schemaGateBlocked ? (
+              <span className="max-w-[220px] truncate text-[11px] text-amber-200">Call controls limited until latest call schema migrations are applied.</span>
+            ) : null}
             {isPresenting ? <span className="rounded-full border border-cyan-300/40 px-2 py-0.5 text-[11px] text-cyan-100">Presenting</span> : null}
             {callState === "connected" ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 px-2 py-0.5 text-[11px] text-emerald-100/90">
@@ -2980,7 +3029,7 @@ function ChatWorkspace({
               <>
                 <button
                   type="button"
-                  disabled={moderationBusy !== null}
+                  disabled={moderationBusy !== null || schemaGateBlocked}
                   onClick={async () => {
                     await moderateCall("end_for_all");
                   }}
@@ -2996,7 +3045,7 @@ function ChatWorkspace({
                       <span className="max-w-[84px] truncate">{p.full_name.split(" ")[0]}</span>
                       <button
                         type="button"
-                        disabled={moderationBusy !== null}
+                        disabled={moderationBusy !== null || schemaGateBlocked}
                         onClick={async () => {
                           await moderateCall(p.muted ? "unmute_participant" : "mute_participant", p.user_id);
                         }}
@@ -3006,7 +3055,7 @@ function ChatWorkspace({
                       </button>
                       <button
                         type="button"
-                        disabled={moderationBusy !== null}
+                        disabled={moderationBusy !== null || schemaGateBlocked}
                         onClick={async () => {
                           await moderateCall("remove_participant", p.user_id);
                         }}
@@ -3027,10 +3076,11 @@ function ChatWorkspace({
                 </button>
                 <button
                   type="button"
+                  disabled={schemaGateBlocked}
                   onClick={async () => {
                     await requestVoiceRepair();
                   }}
-                  className="rounded-full border border-emerald-300/40 px-2 py-1 text-[11px] text-emerald-100 hover:bg-emerald-500/20"
+                  className="rounded-full border border-emerald-300/40 px-2 py-1 text-[11px] text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-60"
                 >
                   Repair voice
                 </button>
