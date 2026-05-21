@@ -1036,6 +1036,7 @@ export default function PipelineBoard({
               meetingMode: scheduleMeetingMode,
               meetingLocation: scheduleMeetingLocation,
             }),
+            invite_mode: "scheduled",
           }),
         });
       }
@@ -1060,8 +1061,8 @@ export default function PipelineBoard({
       setSuccess(
         sendInvite
           ? inviteResult?.meet_link || updated.meet_link
-            ? "Interview scheduled, calendar invite synced, and email sent."
-            : "Interview scheduled and email sent."
+            ? "Interview scheduled and single ATS+Google invite sent."
+            : "Interview scheduled and single Google invite sent."
           : updated.meet_link
             ? "Interview scheduled and Google Meet invite created."
             : updated.calendar_sync_status === "google_not_connected"
@@ -1290,6 +1291,7 @@ export default function PipelineBoard({
               meetingMode: rescheduleMeetingMode,
               meetingLocation: rescheduleMeetingLocation,
             }),
+            invite_mode: "rescheduled",
           }),
         });
       }
@@ -1313,8 +1315,8 @@ export default function PipelineBoard({
       setSuccess(
         sendInvite
           ? inviteResult?.meet_link || updated.meet_link
-            ? "Interview rescheduled, calendar invite synced, and email sent."
-            : "Interview rescheduled and email sent."
+            ? "Interview rescheduled and single ATS+Google invite sent."
+            : "Interview rescheduled and single Google invite sent."
           : updated.meet_link
             ? "Interview rescheduled and Google Meet invite updated."
             : updated.calendar_sync_status === "google_not_connected"

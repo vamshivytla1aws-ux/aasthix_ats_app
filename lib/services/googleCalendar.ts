@@ -432,6 +432,9 @@ type SyncInterviewMeetingInput = {
   existingMeetLink?: string | null;
   notes?: string | null;
   durationMinutes?: number | null;
+  inviteSubject?: string | null;
+  inviteBody?: string | null;
+  inviteMode?: "scheduled" | "rescheduled" | null;
 };
 
 type SyncTeamCalendarMeetingInput = {
@@ -533,14 +536,21 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
       `Candidate: ${input.candidateName}`,
       `Role: ${input.title}`,
       "",
-      "Scheduled from AASTHIX ATS.",
+      input.inviteMode === "rescheduled"
+        ? "This interview was rescheduled from AASTHIX ATS. Please use this latest calendar invite."
+        : "This interview was scheduled from AASTHIX ATS.",
     ];
     if (input.notes) {
       descriptionLines.push("", input.notes);
     }
+    const inviteBody = String(input.inviteBody || "").trim();
+    if (inviteBody) {
+      descriptionLines.push("", "ATS Invitation Message:", inviteBody);
+    }
 
+    const summaryText = String(input.inviteSubject || "").trim() || `${input.title} - ${input.candidateName}`;
     const payload = {
-      summary: `${input.title} — ${input.candidateName}`,
+      summary: summaryText,
       description: descriptionLines.join("\n"),
       start: { dateTime: start.toISOString() },
       end: { dateTime: end.toISOString() },

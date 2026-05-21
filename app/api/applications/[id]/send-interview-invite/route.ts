@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/rbac";
 import { fetchApplicationCardRow } from "@/lib/applicationCard";
-import { sendTransactionalEmail } from "@/lib/sendTransactionalEmail";
 import { writeAuditLog } from "@/lib/auditLog";
-import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
 import { query } from "@/lib/db";
 import { syncInterviewMeeting } from "@/lib/services/googleCalendar";
 
@@ -53,6 +51,7 @@ export async function POST(request: Request, context: { params: { id: string } }
       cc?: unknown;
       subject?: unknown;
       body?: unknown;
+      invite_mode?: unknown;
     };
 
     const parsedTo = parseRecipients(body.to, "to");
@@ -66,6 +65,7 @@ export async function POST(request: Request, context: { params: { id: string } }
 
     const subject = typeof body.subject === "string" ? body.subject.trim() : "";
     const text = typeof body.body === "string" ? body.body : "";
+    const inviteMode = body.invite_mode === "rescheduled" ? "rescheduled" : "scheduled";
     if (!subject) return NextResponse.json({ error: "subject is required." }, { status: 400 });
     if (!text.trim()) return NextResponse.json({ error: "body is required." }, { status: 400 });
     if (subject.length > MAX_SUBJECT) return NextResponse.json({ error: "subject is too long." }, { status: 400 });
@@ -123,6 +123,9 @@ export async function POST(request: Request, context: { params: { id: string } }
       existingEventId: card.external_calendar_event_id || null,
       existingMeetLink: card.meet_link || null,
       notes: card.interview_status_note || null,
+      inviteSubject: subject,
+      inviteBody: text.trim(),
+      inviteMode,
     });
 
     const syncStatus = String(syncResult.status || "");
@@ -165,55 +168,10 @@ export async function POST(request: Request, context: { params: { id: string } }
           operation_status: "blocked",
           calendar_sync_status: syncStatus,
           email_send_status: "blocked",
+          delivery_channel: "google_calendar_only",
           next_action_hint: "Reconnect Google Calendar or fix OAuth scopes before sending the invite.",
         },
         { status: 409 }
-      );
-    }
-
-    const messageParagraphs = text
-      .split(/\n\s*\n/)
-      .map((part) => part.trim())
-      .filter(Boolean);
-    const emailBody = buildCandidateEmailTemplate({
-      candidateName: card.candidate_full_name,
-      paragraphs: messageParagraphs.length > 0 ? messageParagraphs : [text.trim()],
-      job: {
-        title: card.job_title,
-        location: card.job_location,
-      },
-    });
-
-    const sendResult = await sendTransactionalEmail({
-      to: parsedTo.emails,
-      cc: parsedCc.emails,
-      subject,
-      text: emailBody.text,
-      html: emailBody.html,
-    });
-
-    if (!sendResult.sent) {
-      if (sendResult.reason === "smtp_not_configured") {
-        return NextResponse.json(
-          {
-            error: "Email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL, or configure SMTP variables on the server.",
-            operation_status: "blocked",
-            calendar_sync_status: syncStatus || "invite_synced",
-            email_send_status: "smtp_not_configured",
-            next_action_hint: "Configure email provider settings and retry send.",
-          },
-          { status: 503 }
-        );
-      }
-      return NextResponse.json(
-        {
-          error: sendResult.detail || "Failed to send interview invite.",
-          operation_status: "partial",
-          calendar_sync_status: syncStatus || "invite_synced",
-          email_send_status: "failed",
-          next_action_hint: "Calendar event is synced; retry email send after checking email provider status.",
-        },
-        { status: 502 }
       );
     }
 
@@ -225,6 +183,8 @@ export async function POST(request: Request, context: { params: { id: string } }
         recipient_count: parsedTo.emails.length,
         cc_count: parsedCc.emails.length,
         subject_preview: subject.slice(0, 120),
+        delivery_channel: "google_calendar_only",
+        invite_mode: inviteMode,
       },
     });
 
@@ -258,7 +218,9 @@ export async function POST(request: Request, context: { params: { id: string } }
       sent: true,
       operation_status: "success",
       calendar_sync_status: syncStatus || "invite_sent",
-      email_send_status: "sent",
+      email_send_status: "sent_via_google_calendar",
+      delivery_channel: "google_calendar_only",
+      invite_mode: inviteMode,
       meet_link: syncResult.meet_link,
       external_calendar_event_id: syncResult.external_calendar_event_id,
       next_action_hint: "Track interview progress from Pipeline or Interviews desk.",
@@ -271,6 +233,7 @@ export async function POST(request: Request, context: { params: { id: string } }
         operation_status: "error",
         calendar_sync_status: "unknown",
         email_send_status: "unknown",
+        delivery_channel: "google_calendar_only",
         next_action_hint: "Retry after checking server logs.",
       },
       { status: 500 }

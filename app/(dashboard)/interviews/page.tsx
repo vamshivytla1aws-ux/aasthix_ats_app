@@ -758,6 +758,7 @@ export default function InterviewsPage() {
               meetingMode: rescheduleMeetingMode,
               meetingLocation: rescheduleMeetingLocation,
             }),
+            invite_mode: "rescheduled",
           }),
         });
       }
@@ -776,8 +777,8 @@ export default function InterviewsPage() {
       showSuccessToast(
         sendInvite
           ? inviteResult?.meet_link || updated.meet_link
-            ? "Interview rescheduled, calendar invite synced, and email sent."
-            : "Interview rescheduled and email sent."
+            ? "Interview rescheduled and single ATS+Google invite sent."
+            : "Interview rescheduled and single Google invite sent."
           : updated.meet_link
             ? "Interview rescheduled and Google Meet invite updated."
             : updated.calendar_sync_status === "google_not_connected"
