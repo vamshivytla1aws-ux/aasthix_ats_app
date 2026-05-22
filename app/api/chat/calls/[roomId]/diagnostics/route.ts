@@ -129,10 +129,9 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     const roomAllPublished =
       telemetryStates.length > 0 &&
       telemetryStates.every((m) => String(m.publish_state || "") === "published" && Boolean(m.local_audio_track_present));
-    const roomAnyPublished = telemetryStates.some((m) => String(m.publish_state || "") === "published");
     const roomRemoteTracksMax = telemetryStates.reduce((max, m) => Math.max(max, Number(m.remote_audio_tracks_count || 0)), 0);
     const roomSubscribeState = isTerminalRoom ? "waiting_remote" : roomRemoteTracksMax > 0 ? "subscribed" : "waiting_remote";
-    const roomPublishState = isTerminalRoom ? "pending" : roomAllPublished || roomAnyPublished ? "published" : "muted_or_unpublished";
+    const roomPublishState = isTerminalRoom ? "pending" : roomAllPublished ? "published" : "muted_or_unpublished";
     const roomMediaState = isTerminalRoom
       ? "ok"
       : telemetryStates.some((m) => String(m.media_state || "") === "failed")

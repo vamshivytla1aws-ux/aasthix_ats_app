@@ -1698,6 +1698,22 @@ function ChatWorkspace({
     return publishRecoveryInFlightRef.current;
   }, [readLiveKitAudioState]);
 
+  const runRemoteAudioRecoveryAssist = useCallback((reason: "zero_remote_track_timeout" | "manual_remote_audio_retry") => {
+    pendingRecoveryTelemetryReasonRef.current = reason;
+    const room = liveKitRoomRef.current;
+    if (room?.localParticipant) {
+      void room.localParticipant
+        .setMicrophoneEnabled(false)
+        .then(() => room.localParticipant.setMicrophoneEnabled(true))
+        .catch(() => {});
+    }
+    window.setTimeout(() => {
+      const { remoteAudioTrackCount } = readLiveKitAudioState();
+      if (remoteAudioTrackCount > 0) return;
+      setMediaError("Remote audio unavailable. Click Retry audio or Repair voice.");
+    }, 2000);
+  }, [readLiveKitAudioState]);
+
   const pushCallTelemetry = useCallback(
     async (reason: string) => {
       const roomId = Number(activeRoomId || activeCall?.id || 0);
@@ -1865,15 +1881,9 @@ function ChatWorkspace({
     if (nowMs - remoteTrackTimeoutSinceRef.current < 5000) return;
     if (remoteTrackRecoveryAttemptedRef.current) return;
     remoteTrackRecoveryAttemptedRef.current = true;
-    pendingRecoveryTelemetryReasonRef.current = "zero_remote_track_timeout";
     setMediaError("Waiting for remote audio… trying to resubscribe.");
-    const room = liveKitRoomRef.current;
-    if (room?.localParticipant) {
-      void room.localParticipant.setMicrophoneEnabled(false)
-        .then(() => room.localParticipant.setMicrophoneEnabled(true))
-        .catch(() => {});
-    }
-  }, [activeCall, meJoinedInActiveCall, remoteAudioTracksCount]);
+    runRemoteAudioRecoveryAssist("zero_remote_track_timeout");
+  }, [activeCall, meJoinedInActiveCall, remoteAudioTracksCount, runRemoteAudioRecoveryAssist]);
 
   const connectLiveKitRoom = useCallback(
     async (conversationId: number) => {
@@ -3204,6 +3214,15 @@ function ChatWorkspace({
                 className="rounded-full border border-rose-300/40 px-2 py-0.5 text-[11px] text-rose-100 hover:bg-rose-500/20"
               >
                 Connection failed • Retry
+              </button>
+            ) : null}
+            {callState === "connected" && !hasRemoteAudioActive && Number(activeCall.joined_count || 0) > 1 ? (
+              <button
+                type="button"
+                onClick={() => runRemoteAudioRecoveryAssist("manual_remote_audio_retry")}
+                className="rounded-full border border-amber-300/40 px-2 py-0.5 text-[11px] text-amber-100 hover:bg-amber-500/20"
+              >
+                Retry audio
               </button>
             ) : null}
             {mediaError ? <span className="max-w-[220px] truncate text-[11px] text-rose-200">{mediaError}</span> : null}
