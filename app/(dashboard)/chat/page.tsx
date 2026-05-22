@@ -939,6 +939,9 @@ function ChatWorkspace({
   const connectingPeersRef = useRef<Set<number>>(new Set());
   const analyzerRef = useRef<{ raf: number; audioCtx: AudioContext; analyser: AnalyserNode } | null>(null);
   const reconnectAttemptedRef = useRef(false);
+  const publishRecoveryAttemptedRef = useRef(false);
+  const publishRecoveryInFlightRef = useRef<Promise<boolean> | null>(null);
+  const publishMissingSinceRef = useRef<number | null>(null);
   const disconnectingRef = useRef(false);
   const connectInFlightRef = useRef<Promise<any> | null>(null);
   const remoteTrackSeenRef = useRef(false);
@@ -953,6 +956,8 @@ function ChatWorkspace({
     sharing: false,
   });
   const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "connected" | "reconnecting" | "failed">("idle");
+  const [localAudioTrackPresent, setLocalAudioTrackPresent] = useState(false);
+  const [remoteAudioTracksCount, setRemoteAudioTracksCount] = useState(0);
   const callStateRef = useRef(callState);
 
   useEffect(() => {
@@ -1361,11 +1366,23 @@ function ChatWorkspace({
   }, [activeCall, currentUserId, currentUserRole]);
   const hasRemoteAudioActive = useMemo(
     () =>
-      liveKitAudioRef.current.size > 0 ||
+      remoteAudioTracksCount > 0 ||
       Number(activeCall?.remote_audio_tracks_count || 0) > 0 ||
       activeCall?.effective_media_state === "connected",
-    [activeCall],
+    [activeCall, remoteAudioTracksCount],
   );
+  const meJoinedInActiveCall = useMemo(() => {
+    if (!activeCall || !currentUserId) return false;
+    const joinedUserIds =
+      activeCall.joined_user_ids ??
+      (activeCall.joined_participants ?? []).map((member) => Number(member.user_id));
+    return joinedUserIds.includes(Number(currentUserId));
+  }, [activeCall, currentUserId]);
+  const publishMissingLocal = useMemo(() => {
+    if (!activeCall || !activeCall.is_active) return false;
+    if (!meJoinedInActiveCall) return false;
+    return activeCall.effective_media_state === "publish_missing" || !localAudioTrackPresent;
+  }, [activeCall, localAudioTrackPresent, meJoinedInActiveCall]);
   const schemaGateBlocked = activeCall?.signal_schema_ready === false;
 
   useEffect(() => {
@@ -1577,7 +1594,12 @@ function ChatWorkspace({
     }
     setAudioLevel(0);
     setMediaError(null);
+    setLocalAudioTrackPresent(false);
+    setRemoteAudioTracksCount(0);
     reconnectAttemptedRef.current = false;
+    publishRecoveryAttemptedRef.current = false;
+    publishRecoveryInFlightRef.current = null;
+    publishMissingSinceRef.current = null;
     connectInFlightRef.current = null;
     remoteTrackSeenRef.current = false;
     playbackStartedRef.current = false;
@@ -1588,25 +1610,68 @@ function ChatWorkspace({
     }
   }, []);
 
+  const readLiveKitAudioState = useCallback(() => {
+    const liveKitRoom = liveKitRoomRef.current;
+    const localAudioPublished = Boolean(
+      liveKitRoom?.localParticipant?.audioTrackPublications &&
+        Array.from(liveKitRoom.localParticipant.audioTrackPublications.values()).some(
+          (pub: any) => Boolean(pub?.track),
+        ),
+    );
+    const remoteAudioTrackCount = liveKitRoom
+      ? Array.from(liveKitRoom.remoteParticipants.values()).reduce((count: number, participant: any) => {
+          const published = Array.from(participant?.audioTrackPublications?.values?.() || []).filter((pub: any) =>
+            Boolean(pub?.track),
+          ).length;
+          return count + published;
+        }, 0)
+      : liveKitAudioRef.current.size;
+    return { localAudioPublished, remoteAudioTrackCount };
+  }, []);
+
+  const recoverLocalAudioPublish = useCallback(async () => {
+    if (publishRecoveryInFlightRef.current) {
+      return publishRecoveryInFlightRef.current;
+    }
+    const room = liveKitRoomRef.current;
+    if (!room?.localParticipant) return false;
+    publishRecoveryInFlightRef.current = (async () => {
+      try {
+        const participant = room.localParticipant;
+        for (const pub of Array.from(participant.audioTrackPublications?.values?.() || []) as any[]) {
+          try {
+            if (pub?.track) participant.unpublishTrack(pub.track);
+          } catch {
+            // no-op
+          }
+        }
+        await participant.setMicrophoneEnabled(false).catch(() => {});
+        await participant.setMicrophoneEnabled(true).catch(() => {});
+        const { localAudioPublished } = readLiveKitAudioState();
+        setLocalAudioTrackPresent(localAudioPublished);
+        setMicEnabled(true);
+        if (!localAudioPublished) {
+          setMediaError("Microphone not published. Click Retry to restore audio.");
+          return false;
+        }
+        setMediaError(null);
+        publishMissingSinceRef.current = null;
+        return true;
+      } finally {
+        publishRecoveryInFlightRef.current = null;
+      }
+    })();
+    return publishRecoveryInFlightRef.current;
+  }, [readLiveKitAudioState]);
+
   const pushCallTelemetry = useCallback(
     async (reason: string) => {
       const roomId = Number(activeRoomId || activeCall?.id || 0);
       if (!roomId) return;
       const liveKitRoom = liveKitRoomRef.current;
-      const localAudioPublished = Boolean(
-        liveKitRoom?.localParticipant?.audioTrackPublications &&
-          Array.from(liveKitRoom.localParticipant.audioTrackPublications.values()).some(
-            (pub: any) => Boolean(pub?.track),
-          ),
-      );
-      const remoteAudioTrackCount = liveKitRoom
-        ? Array.from(liveKitRoom.remoteParticipants.values()).reduce((count: number, participant: any) => {
-            const published = Array.from(participant?.audioTrackPublications?.values?.() || []).filter((pub: any) =>
-              Boolean(pub?.track),
-            ).length;
-            return count + published;
-          }, 0)
-        : liveKitAudioRef.current.size;
+      const { localAudioPublished, remoteAudioTrackCount } = readLiveKitAudioState();
+      setLocalAudioTrackPresent(localAudioPublished);
+      setRemoteAudioTracksCount(remoteAudioTrackCount);
       const roomState = String(liveKitRoom?.state || "").toLowerCase();
       const normalizedConnectionState: "idle" | "connecting" | "connected" | "reconnecting" | "failed" =
         roomState.includes("reconnecting")
@@ -1650,7 +1715,7 @@ function ChatWorkspace({
         body: JSON.stringify(payload),
       }).catch(() => {});
     },
-    [activeRoomId, activeCall?.id, activeCall?.joined_count, audioLevel, cameraEnabled, connectionState, mediaError, micEnabled],
+    [activeRoomId, activeCall?.id, activeCall?.joined_count, audioLevel, cameraEnabled, connectionState, mediaError, micEnabled, readLiveKitAudioState],
   );
 
   useEffect(() => {
@@ -1679,6 +1744,29 @@ function ChatWorkspace({
     if (!activeCall?.is_active) return;
     void pushCallTelemetry("media_change");
   }, [activeCall?.is_active, connectionState, mediaError, micEnabled, cameraEnabled, isPresenting, pushCallTelemetry]);
+
+  useEffect(() => {
+    if (!activeCall?.is_active) return;
+    if (!meJoinedInActiveCall || !micEnabled || !publishMissingLocal) {
+      publishMissingSinceRef.current = null;
+      return;
+    }
+    const nowMs = Date.now();
+    if (!publishMissingSinceRef.current) {
+      publishMissingSinceRef.current = nowMs;
+      return;
+    }
+    if (nowMs - publishMissingSinceRef.current < 4000) return;
+    if (publishRecoveryAttemptedRef.current) return;
+    publishRecoveryAttemptedRef.current = true;
+    setMediaError("Microphone publish missing. Attempting local recovery…");
+    void recoverLocalAudioPublish().then((recovered) => {
+      if (recovered) {
+        setConnectionState("connected");
+        void pushCallTelemetry("state_change");
+      }
+    });
+  }, [activeCall?.is_active, meJoinedInActiveCall, micEnabled, publishMissingLocal, recoverLocalAudioPublish, pushCallTelemetry]);
 
   const connectLiveKitRoom = useCallback(
     async (conversationId: number) => {
@@ -1750,6 +1838,19 @@ function ChatWorkspace({
           if (src.includes("screen")) {
             setIsPresenting(false);
           }
+          const { localAudioPublished } = readLiveKitAudioState();
+          setLocalAudioTrackPresent(localAudioPublished);
+          void pushCallTelemetry("state_change");
+        });
+        room.on(livekit.RoomEvent.LocalTrackPublished, () => {
+          const { localAudioPublished } = readLiveKitAudioState();
+          setLocalAudioTrackPresent(localAudioPublished);
+          if (localAudioPublished) {
+            setMediaError(null);
+            publishMissingSinceRef.current = null;
+            publishRecoveryAttemptedRef.current = false;
+          }
+          void pushCallTelemetry("state_change");
         });
         room.on(livekit.RoomEvent.ConnectionStateChanged, (state: string) => {
           if (state === "connected") {
@@ -1783,11 +1884,14 @@ function ChatWorkspace({
               document.body.appendChild(mediaEl);
             }
             liveKitAudioRef.current.set(String(publication?.trackSid || `${participant?.identity || "p"}-${Date.now()}`), mediaEl);
+            setRemoteAudioTracksCount(readLiveKitAudioState().remoteAudioTrackCount);
             void mediaEl.play().then(() => {
               playbackStartedRef.current = true;
               setMediaError(null);
+              void pushCallTelemetry("state_change");
             }).catch(() => {
               setMediaError("Remote audio was blocked by browser autoplay. Tap anywhere and press Retry.");
+              void pushCallTelemetry("state_change");
             });
           } catch {
             setMediaError("Unable to attach remote audio track.");
@@ -1808,10 +1912,12 @@ function ChatWorkspace({
                 mediaEl.parentElement.removeChild(mediaEl);
               }
               liveKitAudioRef.current.delete(key);
+              setRemoteAudioTracksCount(readLiveKitAudioState().remoteAudioTrackCount);
             }
           } catch {
             // no-op
           }
+          void pushCallTelemetry("state_change");
         });
         await room.connect(tokenData.livekit_url, tokenData.token, {
           autoSubscribe: true,
@@ -1823,6 +1929,9 @@ function ChatWorkspace({
         liveKitRoomRef.current = room;
         liveKitConnectedRef.current = true;
         setMicEnabled(true);
+        const firstAudioState = readLiveKitAudioState();
+        setLocalAudioTrackPresent(firstAudioState.localAudioPublished);
+        setRemoteAudioTracksCount(firstAudioState.remoteAudioTrackCount);
         setCameraEnabled(false);
         setConnectionState("connected");
         reconnectAttemptedRef.current = false;
@@ -1849,7 +1958,7 @@ function ChatWorkspace({
         connectInFlightRef.current = null;
       }
     },
-    [],
+    [pushCallTelemetry, readLiveKitAudioState],
   );
 
   const sendSignal = useCallback(
@@ -2405,19 +2514,19 @@ function ChatWorkspace({
     if (!roomId) return;
     try {
       await sendSignal(roomId, "media_repair", {}, undefined);
-      const room = liveKitRoomRef.current;
-      if (room?.localParticipant) {
-        await room.localParticipant.setMicrophoneEnabled(false).catch(() => {});
-        await room.localParticipant.setMicrophoneEnabled(true).catch(() => {});
-        setMicEnabled(true);
+      const recovered = await recoverLocalAudioPublish();
+      void pushCallTelemetry("state_change");
+      if (recovered) {
+        setConnectionState("connected");
+        onToast("Voice repair triggered. Microphone republished.", "success");
+      } else {
+        onToast("Voice repair attempted. Please tap Retry if audio is still missing.", "info");
       }
-      setMediaError(null);
-      onToast("Voice repair triggered. Reconnecting microphone streams…", "info");
     } catch (error) {
       const msg = mapCallActionError(error, "Unable to trigger voice repair.");
       onToast(msg, "error");
     }
-  }, [activeCall, onToast, sendSignal]);
+  }, [activeCall, onToast, recoverLocalAudioPublish, sendSignal, pushCallTelemetry]);
 
   const leaveCurrentCall = useCallback(
     async (roomId: number) => {
@@ -2926,11 +3035,12 @@ function ChatWorkspace({
             <span className="text-xs font-semibold text-emerald-100">
               Call is active • {activeCallDuration} • {Number(activeCall.joined_count || 0)} participant{Number(activeCall.joined_count || 0) === 1 ? "" : "s"}
             </span>
-            {callState === "connecting_media" ? <span className="text-[11px] text-emerald-200/90">Connecting audio…</span> : null}
-            {callState === "connected" && !hasRemoteAudioActive && Number(activeCall.joined_count || 0) > 1 ? (
+            {publishMissingLocal ? <span className="text-[11px] text-amber-200/90">Microphone not published…</span> : null}
+            {!publishMissingLocal && connectionState === "reconnecting" ? <span className="text-[11px] text-amber-200/90">Reconnecting…</span> : null}
+            {!publishMissingLocal && callState === "connecting_media" ? <span className="text-[11px] text-emerald-200/90">Connecting audio…</span> : null}
+            {!publishMissingLocal && callState === "connected" && !hasRemoteAudioActive && Number(activeCall.joined_count || 0) > 1 ? (
               <span className="text-[11px] text-amber-200/90">Waiting for remote audio…</span>
             ) : null}
-            {connectionState === "reconnecting" ? <span className="text-[11px] text-amber-200/90">Reconnecting…</span> : null}
             {connectionState === "failed" ? (
               <button
                 type="button"
@@ -2968,7 +3078,7 @@ function ChatWorkspace({
                   Decline
                 </button>
               </>
-            ) : callState !== "connected" && activeCall.can_join !== false ? (
+            ) : callState !== "connected" && activeCall.can_join !== false && !meJoinedInActiveCall ? (
               <button
                 type="button"
                 onClick={async () => joinCallRoom(activeCall.id, "Joined call.")}
@@ -3044,7 +3154,7 @@ function ChatWorkspace({
             <button
               type="button"
               onClick={async () => {
-                if (activeRoomId === activeCall.id || callState === "connected") {
+                if (activeRoomId === activeCall.id || callState === "connected" || meJoinedInActiveCall) {
                   await endActiveCall(activeCall.id);
                   return;
                 }
@@ -3052,7 +3162,7 @@ function ChatWorkspace({
               }}
               className="rounded-full border border-rose-400/50 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-500/25"
             >
-              {activeRoomId === activeCall.id || callState === "connected" ? "End call" : "Dismiss"}
+              {activeRoomId === activeCall.id || callState === "connected" || meJoinedInActiveCall ? "End call" : "Dismiss"}
             </button>
             <button
               type="button"

@@ -116,6 +116,12 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       telemetryStates.find((m) => Boolean(m.connection_state))?.connection_state || null;
     const latestMediaState =
       telemetryStates.find((m) => Boolean(m.media_state))?.media_state || null;
+    const localTelemetryRow = latestTelemetry.find((row) => Number(row.user_id) === Number(access.user_id));
+    const localTelemetryMetadata = (localTelemetryRow?.metadata || {}) as Record<string, unknown>;
+    const localPublishStateFromTelemetry = String(localTelemetryMetadata.publish_state || "");
+    const localTrackPresentFromTelemetry = Boolean(localTelemetryMetadata.local_audio_track_present);
+    const localSubscribeStateFromTelemetry = String(localTelemetryMetadata.subscribe_state || "");
+    const localRemoteCountFromTelemetry = Number(localTelemetryMetadata.remote_audio_tracks_count || 0);
     const effectiveMediaByUser = latestTelemetry.map((row) => {
       const metadata = (row.metadata || {}) as Record<string, unknown>;
       const connection = String(metadata.connection_state || "");
@@ -124,18 +130,32 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       const localTrack = Boolean(metadata.local_audio_track_present);
       const remoteCount = Number(metadata.remote_audio_tracks_count || 0);
       const autoplayBlocked = Boolean(metadata.autoplay_blocked);
+      const ageMs = Math.max(0, nowMs - new Date(row.created_at).getTime());
       let effective_media_state: "connected" | "reconnecting" | "publish_missing" | "waiting_remote" | "playback_blocked" | "idle" =
         "idle";
+      let effective_media_state_reason = "idle";
       if (connection === "reconnecting") effective_media_state = "reconnecting";
-      else if (autoplayBlocked) effective_media_state = "playback_blocked";
-      else if (publishState !== "published" || !localTrack) effective_media_state = "publish_missing";
-      else if (subscribeState !== "subscribed" || remoteCount <= 0) effective_media_state = "waiting_remote";
-      else effective_media_state = "connected";
+      if (effective_media_state === "reconnecting") effective_media_state_reason = "room_reconnecting";
+      else if (autoplayBlocked) {
+        effective_media_state = "playback_blocked";
+        effective_media_state_reason = "autoplay_blocked";
+      } else if (publishState !== "published" || !localTrack) {
+        effective_media_state = "publish_missing";
+        effective_media_state_reason = "publish_missing_local_track";
+      } else if (subscribeState !== "subscribed" || remoteCount <= 0) {
+        effective_media_state = "waiting_remote";
+        effective_media_state_reason = "waiting_remote_tracks";
+      } else {
+        effective_media_state = "connected";
+        effective_media_state_reason = "tracks_subscribed";
+      }
       return {
         user_id: String(row.user_id),
         full_name: String(row.full_name || "Unknown user"),
         created_at: row.created_at,
         effective_media_state,
+        effective_media_state_reason,
+        telemetry_freshness_ms: ageMs,
       };
     });
     const recentErrors = (eventsRes.rows as Array<{ event_type: string; metadata: unknown; created_at: string }>)
@@ -172,10 +192,13 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
             room.status === "active" || room.status === "scheduled"
               ? (Number(room.created_by_user_id || 0) === Number(access.user_id) || activeParticipants.some((p) => Number(p.user_id) === Number(access.user_id)))
               : false,
-          publish_state: localInRoom ? "published" : "pending",
-          subscribe_state: activeParticipants.length > 1 ? "subscribed" : "waiting_remote",
-          local_audio_track_present: localInRoom,
-          remote_audio_tracks_count: Math.max(0, activeParticipants.length - 1),
+          subscribe_state:
+            localSubscribeStateFromTelemetry || (activeParticipants.length > 1 ? "subscribed" : "waiting_remote"),
+          local_audio_track_present: localTrackPresentFromTelemetry || false,
+          remote_audio_tracks_count: Math.max(0, localRemoteCountFromTelemetry || 0),
+          publish_state:
+            localPublishStateFromTelemetry ||
+            (localInRoom ? "published" : "pending"),
           autoplay_blocked: false,
           permission_state: "granted",
           device_state: "ready",
