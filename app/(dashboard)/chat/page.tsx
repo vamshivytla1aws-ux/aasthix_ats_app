@@ -468,6 +468,22 @@ function buildCallMutationHeaders() {
   return { "x-idempotency-key": `${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
 }
 
+function mapCallActionError(error: unknown, fallback: string) {
+  if (error instanceof ApiError) {
+    if (error.status === 0 || /failed to fetch|network/i.test(error.message)) {
+      return "Network issue while contacting call service. Please retry.";
+    }
+    if (error.status === 401) {
+      return "Session expired. Please login again.";
+    }
+    if (error.status >= 500) {
+      return `Call service unavailable (${error.requestId ?? "no-request-id"}). Please retry.`;
+    }
+    return error.message || fallback;
+  }
+  return fallback;
+}
+
 export default function ChatPage() {
   const [activeConvId, setActiveConvId] = useState<number | null>(null);
   const [queryConversationId, setQueryConversationId] = useState<number | null>(null);
@@ -1401,6 +1417,9 @@ function ChatWorkspace({
     let nextState: "idle" | "ringing_outgoing" | "ringing_incoming" | "connecting_media" | "connected" = "idle";
     if (activeCall.status === "ended" || activeCall.status === "cancelled" || activeCall.is_active === false) {
       setActiveRoomId(null);
+    } else if (dismissed && activeRoomId !== roomId) {
+      // Prevent stale participant snapshots from resurrecting dismissed call bars.
+      nextState = "idle";
     } else if (activeCall.status === "active") {
       if (meJoined || activeRoomId === roomId) {
         const hasRemoteAudio =
@@ -2172,7 +2191,7 @@ function ChatWorkspace({
         onMutateConversations();
         setDrawerView("calendar");
       } catch (error) {
-        const msg = error instanceof ApiError ? error.message : "Unable to start call.";
+        const msg = mapCallActionError(error, "Unable to start call.");
         onToast(msg, "error");
       } finally {
         callActionRef.current.joining = false;
@@ -2205,7 +2224,7 @@ function ChatWorkspace({
         onMutateConversations();
       } catch (error) {
         setConnectionState("failed");
-        const msg = error instanceof ApiError ? error.message : "Unable to end call.";
+        const msg = mapCallActionError(error, "Unable to end call.");
         onToast(msg, "error");
       } finally {
         callActionRef.current.ending = false;
@@ -2261,7 +2280,7 @@ function ChatWorkspace({
           void mutateCallState();
           return;
         }
-        const msg = error instanceof ApiError ? error.message : "Unable to join call.";
+        const msg = mapCallActionError(error, "Unable to join call.");
         onToast(msg, "error");
       } finally {
         callActionRef.current.joining = false;
@@ -2292,21 +2311,30 @@ function ChatWorkspace({
       onToast("Reconnected to call.", "success");
     } catch (error) {
       setConnectionState("failed");
-      const msg = error instanceof ApiError ? error.message : "Unable to reconnect.";
+      const msg = mapCallActionError(error, "Unable to reconnect.");
       setMediaError(msg);
       onToast(msg, "error");
     }
   }, [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast]);
 
   const dismissIncomingCall = useCallback((roomId: number, toastMessage = "Call dismissed.") => {
+    setActiveRoomId((curr) => (curr === roomId ? null : curr));
     setRingDismissedRoomId(roomId);
     setCallState("idle");
+    setConnectionState("idle");
+    setMediaError(null);
+    stopMediaSession();
     if (ringIntervalRef.current) {
       window.clearInterval(ringIntervalRef.current);
       ringIntervalRef.current = null;
     }
+    void apiFetchJson(`/api/chat/calls/${roomId}/leave`, {
+      method: "POST",
+      headers: buildCallMutationHeaders(),
+    }).catch(() => {});
+    void mutateCallState();
     onToast(toastMessage, "success");
-  }, [onToast]);
+  }, [mutateCallState, onToast, stopMediaSession]);
 
   const moderateCall = useCallback(
     async (action: "mute_participant" | "unmute_participant" | "remove_participant" | "end_for_all", targetUserId?: number) => {
@@ -2343,7 +2371,7 @@ function ChatWorkspace({
         void mutateCallState();
         void mutateMessages();
       } catch (error) {
-        const msg = error instanceof ApiError ? error.message : "Moderation action failed.";
+        const msg = mapCallActionError(error, "Moderation action failed.");
         onToast(msg, "error");
       } finally {
         setModerationBusy(null);
@@ -2362,7 +2390,7 @@ function ChatWorkspace({
       }
       onToast("Call diagnostics copied.", "success");
     } catch (error) {
-      const msg = error instanceof ApiError ? error.message : "Unable to copy diagnostics.";
+      const msg = mapCallActionError(error, "Unable to copy diagnostics.");
       onToast(msg, "error");
     }
   }, [activeCall, onToast]);
@@ -2386,7 +2414,7 @@ function ChatWorkspace({
       setMediaError(null);
       onToast("Voice repair triggered. Reconnecting microphone streams…", "info");
     } catch (error) {
-      const msg = error instanceof ApiError ? error.message : "Unable to trigger voice repair.";
+      const msg = mapCallActionError(error, "Unable to trigger voice repair.");
       onToast(msg, "error");
     }
   }, [activeCall, onToast, sendSignal]);
@@ -2891,7 +2919,7 @@ function ChatWorkspace({
         </div>
       ) : null}
 
-      {activeCall && !(ringDismissedRoomId === activeCall.id && callState === "idle") ? (
+      {activeCall && !(ringDismissedRoomId === activeCall.id && activeRoomId !== activeCall.id) ? (
         <div className="pointer-events-none absolute bottom-24 right-6 z-40">
           <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-2 shadow-[0_10px_30px_rgba(16,185,129,0.25)] backdrop-blur">
             <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
