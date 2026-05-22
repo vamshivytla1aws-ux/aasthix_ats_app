@@ -40,7 +40,16 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     const room = roomRes.rows[0] as { id: number; conversation_id: number; status: string; created_by_user_id: number | null; title: string } | undefined;
     if (!room) return NextResponse.json({ operation_status: "blocked", user_message: "Call room not found." }, { status: 404 });
     if (room.status === "ended" || room.status === "cancelled") {
-      return NextResponse.json({ operation_status: "blocked", user_message: "Call is already ended." }, { status: 409 });
+      return NextResponse.json({
+        operation_status: "success",
+        user_message: "Call already ended.",
+        room_status: "ended",
+        is_active: false,
+        can_join: false,
+        can_end: false,
+        connection_state: "idle",
+        terminal_confirmed: true,
+      });
     }
     const memberRes = await query(
       `SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2 LIMIT 1`,

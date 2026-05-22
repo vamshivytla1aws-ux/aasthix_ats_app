@@ -123,6 +123,13 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     const localSubscribeStateFromTelemetry = String(localTelemetryMetadata.subscribe_state || "");
     const localRemoteCountFromTelemetry = Number(localTelemetryMetadata.remote_audio_tracks_count || 0);
     const isTerminalRoom = room.status === "ended" || room.status === "cancelled";
+    const endedAtMs = room.ended_at ? new Date(room.ended_at).getTime() : null;
+    const postEndTelemetryIgnored =
+      endedAtMs === null
+        ? 0
+        : (telemetryTimelineRes.rows as Array<{ created_at: string }>).filter(
+            (row) => new Date(row.created_at).getTime() > endedAtMs,
+          ).length;
     const effectiveMediaByUser = latestTelemetry.map((row) => {
       const metadata = (row.metadata || {}) as Record<string, unknown>;
       const connection = String(metadata.connection_state || "");
@@ -239,6 +246,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
         participants: participantsRes.rows,
         latest_telemetry_by_user: telemetryRes.rows,
         effective_media_by_user: effectiveMediaByUser,
+        post_end_telemetry_ignored: postEndTelemetryIgnored,
         telemetry_timeline: telemetryTimelineRes.rows,
         recent_events: eventsRes.rows,
         recent_errors: recentErrors,

@@ -468,10 +468,14 @@ function buildCallMutationHeaders() {
   return { "x-idempotency-key": `${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
 }
 
+function buildCallMutationHeadersWithKey(idempotencyKey?: string) {
+  return { "x-idempotency-key": idempotencyKey || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
+}
+
 function mapCallActionError(error: unknown, fallback: string) {
   if (error instanceof ApiError) {
     if (error.status === 0 || /failed to fetch|network/i.test(error.message)) {
-      return "Network issue while contacting call service. Please retry.";
+      return "Network issue while contacting call service. Retrying…";
     }
     if (error.status === 401) {
       return "Session expired. Please login again.";
@@ -939,6 +943,8 @@ function ChatWorkspace({
   const connectingPeersRef = useRef<Set<number>>(new Set());
   const analyzerRef = useRef<{ raf: number; audioCtx: AudioContext; analyser: AnalyserNode } | null>(null);
   const reconnectAttemptedRef = useRef(false);
+  const remoteTrackTimeoutSinceRef = useRef<number | null>(null);
+  const remoteTrackRecoveryAttemptedRef = useRef(false);
   const publishRecoveryAttemptedRef = useRef(false);
   const publishRecoveryInFlightRef = useRef<Promise<boolean> | null>(null);
   const publishMissingSinceRef = useRef<number | null>(null);
@@ -961,7 +967,7 @@ function ChatWorkspace({
   const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "connected" | "reconnecting" | "failed">("idle");
   const [localAudioTrackPresent, setLocalAudioTrackPresent] = useState(false);
   const [remoteAudioTracksCount, setRemoteAudioTracksCount] = useState(0);
-  const callStateRef = useRef(callState);
+  const callStateRef = useRef<"idle" | "ringing_outgoing" | "ringing_incoming" | "connecting_media" | "connected">(callState);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1602,6 +1608,8 @@ function ChatWorkspace({
     setLocalAudioTrackPresent(false);
     setRemoteAudioTracksCount(0);
     reconnectAttemptedRef.current = false;
+    remoteTrackTimeoutSinceRef.current = null;
+    remoteTrackRecoveryAttemptedRef.current = false;
     publishRecoveryAttemptedRef.current = false;
     publishRecoveryInFlightRef.current = null;
     publishMissingSinceRef.current = null;
@@ -1654,7 +1662,15 @@ function ChatWorkspace({
           }
         }
         await participant.setMicrophoneEnabled(false).catch(() => {});
+        // Desktop/Electron publish recovery: reacquire local audio track before republish.
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          localStreamRef.current = stream;
+        } catch {
+          // no-op; fallback to participant publish path
+        }
         await participant.setMicrophoneEnabled(true).catch(() => {});
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
         const { localAudioPublished } = readLiveKitAudioState();
         setLocalAudioTrackPresent(localAudioPublished);
         setMicEnabled(true);
@@ -1680,6 +1696,7 @@ function ChatWorkspace({
     async (reason: string) => {
       const roomId = Number(activeRoomId || activeCall?.id || 0);
       if (!roomId) return;
+      if (!activeCall?.is_active || callStateRef.current === "idle") return;
       const liveKitRoom = liveKitRoomRef.current;
       const { localAudioPublished, remoteAudioTrackCount } = readLiveKitAudioState();
       setLocalAudioTrackPresent(localAudioPublished);
@@ -1693,26 +1710,22 @@ function ChatWorkspace({
             : roomState.includes("connecting")
               ? "connecting"
               : roomState.includes("disconnected")
-                ? callStateRef.current === "idle"
-                  ? "idle"
-                  : "failed"
+                ? activeCall?.is_active
+                  ? "failed"
+                  : "idle"
                 : connectionState;
       const normalizedActiveConnectionState =
-        callStateRef.current === "idle"
-          ? normalizedConnectionState
-          : normalizedConnectionState === "idle"
-            ? "connecting"
-            : normalizedConnectionState;
+        normalizedConnectionState === "idle" ? "connecting" : normalizedConnectionState;
       const publishMissingHard =
         publishRecoveryPhaseRef.current !== "recovering" &&
-        callStateRef.current !== "idle" &&
         micEnabled &&
         !localAudioPublished;
-      const mediaState = publishMissingHard && publishRecoveryPhaseRef.current === "timeout"
-        ? "failed"
-        : mediaError && publishRecoveryPhaseRef.current !== "recovering"
+      const mediaState =
+        publishMissingHard && publishRecoveryPhaseRef.current === "timeout"
           ? "failed"
-          : "ok";
+          : mediaError && publishRecoveryPhaseRef.current !== "recovering" && !/recovering/i.test(mediaError)
+            ? "failed"
+            : "ok";
       const effectiveMediaStateReason =
         publishRecoveryPhaseRef.current === "recovering"
           ? "publish_recovering"
@@ -1761,7 +1774,7 @@ function ChatWorkspace({
         body: JSON.stringify(payload),
       }).catch(() => {});
     },
-    [activeRoomId, activeCall?.id, activeCall?.joined_count, audioLevel, cameraEnabled, connectionState, mediaError, micEnabled, readLiveKitAudioState],
+    [activeRoomId, activeCall?.id, activeCall?.joined_count, activeCall?.is_active, audioLevel, cameraEnabled, connectionState, mediaError, micEnabled, readLiveKitAudioState],
   );
 
   useEffect(() => {
@@ -1825,6 +1838,36 @@ function ChatWorkspace({
       }
     });
   }, [activeCall?.is_active, meJoinedInActiveCall, micEnabled, publishMissingLocal, recoverLocalAudioPublish, pushCallTelemetry]);
+
+  useEffect(() => {
+    if (!activeCall?.is_active || !meJoinedInActiveCall) {
+      remoteTrackTimeoutSinceRef.current = null;
+      remoteTrackRecoveryAttemptedRef.current = false;
+      return;
+    }
+    const expectsRemote = Number(activeCall.joined_count || 0) > 1;
+    if (!expectsRemote || remoteAudioTracksCount > 0) {
+      remoteTrackTimeoutSinceRef.current = null;
+      remoteTrackRecoveryAttemptedRef.current = false;
+      return;
+    }
+    const nowMs = Date.now();
+    if (!remoteTrackTimeoutSinceRef.current) {
+      remoteTrackTimeoutSinceRef.current = nowMs;
+      return;
+    }
+    if (nowMs - remoteTrackTimeoutSinceRef.current < 5000) return;
+    if (remoteTrackRecoveryAttemptedRef.current) return;
+    remoteTrackRecoveryAttemptedRef.current = true;
+    pendingRecoveryTelemetryReasonRef.current = "zero_remote_track_timeout";
+    setMediaError("Waiting for remote audio… trying to resubscribe.");
+    const room = liveKitRoomRef.current;
+    if (room?.localParticipant) {
+      void room.localParticipant.setMicrophoneEnabled(false)
+        .then(() => room.localParticipant.setMicrophoneEnabled(true))
+        .catch(() => {});
+    }
+  }, [activeCall, meJoinedInActiveCall, remoteAudioTracksCount]);
 
   const connectLiveKitRoom = useCallback(
     async (conversationId: number) => {
@@ -2532,14 +2575,39 @@ function ChatWorkspace({
               : "mute";
       setModerationBusy(busyKey);
       try {
-        const res = await apiFetchJson<{ operation_status?: string; user_message?: string; hint?: string }>(
-          `/api/chat/calls/${activeCall.id}/moderate`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
-            body: JSON.stringify({ action, target_user_id: targetUserId ?? null }),
+        const stableIdempotencyKey =
+          action === "end_for_all" ? `end-all-${activeCall.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : undefined;
+        const callModerate = async () =>
+          apiFetchJson<{ operation_status?: string; user_message?: string; hint?: string }>(
+            `/api/chat/calls/${activeCall.id}/moderate`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...buildCallMutationHeadersWithKey(stableIdempotencyKey) },
+              body: JSON.stringify({ action, target_user_id: targetUserId ?? null }),
+            }
+          );
+        let res: { operation_status?: string; user_message?: string; hint?: string } | null = null;
+        if (action === "end_for_all") {
+          const waits = [0, 400, 900, 1800];
+          for (let i = 0; i < waits.length; i += 1) {
+            if (i > 0) {
+              onToast("Ending call… retrying in background", "info");
+            }
+            if (waits[i] > 0) {
+              await new Promise((resolve) => window.setTimeout(resolve, waits[i]));
+            }
+            try {
+              const attempt = await callModerate();
+              res = attempt;
+              if (attempt.operation_status !== "error") break;
+            } catch (attemptError) {
+              if (i === waits.length - 1) throw attemptError;
+            }
           }
-        );
+        } else {
+          res = await callModerate();
+        }
+        if (!res) throw new ApiError("Unable to confirm call action.", 503);
         onToast(res.user_message || "Moderation action applied.", res.operation_status === "blocked" ? "info" : "success");
         if (action === "end_for_all") {
           setCallState("idle");

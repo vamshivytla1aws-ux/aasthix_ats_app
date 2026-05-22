@@ -35,6 +35,13 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         { status: 404 },
       );
     }
+    if (room.status === "ended" || room.status === "cancelled") {
+      return NextResponse.json({
+        operation_status: "success",
+        user_message: "Telemetry ignored for terminal room.",
+        ignored_due_to_terminal_room: true,
+      });
+    }
 
     const memberRes = await query(
       `SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2 LIMIT 1`,
@@ -68,6 +75,11 @@ export async function POST(request: Request, { params }: { params: { roomId: str
       user_agent: String(request.headers.get("user-agent") || "").slice(0, 240),
       client_ts: String(body?.client_ts || new Date().toISOString()),
       joined_count_hint: toFiniteNumber(body?.joined_count_hint, 0),
+      effective_media_state_reason: String(body?.effective_media_state_reason || "").slice(0, 80),
+      recovery_attempt:
+        body?.recovery_attempt && typeof body.recovery_attempt === "object"
+          ? body.recovery_attempt
+          : null,
     };
 
     await logCallEvent({
@@ -90,4 +102,3 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     );
   }
 }
-
