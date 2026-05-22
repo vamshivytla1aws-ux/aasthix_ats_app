@@ -151,6 +151,10 @@ type ChatCalendarEvent = {
   remote_audio_tracks_count?: number;
   signal_schema_ready?: boolean;
   effective_media_state?: "connected" | "reconnecting" | "publish_missing" | "waiting_remote" | "playback_blocked" | "idle";
+  call_presence_state?: "idle" | "active_joined" | "active_not_joined" | "incoming_ringing";
+  media_readiness_state?: "connected" | "waiting_remote" | "publish_missing" | "reconnecting" | "playback_blocked" | "idle";
+  caller_visibility_delay_ms?: number | null;
+  caller_visibility_slo_miss?: boolean;
 };
 type ConversationLiveStatus = {
   conversation_id: number;
@@ -985,6 +989,11 @@ function ChatWorkspace({
   const publishMissingSinceRef = useRef<number | null>(null);
   const publishRecoveryPhaseRef = useRef<"idle" | "recovering" | "timeout" | "success">("idle");
   const publishRecoveryStartedAtRef = useRef<string | null>(null);
+  const receiverJoinSeenAtRef = useRef<string | null>(null);
+  const callerBarVisibleAtRef = useRef<string | null>(null);
+  const callerVisibilitySloMissReportedRef = useRef(false);
+  const lastJoinedCountRef = useRef(0);
+  const reconcileWatchdogRef = useRef<number | null>(null);
   const pendingRecoveryTelemetryReasonRef = useRef<string | null>(null);
   const disconnectingRef = useRef(false);
   const connectInFlightRef = useRef<Promise<any> | null>(null);
@@ -1083,12 +1092,12 @@ function ChatWorkspace({
   const { data: calendarData, mutate: mutateCalendar } = useSWR<{ events: ChatCalendarEvent[] }>(
     `/api/chat/conversations/${conversation.id}/calendar?limit=40`,
     dashboardFetcher,
-    { refreshInterval: callState === "idle" ? 20_000 : isCallHotPath ? 1_000 : 2_000 }
+    { refreshInterval: callState === "idle" ? 20_000 : isCallHotPath ? 650 : 1_500 }
   );
   const { data: callStateData, mutate: mutateCallState } = useSWR<{ operation_status: string; call: ChatCalendarEvent | null }>(
     `/api/chat/conversations/${conversation.id}/calls/state`,
     dashboardFetcher,
-    { refreshInterval: callState === "idle" ? 10_000 : isCallHotPath ? 650 : 1_500 }
+    { refreshInterval: callState === "idle" ? 10_000 : isCallHotPath ? 500 : 1_200 }
   );
 
   useEffect(() => {
@@ -1103,6 +1112,9 @@ function ChatWorkspace({
       void mutateCalendar();
       void mutateMessages();
       onMutateConversations();
+      window.setTimeout(() => {
+        void mutateCallState();
+      }, 300);
     };
     stream.addEventListener("message.created", onMessageEvent);
     stream.addEventListener("message.updated", onMessageEvent);
@@ -1433,7 +1445,7 @@ function ChatWorkspace({
   const shouldForceActiveCallVisibility = useMemo(() => {
     if (!activeCall) return false;
     if (!meJoinedInActiveCall) return false;
-    return Number(activeCall.joined_count || 0) >= 2;
+    return Boolean(activeCall.is_active);
   }, [activeCall, meJoinedInActiveCall]);
   const publishMissingLocal = useMemo(() => {
     if (!activeCall || !activeCall.is_active) return false;
@@ -1471,6 +1483,10 @@ function ChatWorkspace({
   }, [callState]);
 
   useEffect(() => {
+    if (reconcileWatchdogRef.current) {
+      window.clearTimeout(reconcileWatchdogRef.current);
+      reconcileWatchdogRef.current = null;
+    }
     if (!activeCall) {
       setCallState("idle");
       setActiveRoomId(null);
@@ -1480,6 +1496,14 @@ function ChatWorkspace({
         ringIntervalRef.current = null;
       }
       return;
+    }
+    if (meJoinedInActiveCall && Number(activeCall.joined_count || 0) >= 2) {
+      receiverJoinSeenAtRef.current = receiverJoinSeenAtRef.current || new Date().toISOString();
+      reconcileWatchdogRef.current = window.setTimeout(() => {
+        if (callStateRef.current !== "connected") {
+          void mutateCallState();
+        }
+      }, 1200);
     }
     const roomId = activeCall.id;
     const isHost = Number(activeCall.created_by_user_id || 0) === Number(currentUserId || 0);
@@ -1523,6 +1547,10 @@ function ChatWorkspace({
       ringIntervalRef.current = null;
     }
     return () => {
+      if (reconcileWatchdogRef.current) {
+        window.clearTimeout(reconcileWatchdogRef.current);
+        reconcileWatchdogRef.current = null;
+      }
       if (ringIntervalRef.current && nextState === "connected") {
         window.clearInterval(ringIntervalRef.current);
         ringIntervalRef.current = null;
@@ -1538,7 +1566,21 @@ function ChatWorkspace({
     ringDismissedRoomId,
     ringVolume,
     shouldForceActiveCallVisibility,
+    meJoinedInActiveCall,
+    mutateCallState,
   ]);
+
+  useEffect(() => {
+    const joinedCount = Number(activeCall?.joined_count || 0);
+    const previous = lastJoinedCountRef.current;
+    if (joinedCount > previous) {
+      void mutateCallState();
+    }
+    if (meJoinedInActiveCall && joinedCount >= 2 && !receiverJoinSeenAtRef.current) {
+      receiverJoinSeenAtRef.current = new Date().toISOString();
+    }
+    lastJoinedCountRef.current = joinedCount;
+  }, [activeCall?.joined_count, meJoinedInActiveCall, mutateCallState]);
 
   useEffect(() => {
     if (!activeCall) return;
@@ -1660,6 +1702,14 @@ function ChatWorkspace({
     publishRecoveryAttemptedRef.current = false;
     publishRecoveryInFlightRef.current = null;
     publishMissingSinceRef.current = null;
+    receiverJoinSeenAtRef.current = null;
+    callerBarVisibleAtRef.current = null;
+    callerVisibilitySloMissReportedRef.current = false;
+    lastJoinedCountRef.current = 0;
+    if (reconcileWatchdogRef.current) {
+      window.clearTimeout(reconcileWatchdogRef.current);
+      reconcileWatchdogRef.current = null;
+    }
     connectInFlightRef.current = null;
     remoteTrackSeenRef.current = false;
     playbackStartedRef.current = false;
@@ -1902,6 +1952,28 @@ function ChatWorkspace({
         permission_state: mediaError && /permission|denied/i.test(mediaError) ? "denied" : "granted",
         media_error: mediaError || "",
         joined_count_hint: Number(activeCall?.joined_count || 0),
+        call_presence_state: !activeCall?.is_active
+          ? "idle"
+          : meJoinedInActiveCall
+            ? "active_joined"
+            : callStateRef.current === "incoming-ringing"
+              ? "incoming_ringing"
+              : "active_not_joined",
+        media_readiness_state:
+          normalizedActiveConnectionState === "reconnecting"
+            ? "reconnecting"
+            : publishMissingHard
+              ? "publish_missing"
+              : remoteAudioTrackCount > 0
+                ? "connected"
+                : "waiting_remote",
+        receiver_join_seen_at: receiverJoinSeenAtRef.current,
+        caller_bar_visible_at: callerBarVisibleAtRef.current,
+        caller_visibility_delay_ms:
+          receiverJoinSeenAtRef.current && callerBarVisibleAtRef.current
+            ? Math.max(0, new Date(callerBarVisibleAtRef.current).getTime() - new Date(receiverJoinSeenAtRef.current).getTime())
+            : null,
+        caller_visibility_slo_miss: callerVisibilitySloMissReportedRef.current,
         client_ts: new Date().toISOString(),
         prejoin_summary: prejoinSummaryPendingRef.current,
       };
@@ -1918,8 +1990,23 @@ function ChatWorkspace({
         })
         .catch(() => {});
     },
-    [activeRoomId, activeCall?.id, activeCall?.joined_count, activeCall?.is_active, audioLevel, cameraEnabled, connectionState, mediaError, micEnabled, readLiveKitAudioState],
+    [activeRoomId, activeCall?.id, activeCall?.joined_count, activeCall?.is_active, audioLevel, cameraEnabled, connectionState, mediaError, meJoinedInActiveCall, micEnabled, readLiveKitAudioState],
   );
+
+  useEffect(() => {
+    if (!activeCall?.is_active || !meJoinedInActiveCall) return;
+    if (!callerBarVisibleAtRef.current) {
+      callerBarVisibleAtRef.current = new Date().toISOString();
+    }
+    if (!receiverJoinSeenAtRef.current || callerVisibilitySloMissReportedRef.current) return;
+    const delay =
+      new Date(callerBarVisibleAtRef.current || 0).getTime() - new Date(receiverJoinSeenAtRef.current).getTime();
+    if (delay > 2000) {
+      callerVisibilitySloMissReportedRef.current = true;
+      pendingRecoveryTelemetryReasonRef.current = "caller_visibility_slo_miss";
+      void pushCallTelemetry("state_change");
+    }
+  }, [activeCall?.is_active, meJoinedInActiveCall, pushCallTelemetry]);
 
   useEffect(() => {
     if (!activeCall || !activeCall.is_active) {
@@ -2405,7 +2492,7 @@ function ChatWorkspace({
       }
     };
     void pollSignals();
-    const pollMs = callState === "outgoing-ringing" || callState === "connecting" ? 600 : 1200;
+    const pollMs = callState === "outgoing-ringing" || callState === "connecting" ? 600 : 650;
     signalPollRef.current = window.setInterval(() => void pollSignals(), pollMs);
     return () => {
       if (signalPollRef.current) {

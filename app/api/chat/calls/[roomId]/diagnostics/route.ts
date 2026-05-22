@@ -100,6 +100,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     const isTerminalRoom = room.status === "ended" || room.status === "cancelled";
     const telemetryForHealth = freshTelemetry.length > 0 ? freshTelemetry : latestTelemetry;
     const telemetryStates = telemetryForHealth.map((row) => row.metadata || {});
+    const requesterTelemetry = telemetryForHealth.find((row) => Number(row.user_id) === Number(access.user_id))?.metadata || {};
     const anyWaitingRemote = telemetryStates.some((m) => String(m.subscribe_state || "") === "waiting_remote");
     const anyRemoteZero = telemetryStates.some((m) => Number(m.remote_audio_tracks_count || 0) <= 0);
     const anyAutoplayBlocked = telemetryStates.some((m) => Boolean(m.autoplay_blocked));
@@ -142,6 +143,48 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       : telemetryStates.some((m) => String(m.media_state || "") === "failed")
         ? "failed"
         : String(latestMediaState || "") || "ok";
+    const roomEffectiveMediaState = isTerminalRoom
+      ? "idle"
+      : mediaHealth === "reconnect_loop"
+        ? "reconnecting"
+        : mediaHealth === "publish_missing"
+          ? "publish_missing"
+          : mediaHealth === "no_remote_tracks"
+            ? "waiting_remote"
+            : mediaHealth === "playback_blocked"
+              ? "playback_blocked"
+              : activeParticipants.length > 1
+                ? "connected"
+                : "idle";
+    const callPresenceState =
+      isTerminalRoom
+        ? "idle"
+        : activeParticipants.some((p) => Number(p.user_id) === Number(access.user_id))
+          ? "active_joined"
+          : room.status === "active"
+            ? "incoming_ringing"
+            : "active_not_joined";
+    const mediaReadinessState =
+      roomEffectiveMediaState === "reconnecting"
+        ? "reconnecting"
+        : roomEffectiveMediaState === "publish_missing"
+          ? "publish_missing"
+          : roomEffectiveMediaState === "playback_blocked"
+            ? "playback_blocked"
+            : roomEffectiveMediaState === "connected"
+              ? "connected"
+              : "waiting_remote";
+    const receiverJoinSeenAt = String(requesterTelemetry?.receiver_join_seen_at || "");
+    const callerBarVisibleAt = String(requesterTelemetry?.caller_bar_visible_at || "");
+    const callerVisibilityDelayMsRaw = Number(requesterTelemetry?.caller_visibility_delay_ms || NaN);
+    const callerVisibilityDelayMs =
+      Number.isFinite(callerVisibilityDelayMsRaw) && callerVisibilityDelayMsRaw >= 0
+        ? callerVisibilityDelayMsRaw
+        : receiverJoinSeenAt && callerBarVisibleAt
+          ? Math.max(0, new Date(callerBarVisibleAt).getTime() - new Date(receiverJoinSeenAt).getTime())
+          : null;
+    const callerVisibilitySloMiss =
+      callerVisibilityDelayMs !== null ? callerVisibilityDelayMs > 2000 : Boolean(requesterTelemetry?.caller_visibility_slo_miss);
     const endedAtMs = room.ended_at ? new Date(room.ended_at).getTime() : null;
     const postEndTelemetryIgnored =
       endedAtMs === null
@@ -196,7 +239,6 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     const closeReasonRow = (eventsRes.rows as Array<{ event_type: string; metadata?: { reason?: string } }>)
       .find((row) => row.event_type === "end");
     const roomClosedReason = String(closeReasonRow?.metadata?.reason || "");
-    const localInRoom = activeParticipants.some((p) => Number(p.user_id) === Number(access.user_id));
     const secondJoinRes = await query(
       `
       WITH per_user AS (
@@ -244,27 +286,18 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
           permission_state: "granted",
           device_state: "ready",
           media_health: isTerminalRoom ? "ok" : mediaHealth,
+          call_presence_state: callPresenceState,
+          media_readiness_state: isTerminalRoom ? "idle" : mediaReadinessState,
           remote_track_seen: activeParticipants.length > 1 && !anyRemoteZero,
           playback_started: !anyAutoplayBlocked && activeParticipants.length > 1 && !anyRemoteZero,
           last_media_failure_reason: lastMediaFailure || null,
-          effective_media_state: isTerminalRoom
-            ? "idle"
-            :
-            mediaHealth === "reconnect_loop"
-              ? "reconnecting"
-              : mediaHealth === "publish_missing"
-                ? "publish_missing"
-                : mediaHealth === "no_remote_tracks"
-                  ? "waiting_remote"
-                  : mediaHealth === "playback_blocked"
-                    ? "playback_blocked"
-                    : activeParticipants.length > 1
-                      ? "connected"
-                      : "idle",
+          effective_media_state: roomEffectiveMediaState,
           timing_markers: {
             room_started_at: room.start_at,
             first_remote_joined_at: firstJoinedAt,
           },
+          caller_visibility_delay_ms: callerVisibilityDelayMs,
+          caller_visibility_slo_miss: callerVisibilitySloMiss,
           health_action_hint: isTerminalRoom
             ? "none"
             : mediaHealth === "publish_missing"

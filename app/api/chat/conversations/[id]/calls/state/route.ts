@@ -165,6 +165,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     });
     const telemetryForRoom = freshTelemetry.length > 0 ? freshTelemetry : latestTelemetry;
     const telemetryStates = telemetryForRoom.map((row) => row.metadata || {});
+    const requesterTelemetry = telemetryForRoom.find((row) => Number(row.user_id) === Number(access.user_id))?.metadata || {};
     const endEventRes = await query(
       `SELECT metadata
        FROM chat_call_events
@@ -252,6 +253,37 @@ export async function GET(_request: Request, { params }: { params: { id: string 
                 : participants.length > 1
                   ? "connected"
                   : "idle";
+    const callPresenceState =
+      isTerminal
+        ? "idle"
+        : meJoined
+          ? "active_joined"
+          : room.status === "active"
+            ? "incoming_ringing"
+            : "active_not_joined";
+    const mediaReadinessState =
+      isTerminal
+        ? "idle"
+        : effectiveMediaState === "reconnecting"
+          ? "reconnecting"
+          : effectiveMediaState === "publish_missing"
+            ? "publish_missing"
+            : effectiveMediaState === "playback_blocked"
+              ? "playback_blocked"
+              : effectiveMediaState === "connected"
+                ? "connected"
+                : "waiting_remote";
+    const receiverJoinSeenAt = String(requesterTelemetry?.receiver_join_seen_at || "");
+    const callerBarVisibleAt = String(requesterTelemetry?.caller_bar_visible_at || "");
+    const callerVisibilityDelayMsRaw = Number(requesterTelemetry?.caller_visibility_delay_ms || NaN);
+    const callerVisibilityDelayMs =
+      Number.isFinite(callerVisibilityDelayMsRaw) && callerVisibilityDelayMsRaw >= 0
+        ? callerVisibilityDelayMsRaw
+        : receiverJoinSeenAt && callerBarVisibleAt
+          ? Math.max(0, new Date(callerBarVisibleAt).getTime() - new Date(receiverJoinSeenAt).getTime())
+          : null;
+    const callerVisibilitySloMiss =
+      callerVisibilityDelayMs !== null ? callerVisibilityDelayMs > 2000 : Boolean(requesterTelemetry?.caller_visibility_slo_miss);
     return NextResponse.json({
       operation_status: "success",
       correlation_id: correlationId,
@@ -278,11 +310,15 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         permission_state: "granted",
         device_state: "ready",
         media_health: mediaHealth,
+        call_presence_state: callPresenceState,
+        media_readiness_state: mediaReadinessState,
         signal_schema_ready: Boolean(signalSchema.schema_ready),
         timing_markers: {
           room_started_at: room.start_at,
           first_remote_joined_at: firstJoinedAt,
         },
+        caller_visibility_delay_ms: callerVisibilityDelayMs,
+        caller_visibility_slo_miss: callerVisibilitySloMiss,
         health_action_hint: isTerminal
           ? "none"
           : mediaHealth === "publish_missing"
