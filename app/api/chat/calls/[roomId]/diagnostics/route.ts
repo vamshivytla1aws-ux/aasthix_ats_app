@@ -92,6 +92,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       const ageMs = Math.max(0, nowMs - new Date(row.created_at).getTime());
       return ageMs <= 20_000;
     });
+    const isTerminalRoom = room.status === "ended" || room.status === "cancelled";
     const telemetryForHealth = freshTelemetry.length > 0 ? freshTelemetry : latestTelemetry;
     const telemetryStates = telemetryForHealth.map((row) => row.metadata || {});
     const anyWaitingRemote = telemetryStates.some((m) => String(m.subscribe_state || "") === "waiting_remote");
@@ -116,13 +117,27 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       telemetryStates.find((m) => Boolean(m.connection_state))?.connection_state || null;
     const latestMediaState =
       telemetryStates.find((m) => Boolean(m.media_state))?.media_state || null;
-    const localTelemetryRow = latestTelemetry.find((row) => Number(row.user_id) === Number(access.user_id));
-    const localTelemetryMetadata = (localTelemetryRow?.metadata || {}) as Record<string, unknown>;
-    const localPublishStateFromTelemetry = String(localTelemetryMetadata.publish_state || "");
-    const localTrackPresentFromTelemetry = Boolean(localTelemetryMetadata.local_audio_track_present);
-    const localSubscribeStateFromTelemetry = String(localTelemetryMetadata.subscribe_state || "");
-    const localRemoteCountFromTelemetry = Number(localTelemetryMetadata.remote_audio_tracks_count || 0);
-    const isTerminalRoom = room.status === "ended" || room.status === "cancelled";
+    const roomConnectionState = isTerminalRoom
+      ? "idle"
+      : telemetryStates.some((m) => String(m.connection_state || "") === "reconnecting")
+        ? "reconnecting"
+        : telemetryStates.some((m) => String(m.connection_state || "") === "connecting")
+          ? "connecting"
+          : telemetryStates.length > 0 && telemetryStates.every((m) => String(m.connection_state || "") === "connected")
+            ? "connected"
+            : (room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle");
+    const roomAllPublished =
+      telemetryStates.length > 0 &&
+      telemetryStates.every((m) => String(m.publish_state || "") === "published" && Boolean(m.local_audio_track_present));
+    const roomAnyPublished = telemetryStates.some((m) => String(m.publish_state || "") === "published");
+    const roomRemoteTracksMax = telemetryStates.reduce((max, m) => Math.max(max, Number(m.remote_audio_tracks_count || 0)), 0);
+    const roomSubscribeState = isTerminalRoom ? "waiting_remote" : roomRemoteTracksMax > 0 ? "subscribed" : "waiting_remote";
+    const roomPublishState = isTerminalRoom ? "pending" : roomAllPublished || roomAnyPublished ? "published" : "muted_or_unpublished";
+    const roomMediaState = isTerminalRoom
+      ? "ok"
+      : telemetryStates.some((m) => String(m.media_state || "") === "failed")
+        ? "failed"
+        : String(latestMediaState || "") || "ok";
     const endedAtMs = room.ended_at ? new Date(room.ended_at).getTime() : null;
     const postEndTelemetryIgnored =
       endedAtMs === null
@@ -178,15 +193,27 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       .find((row) => row.event_type === "end");
     const roomClosedReason = String(closeReasonRow?.metadata?.reason || "");
     const localInRoom = activeParticipants.some((p) => Number(p.user_id) === Number(access.user_id));
-    const firstJoinRes = await query(
-      `SELECT MIN(joined_at) AS first_joined_at
-       FROM chat_call_participants
-       WHERE room_id = $1
-         AND user_id <> $2`,
-      [roomId, access.user_id],
+    const secondJoinRes = await query(
+      `
+      WITH per_user AS (
+        SELECT user_id, MIN(joined_at) AS first_joined_at
+        FROM chat_call_participants
+        WHERE room_id = $1
+        GROUP BY user_id
+      ),
+      ordered AS (
+        SELECT first_joined_at, ROW_NUMBER() OVER (ORDER BY first_joined_at ASC) AS rn
+        FROM per_user
+      )
+      SELECT first_joined_at AS second_joined_at
+      FROM ordered
+      WHERE rn = 2
+      LIMIT 1
+      `,
+      [roomId],
     );
     const firstJoinedAt =
-      (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
+      (secondJoinRes.rows[0] as { second_joined_at?: string | null } | undefined)?.second_joined_at || null;
 
     return NextResponse.json({
       operation_status: "success",
@@ -196,27 +223,18 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
           joined_count: activeParticipants.length,
           joined_participants: activeParticipants,
           room_closed_reason: roomClosedReason || null,
-          connection_state: isTerminalRoom
-            ? "idle"
-            : (String(latestConnectionState || "") || (room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle")),
-          media_state: String(latestMediaState || "") || "ok",
+          connection_state: roomConnectionState,
+          media_state: roomMediaState,
           is_active: !isTerminalRoom && (room.status === "active" || room.status === "scheduled"),
           can_join: !isTerminalRoom && (room.status === "active" || room.status === "scheduled"),
           can_end:
             !isTerminalRoom && (room.status === "active" || room.status === "scheduled")
               ? (Number(room.created_by_user_id || 0) === Number(access.user_id) || activeParticipants.some((p) => Number(p.user_id) === Number(access.user_id)))
               : false,
-          subscribe_state: isTerminalRoom
-            ? "waiting_remote"
-            :
-            localSubscribeStateFromTelemetry || (activeParticipants.length > 1 ? "subscribed" : "waiting_remote"),
-          local_audio_track_present: isTerminalRoom ? false : (localTrackPresentFromTelemetry || false),
-          remote_audio_tracks_count: isTerminalRoom ? 0 : Math.max(0, localRemoteCountFromTelemetry || 0),
-          publish_state: isTerminalRoom
-            ? "pending"
-            :
-            localPublishStateFromTelemetry ||
-            (localInRoom ? "published" : "pending"),
+          subscribe_state: roomSubscribeState,
+          local_audio_track_present: isTerminalRoom ? false : roomAllPublished,
+          remote_audio_tracks_count: isTerminalRoom ? 0 : roomRemoteTracksMax,
+          publish_state: roomPublishState,
           autoplay_blocked: false,
           permission_state: "granted",
           device_state: "ready",
@@ -242,6 +260,16 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
             room_started_at: room.start_at,
             first_remote_joined_at: firstJoinedAt,
           },
+          health_action_hint: isTerminalRoom
+            ? "none"
+            : mediaHealth === "publish_missing"
+              ? "ask_user_to_retry_publish"
+              : mediaHealth === "no_remote_tracks"
+                ? "retry_remote_subscribe_once"
+                : mediaHealth === "playback_blocked"
+                  ? "request_user_interaction_for_playback"
+                  : "none",
+          aggregation_basis: "room_fresh_telemetry",
         },
         participants: participantsRes.rows,
         latest_telemetry_by_user: telemetryRes.rows,

@@ -133,6 +133,32 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const presentingRow = presentingRes.rows[0] as { from_user_id: number; payload: { enabled?: boolean } } | undefined;
     const isPresenting = Boolean(presentingRow?.payload?.enabled);
     const presenterUserId = isPresenting ? Number(presentingRow?.from_user_id || 0) : null;
+    const telemetryRes = await query(
+      `
+      SELECT DISTINCT ON (e.user_id)
+        e.user_id,
+        e.created_at,
+        e.metadata
+      FROM chat_call_events e
+      WHERE e.room_id = $1
+        AND e.event_type = 'media_telemetry'
+        AND e.user_id IS NOT NULL
+      ORDER BY e.user_id, e.created_at DESC
+      `,
+      [room.id],
+    );
+    const latestTelemetry = telemetryRes.rows as Array<{
+      user_id: number;
+      created_at: string;
+      metadata?: Record<string, unknown> | null;
+    }>;
+    const nowMs = Date.now();
+    const freshTelemetry = latestTelemetry.filter((row) => {
+      const ageMs = Math.max(0, nowMs - new Date(row.created_at).getTime());
+      return ageMs <= 20_000;
+    });
+    const telemetryForRoom = freshTelemetry.length > 0 ? freshTelemetry : latestTelemetry;
+    const telemetryStates = telemetryForRoom.map((row) => row.metadata || {});
     const endEventRes = await query(
       `SELECT metadata
        FROM chat_call_events
@@ -142,21 +168,66 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       [room.id],
     );
     const roomClosedReason = String((endEventRes.rows[0] as { metadata?: { reason?: string } } | undefined)?.metadata?.reason || "");
-    const firstJoinRes = await query(
-      `SELECT MIN(joined_at) AS first_joined_at
-       FROM chat_call_participants
-       WHERE room_id = $1
-         AND user_id <> $2`,
-      [room.id, access.user_id],
+    const secondJoinRes = await query(
+      `
+      WITH per_user AS (
+        SELECT user_id, MIN(joined_at) AS first_joined_at
+        FROM chat_call_participants
+        WHERE room_id = $1
+        GROUP BY user_id
+      ),
+      ordered AS (
+        SELECT first_joined_at, ROW_NUMBER() OVER (ORDER BY first_joined_at ASC) AS rn
+        FROM per_user
+      )
+      SELECT first_joined_at AS second_joined_at
+      FROM ordered
+      WHERE rn = 2
+      LIMIT 1
+      `,
+      [room.id],
     );
     const firstJoinedAt =
-      (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
-    const publishState = isTerminal
-      ? "pending"
-      : participants.some((p) => Number(p.user_id) === Number(access.user_id))
-        ? "published"
-        : "pending";
-    const subscribeState = isTerminal ? "waiting_remote" : participants.length > 1 ? "subscribed" : "waiting_remote";
+      (secondJoinRes.rows[0] as { second_joined_at?: string | null } | undefined)?.second_joined_at || null;
+    const roomConnectionState = isTerminal
+      ? "idle"
+      : telemetryStates.some((m) => String(m.connection_state || "") === "reconnecting")
+        ? "reconnecting"
+        : telemetryStates.some((m) => String(m.connection_state || "") === "connecting")
+          ? "connecting"
+          : telemetryStates.length > 0 && telemetryStates.every((m) => String(m.connection_state || "") === "connected")
+            ? "connected"
+            : room.status === "active"
+              ? "connected"
+              : room.status === "scheduled"
+                ? "connecting"
+                : "idle";
+    const roomAllPublished =
+      telemetryStates.length > 0 &&
+      telemetryStates.every((m) => String(m.publish_state || "") === "published" && Boolean(m.local_audio_track_present));
+    const roomAnyPublished = telemetryStates.some((m) => String(m.publish_state || "") === "published");
+    const roomRemoteTracksMax = telemetryStates.reduce((max, m) => Math.max(max, Number(m.remote_audio_tracks_count || 0)), 0);
+    const publishState = isTerminal ? "pending" : roomAllPublished || roomAnyPublished ? "published" : "muted_or_unpublished";
+    const subscribeState = isTerminal ? "waiting_remote" : roomRemoteTracksMax > 0 ? "subscribed" : "waiting_remote";
+    const mediaState = isTerminal
+      ? "ok"
+      : telemetryStates.some((m) => String(m.media_state || "") === "failed")
+        ? "failed"
+        : "ok";
+    const anyWaitingRemote = telemetryStates.some((m) => String(m.subscribe_state || "") === "waiting_remote");
+    const anyRemoteZero = telemetryStates.some((m) => Number(m.remote_audio_tracks_count || 0) <= 0);
+    const anyAutoplayBlocked = telemetryStates.some((m) => Boolean(m.autoplay_blocked));
+    const anyPublishMissing = telemetryStates.some(
+      (m) => String(m.publish_state || "") !== "published" || !Boolean(m.local_audio_track_present),
+    );
+    const allReconnecting =
+      telemetryStates.length > 0 && telemetryStates.every((m) => String(m.connection_state || "") === "reconnecting");
+    let mediaHealth: "ok" | "reconnect_loop" | "no_remote_tracks" | "playback_blocked" | "publish_missing" = "ok";
+    if (isTerminal) mediaHealth = "ok";
+    else if (allReconnecting) mediaHealth = "reconnect_loop";
+    else if (anyAutoplayBlocked) mediaHealth = "playback_blocked";
+    else if (anyPublishMissing) mediaHealth = "publish_missing";
+    else if (anyWaitingRemote || anyRemoteZero) mediaHealth = "no_remote_tracks";
     const signalSchema = await getSignalSchemaHealthInline().catch(() => ({
       schema_ready: false,
       missing_types: [] as string[],
@@ -165,13 +236,17 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const effectiveMediaState =
       isTerminal
         ? "idle"
-        : room.status !== "active"
-        ? "idle"
-        : publishState !== "published"
-          ? "publish_missing"
-          : subscribeState !== "subscribed"
-            ? "waiting_remote"
-            : "connected";
+        : mediaHealth === "reconnect_loop"
+          ? "reconnecting"
+          : mediaHealth === "publish_missing"
+            ? "publish_missing"
+            : mediaHealth === "no_remote_tracks"
+              ? "waiting_remote"
+              : mediaHealth === "playback_blocked"
+                ? "playback_blocked"
+                : participants.length > 1
+                  ? "connected"
+                  : "idle";
     return NextResponse.json({
       operation_status: "success",
       call: {
@@ -184,23 +259,34 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         is_presenting: isPresenting,
         presenter_user_id: presenterUserId,
         room_closed_reason: roomClosedReason || null,
-        connection_state: isTerminal ? "idle" : room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle",
-        media_state: "ok",
+        connection_state: roomConnectionState,
+        media_state: mediaState,
         can_join: !isTerminal && isActiveLike,
         can_end: !isTerminal && (Number(room.created_by_user_id || 0) === Number(access.user_id) || meJoined),
         publish_state: publishState,
         subscribe_state: subscribeState,
-        local_audio_track_present: isTerminal ? false : publishState === "published",
-        remote_audio_tracks_count: isTerminal ? 0 : Math.max(0, participants.length - 1),
+        local_audio_track_present: isTerminal ? false : roomAllPublished,
+        remote_audio_tracks_count: isTerminal ? 0 : roomRemoteTracksMax,
         effective_media_state: effectiveMediaState,
         autoplay_blocked: false,
         permission_state: "granted",
         device_state: "ready",
+        media_health: mediaHealth,
         signal_schema_ready: Boolean(signalSchema.schema_ready),
         timing_markers: {
           room_started_at: room.start_at,
           first_remote_joined_at: firstJoinedAt,
         },
+        health_action_hint: isTerminal
+          ? "none"
+          : mediaHealth === "publish_missing"
+            ? "ask_user_to_retry_publish"
+            : mediaHealth === "no_remote_tracks"
+              ? "retry_remote_subscribe_once"
+              : mediaHealth === "playback_blocked"
+                ? "request_user_interaction_for_playback"
+                : "none",
+        aggregation_basis: "room_fresh_telemetry",
       },
     });
   } catch (error) {

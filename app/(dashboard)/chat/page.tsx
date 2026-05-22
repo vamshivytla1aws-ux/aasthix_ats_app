@@ -1389,6 +1389,11 @@ function ChatWorkspace({
       (activeCall.joined_participants ?? []).map((member) => Number(member.user_id));
     return joinedUserIds.includes(Number(currentUserId));
   }, [activeCall, currentUserId]);
+  const shouldForceActiveCallVisibility = useMemo(() => {
+    if (!activeCall) return false;
+    if (!meJoinedInActiveCall) return false;
+    return Number(activeCall.joined_count || 0) >= 2;
+  }, [activeCall, meJoinedInActiveCall]);
   const publishMissingLocal = useMemo(() => {
     if (!activeCall || !activeCall.is_active) return false;
     if (!meJoinedInActiveCall) return false;
@@ -1445,7 +1450,7 @@ function ChatWorkspace({
     let nextState: "idle" | "ringing_outgoing" | "ringing_incoming" | "connecting_media" | "connected" = "idle";
     if (activeCall.status === "ended" || activeCall.status === "cancelled" || activeCall.is_active === false) {
       setActiveRoomId(null);
-    } else if (dismissed && activeRoomId !== roomId) {
+    } else if (dismissed && activeRoomId !== roomId && !shouldForceActiveCallVisibility) {
       // Prevent stale participant snapshots from resurrecting dismissed call bars.
       nextState = "idle";
     } else if (activeCall.status === "active") {
@@ -1491,6 +1496,7 @@ function ChatWorkspace({
     prefData?.user?.desktop_sound,
     ringDismissedRoomId,
     ringVolume,
+    shouldForceActiveCallVisibility,
   ]);
 
   useEffect(() => {
@@ -3173,7 +3179,7 @@ function ChatWorkspace({
         </div>
       ) : null}
 
-      {activeCall && !(ringDismissedRoomId === activeCall.id && activeRoomId !== activeCall.id) ? (
+      {activeCall && !(ringDismissedRoomId === activeCall.id && activeRoomId !== activeCall.id && !shouldForceActiveCallVisibility) ? (
         <div className="pointer-events-none absolute bottom-24 right-6 z-40">
           <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-2 shadow-[0_10px_30px_rgba(16,185,129,0.25)] backdrop-blur">
             <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
