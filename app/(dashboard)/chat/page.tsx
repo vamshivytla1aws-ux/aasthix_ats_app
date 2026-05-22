@@ -3054,6 +3054,15 @@ function ChatWorkspace({
             >
               {activeRoomId === activeCall.id || callState === "connected" ? "End call" : "Dismiss"}
             </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await copyCallDiagnostics();
+              }}
+              className="rounded-full border border-indigo-300/40 px-2 py-1 text-[11px] text-indigo-100 hover:bg-indigo-500/20"
+            >
+              Copy diagnostics
+            </button>
             {canModerate && callState === "connected" ? (
               <>
                 <button
@@ -3094,15 +3103,6 @@ function ChatWorkspace({
                       </button>
                     </div>
                   ))}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await copyCallDiagnostics();
-                  }}
-                  className="rounded-full border border-indigo-300/40 px-2 py-1 text-[11px] text-indigo-100 hover:bg-indigo-500/20"
-                >
-                  Copy diagnostics
-                </button>
                 <button
                   type="button"
                   disabled={schemaGateBlocked}
