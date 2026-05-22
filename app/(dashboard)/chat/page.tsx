@@ -942,6 +942,9 @@ function ChatWorkspace({
   const publishRecoveryAttemptedRef = useRef(false);
   const publishRecoveryInFlightRef = useRef<Promise<boolean> | null>(null);
   const publishMissingSinceRef = useRef<number | null>(null);
+  const publishRecoveryPhaseRef = useRef<"idle" | "recovering" | "timeout" | "success">("idle");
+  const publishRecoveryStartedAtRef = useRef<string | null>(null);
+  const pendingRecoveryTelemetryReasonRef = useRef<string | null>(null);
   const disconnectingRef = useRef(false);
   const connectInFlightRef = useRef<Promise<any> | null>(null);
   const remoteTrackSeenRef = useRef(false);
@@ -1637,6 +1640,9 @@ function ChatWorkspace({
     if (!room?.localParticipant) return false;
     publishRecoveryInFlightRef.current = (async () => {
       try {
+        publishRecoveryPhaseRef.current = "recovering";
+        publishRecoveryStartedAtRef.current = new Date().toISOString();
+        pendingRecoveryTelemetryReasonRef.current = "publish_recovery_start";
         const participant = room.localParticipant;
         for (const pub of Array.from(participant.audioTrackPublications?.values?.() || []) as any[]) {
           try {
@@ -1651,11 +1657,15 @@ function ChatWorkspace({
         setLocalAudioTrackPresent(localAudioPublished);
         setMicEnabled(true);
         if (!localAudioPublished) {
+          publishRecoveryPhaseRef.current = "timeout";
           setMediaError("Microphone not published. Click Retry to restore audio.");
+          pendingRecoveryTelemetryReasonRef.current = "publish_recovery_timeout";
           return false;
         }
+        publishRecoveryPhaseRef.current = "success";
         setMediaError(null);
         publishMissingSinceRef.current = null;
+        pendingRecoveryTelemetryReasonRef.current = "publish_recovery_success";
         return true;
       } finally {
         publishRecoveryInFlightRef.current = null;
@@ -1685,22 +1695,56 @@ function ChatWorkspace({
                   ? "idle"
                   : "failed"
                 : connectionState;
+      const normalizedActiveConnectionState =
+        callStateRef.current === "idle"
+          ? normalizedConnectionState
+          : normalizedConnectionState === "idle"
+            ? "connecting"
+            : normalizedConnectionState;
+      const publishMissingHard =
+        publishRecoveryPhaseRef.current !== "recovering" &&
+        callStateRef.current !== "idle" &&
+        micEnabled &&
+        !localAudioPublished;
+      const mediaState = publishMissingHard && publishRecoveryPhaseRef.current === "timeout"
+        ? "failed"
+        : mediaError && publishRecoveryPhaseRef.current !== "recovering"
+          ? "failed"
+          : "ok";
+      const effectiveMediaStateReason =
+        publishRecoveryPhaseRef.current === "recovering"
+          ? "publish_recovering"
+          : publishRecoveryPhaseRef.current === "timeout"
+            ? "publish_missing_local_track"
+            : localAudioPublished
+              ? remoteAudioTrackCount > 0
+                ? "tracks_subscribed"
+                : "waiting_remote_tracks"
+              : "publish_missing_local_track";
       const payload = {
         reason,
         call_state: callStateRef.current,
-        connection_state: normalizedConnectionState,
-        media_state: mediaError ? "failed" : "ok",
+        connection_state: normalizedActiveConnectionState,
+        media_state: mediaState,
         publish_state: localAudioPublished ? "published" : "muted_or_unpublished",
         subscribe_state: remoteAudioTrackCount > 0 ? "subscribed" : "waiting_remote",
         local_audio_track_present: localAudioPublished,
         remote_audio_tracks_count: remoteAudioTrackCount,
+        effective_media_state_reason: effectiveMediaStateReason,
+        recovery_attempt:
+          publishRecoveryPhaseRef.current === "recovering" || publishRecoveryPhaseRef.current === "timeout"
+            ? { phase: publishRecoveryPhaseRef.current, attempt_ts: publishRecoveryStartedAtRef.current }
+            : null,
         remote_track_seen: remoteTrackSeenRef.current,
         playback_started: playbackStartedRef.current,
         audio_level: audioLevel,
         mic_enabled: micEnabled,
         camera_enabled: cameraEnabled,
         autoplay_blocked: /autoplay/i.test(mediaError || ""),
-        device_state: mediaError && /device|microphone/i.test(mediaError) ? "device_error" : "ready",
+        device_state:
+          mediaState === "failed" && (mediaError && /device|microphone/i.test(mediaError))
+            ? "device_error"
+            : "ready",
         permission_state: mediaError && /permission|denied/i.test(mediaError) ? "denied" : "granted",
         media_error: mediaError || "",
         joined_count_hint: Number(activeCall?.joined_count || 0),
@@ -1747,8 +1791,20 @@ function ChatWorkspace({
 
   useEffect(() => {
     if (!activeCall?.is_active) return;
+    const reason = pendingRecoveryTelemetryReasonRef.current;
+    if (!reason) return;
+    pendingRecoveryTelemetryReasonRef.current = null;
+    void pushCallTelemetry(reason);
+  }, [activeCall?.is_active, mediaError, localAudioTrackPresent, remoteAudioTracksCount, pushCallTelemetry]);
+
+  useEffect(() => {
+    if (!activeCall?.is_active) return;
     if (!meJoinedInActiveCall || !micEnabled || !publishMissingLocal) {
       publishMissingSinceRef.current = null;
+      if (publishRecoveryPhaseRef.current !== "idle") {
+        publishRecoveryPhaseRef.current = "idle";
+        publishRecoveryStartedAtRef.current = null;
+      }
       return;
     }
     const nowMs = Date.now();
@@ -1759,7 +1815,7 @@ function ChatWorkspace({
     if (nowMs - publishMissingSinceRef.current < 4000) return;
     if (publishRecoveryAttemptedRef.current) return;
     publishRecoveryAttemptedRef.current = true;
-    setMediaError("Microphone publish missing. Attempting local recovery…");
+    setMediaError("Microphone publish recovering…");
     void recoverLocalAudioPublish().then((recovered) => {
       if (recovered) {
         setConnectionState("connected");
@@ -3035,7 +3091,12 @@ function ChatWorkspace({
             <span className="text-xs font-semibold text-emerald-100">
               Call is active • {activeCallDuration} • {Number(activeCall.joined_count || 0)} participant{Number(activeCall.joined_count || 0) === 1 ? "" : "s"}
             </span>
-            {publishMissingLocal ? <span className="text-[11px] text-amber-200/90">Microphone not published…</span> : null}
+            {publishMissingLocal && /recovering/i.test(mediaError || "")
+              ? <span className="text-[11px] text-amber-200/90">Microphone publish recovering…</span>
+              : null}
+            {publishMissingLocal && !/recovering/i.test(mediaError || "")
+              ? <span className="text-[11px] text-amber-200/90">Microphone not published…</span>
+              : null}
             {!publishMissingLocal && connectionState === "reconnecting" ? <span className="text-[11px] text-amber-200/90">Reconnecting…</span> : null}
             {!publishMissingLocal && callState === "connecting_media" ? <span className="text-[11px] text-emerald-200/90">Connecting audio…</span> : null}
             {!publishMissingLocal && callState === "connected" && !hasRemoteAudioActive && Number(activeCall.joined_count || 0) > 1 ? (
