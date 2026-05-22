@@ -195,6 +195,19 @@ type LiveKitSessionToken = {
   turn_ready?: boolean;
 };
 
+type PrejoinStatus = "checking" | "ready" | "warning" | "failed";
+type PrejoinDiagnostics = {
+  status: PrejoinStatus;
+  permission: "granted" | "denied" | "prompt" | "unknown";
+  mic_available: boolean;
+  mic_capture_ok: boolean;
+  autoplay_ok: boolean;
+  input_devices: number;
+  output_devices: number;
+  messages: string[];
+  checked_at: string;
+};
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 function initials(name: string) {
@@ -987,6 +1000,12 @@ function ChatWorkspace({
     sharing: false,
   });
   const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "connected" | "reconnecting" | "failed">("idle");
+  const [showPrejoin, setShowPrejoin] = useState(false);
+  const [prejoinStatus, setPrejoinStatus] = useState<PrejoinDiagnostics | null>(null);
+  const [prejoinBusy, setPrejoinBusy] = useState(false);
+  const pendingCallIntentRef = useRef<null | { kind: "launch" | "join"; mode?: "call" | "screenshare"; roomId?: number; successMessage?: string }>(null);
+  const prejoinSummaryPendingRef = useRef<PrejoinDiagnostics | null>(null);
+  const prejoinBypassRef = useRef(false);
   const [localAudioTrackPresent, setLocalAudioTrackPresent] = useState(false);
   const [remoteAudioTracksCount, setRemoteAudioTracksCount] = useState(0);
   const callStateRef = useRef<CallUiState>(callState);
@@ -1670,6 +1689,82 @@ function ChatWorkspace({
     return { localAudioPublished, remoteAudioTrackCount };
   }, []);
 
+  const runPrejoinDiagnostics = useCallback(async (): Promise<PrejoinDiagnostics> => {
+    const messages: string[] = [];
+    let permission: PrejoinDiagnostics["permission"] = "unknown";
+    let micAvailable = false;
+    let micCaptureOk = false;
+    let autoplayOk = false;
+    let inputDevices = 0;
+    let outputDevices = 0;
+
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.enumerateDevices) {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        inputDevices = devices.filter((d) => d.kind === "audioinput").length;
+        outputDevices = devices.filter((d) => d.kind === "audiooutput").length;
+        micAvailable = inputDevices > 0;
+        if (!micAvailable) messages.push("No microphone device found.");
+      } catch {
+        messages.push("Unable to read media devices.");
+      }
+    }
+
+    try {
+      if (typeof navigator !== "undefined" && (navigator as any).permissions?.query) {
+        const perm = await (navigator as any).permissions.query({ name: "microphone" as PermissionName });
+        permission = (perm?.state as PrejoinDiagnostics["permission"]) || "unknown";
+      }
+    } catch {
+      permission = "unknown";
+    }
+
+    if (permission === "denied") {
+      messages.push("Microphone permission denied.");
+    } else if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        micCaptureOk = stream.getAudioTracks().some((t) => t.readyState === "live");
+        for (const track of stream.getTracks()) track.stop();
+        if (!micCaptureOk) messages.push("Unable to capture microphone audio.");
+      } catch {
+        messages.push("Microphone capture failed.");
+      }
+    }
+
+    if (typeof document !== "undefined") {
+      try {
+        const audio = document.createElement("audio");
+        audio.autoplay = true;
+        audio.muted = false;
+        audio.volume = 0.01;
+        audio.src =
+          "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+        await audio.play();
+        autoplayOk = true;
+        audio.pause();
+      } catch {
+        messages.push("Autoplay may be blocked until user interaction.");
+      }
+    }
+
+    let status: PrejoinStatus = "ready";
+    if (permission === "denied" || !micAvailable || !micCaptureOk) status = "failed";
+    else if (!autoplayOk) status = "warning";
+
+    return {
+      status,
+      permission,
+      mic_available: micAvailable,
+      mic_capture_ok: micCaptureOk,
+      autoplay_ok: autoplayOk,
+      input_devices: inputDevices,
+      output_devices: outputDevices,
+      messages,
+      checked_at: new Date().toISOString(),
+    };
+  }, []);
+
   const recoverLocalAudioPublish = useCallback(async () => {
     if (publishRecoveryInFlightRef.current) {
       return publishRecoveryInFlightRef.current;
@@ -1808,6 +1903,7 @@ function ChatWorkspace({
         media_error: mediaError || "",
         joined_count_hint: Number(activeCall?.joined_count || 0),
         client_ts: new Date().toISOString(),
+        prejoin_summary: prejoinSummaryPendingRef.current,
       };
       const signature = JSON.stringify(payload);
       if (reason !== "interval" && signature === lastTelemetrySignatureRef.current) return;
@@ -1816,7 +1912,11 @@ function ChatWorkspace({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      }).catch(() => {});
+      })
+        .then(() => {
+          if (prejoinSummaryPendingRef.current) prejoinSummaryPendingRef.current = null;
+        })
+        .catch(() => {});
     },
     [activeRoomId, activeCall?.id, activeCall?.joined_count, activeCall?.is_active, audioLevel, cameraEnabled, connectionState, mediaError, micEnabled, readLiveKitAudioState],
   );
@@ -2369,6 +2469,16 @@ function ChatWorkspace({
   const launchCall = useCallback(
     async (mode: "call" | "screenshare") => {
       if (callActionRef.current.joining || callActionRef.current.ending) return;
+      if (!prejoinBypassRef.current) {
+        pendingCallIntentRef.current = { kind: "launch", mode };
+        setShowPrejoin(true);
+        setPrejoinBusy(true);
+        const result = await runPrejoinDiagnostics().catch(() => null);
+        setPrejoinStatus(result);
+        setPrejoinBusy(false);
+        return;
+      }
+      prejoinBypassRef.current = false;
       try {
         callActionRef.current.joining = true;
         if (activeCall) {
@@ -2451,7 +2561,7 @@ function ChatWorkspace({
         setCallLoading(null);
       }
     },
-    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast, pushCallTelemetry]
+    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast, pushCallTelemetry, runPrejoinDiagnostics]
   );
 
   const endActiveCall = useCallback(
@@ -2494,6 +2604,16 @@ function ChatWorkspace({
   const joinCallRoom = useCallback(
     async (roomId: number, successMessage = "Joined call.") => {
       if (callActionRef.current.joining) return;
+      if (!prejoinBypassRef.current) {
+        pendingCallIntentRef.current = { kind: "join", roomId, successMessage };
+        setShowPrejoin(true);
+        setPrejoinBusy(true);
+        const result = await runPrejoinDiagnostics().catch(() => null);
+        setPrejoinStatus(result);
+        setPrejoinBusy(false);
+        return;
+      }
+      prejoinBypassRef.current = false;
       if (activeCall && Number(activeCall.id) === Number(roomId) && activeCall.can_join === false) {
         setCallState("idle");
         setActiveRoomId(null);
@@ -2546,7 +2666,7 @@ function ChatWorkspace({
         callActionRef.current.joining = false;
       }
     },
-    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast, pushCallTelemetry]
+    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast, pushCallTelemetry, runPrejoinDiagnostics]
   );
 
   const retryCallConnection = useCallback(async () => {
@@ -2710,6 +2830,43 @@ function ChatWorkspace({
       onToast(msg, "error");
     }
   }, [activeCall, onToast, recoverLocalAudioPublish, sendSignal, pushCallTelemetry]);
+
+  const retryPrejoinChecks = useCallback(async () => {
+    setPrejoinBusy(true);
+    const result = await runPrejoinDiagnostics().catch(() => null);
+    setPrejoinStatus(result);
+    setPrejoinBusy(false);
+  }, [runPrejoinDiagnostics]);
+
+  const proceedFromPrejoin = useCallback(async () => {
+    if (prejoinStatus) {
+      prejoinSummaryPendingRef.current = prejoinStatus;
+      if (prejoinStatus.status === "failed") {
+        setMediaError(prejoinStatus.messages[0] || "Prejoin checks failed.");
+      } else if (prejoinStatus.status === "warning") {
+        setMediaError(prejoinStatus.messages[0] || "Prejoin warning detected.");
+      }
+    }
+    const intent = pendingCallIntentRef.current;
+    pendingCallIntentRef.current = null;
+    setShowPrejoin(false);
+    if (!intent) return;
+    prejoinBypassRef.current = true;
+    if (intent.kind === "launch" && intent.mode) {
+      await launchCall(intent.mode);
+      return;
+    }
+    if (intent.kind === "join" && intent.roomId) {
+      await joinCallRoom(intent.roomId, intent.successMessage || "Joined call.");
+    }
+  }, [joinCallRoom, launchCall, prejoinStatus]);
+
+  const cancelPrejoin = useCallback(() => {
+    pendingCallIntentRef.current = null;
+    prejoinBypassRef.current = false;
+    setShowPrejoin(false);
+    setCallLoading(null);
+  }, []);
 
   const leaveCurrentCall = useCallback(
     async (roomId: number) => {
@@ -3207,6 +3364,90 @@ function ChatWorkspace({
         <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-indigo-900/20 backdrop-blur-[1px]">
           <div className="rounded-xl border border-indigo-400/70 bg-[#0a1121]/95 px-5 py-3 text-sm font-medium text-indigo-200 shadow">
             Drop files here to upload
+          </div>
+        </div>
+      ) : null}
+
+      {showPrejoin ? (
+        <div className="absolute inset-0 z-40 grid place-items-center bg-slate-950/65 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-[#33405d] bg-[#0f162a] p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-100">Prejoin audio checks</h3>
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                  !prejoinStatus || prejoinStatus.status === "checking"
+                    ? "border-slate-500/50 text-slate-300"
+                    : prejoinStatus.status === "ready"
+                      ? "border-emerald-500/50 text-emerald-200"
+                      : prejoinStatus.status === "warning"
+                        ? "border-amber-500/50 text-amber-200"
+                        : "border-rose-500/50 text-rose-200"
+                }`}
+              >
+                {!prejoinStatus ? "Checking" : prejoinStatus.status}
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-slate-300">
+              We’ll verify microphone and playback readiness. You can still continue with warnings.
+            </p>
+
+            <div className="mt-4 space-y-2 rounded-xl border border-[#33405d] bg-[#121a30] p-3 text-xs text-slate-200">
+              <div className="flex items-center justify-between">
+                <span>Microphone permission</span>
+                <span className="font-medium text-slate-100">{prejoinStatus?.permission ?? "checking"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Mic capture test</span>
+                <span className="font-medium text-slate-100">{prejoinStatus?.mic_capture_ok ? "ok" : "pending"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Playback probe</span>
+                <span className="font-medium text-slate-100">{prejoinStatus?.autoplay_ok ? "ok" : "blocked/pending"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Input devices</span>
+                <span className="font-medium text-slate-100">{prejoinStatus?.input_devices ?? 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Output devices</span>
+                <span className="font-medium text-slate-100">{prejoinStatus?.output_devices ?? 0}</span>
+              </div>
+            </div>
+
+            <div className="mt-3 max-h-28 space-y-1 overflow-y-auto rounded-md bg-[#0b1122] px-3 py-2 text-[11px] text-slate-300">
+              {(prejoinStatus?.messages?.length ? prejoinStatus.messages : ["Running checks…"]).map((message, idx) => (
+                <p key={`${message}-${idx}`}>{message}</p>
+              ))}
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelPrejoin}
+                className="rounded-lg border border-[#33405d] px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-[#1a233a]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={prejoinBusy}
+                onClick={() => {
+                  void retryPrejoinChecks();
+                }}
+                className="rounded-lg border border-amber-400/50 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/20 disabled:opacity-60"
+              >
+                {prejoinBusy ? "Checking…" : "Retry checks"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void proceedFromPrejoin();
+                }}
+                className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400"
+              >
+                Join now
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { canModerateCall, logCallEvent } from "@/lib/chatCallGovernance";
 import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,10 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         can_end: false,
         connection_state: "idle",
         terminal_confirmed: true,
+        correlation_id: resolveCallCorrelationId({
+          correlationHeader: request.headers.get("x-call-correlation-id"),
+          idempotencyHeader: request.headers.get("x-idempotency-key"),
+        }),
       });
     }
     const memberRes = await query(
@@ -63,6 +68,10 @@ export async function POST(request: Request, { params }: { params: { roomId: str
 
     const body = await request.json().catch(() => ({}));
     const requestKey = request.headers.get("x-idempotency-key")?.trim() || "";
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: requestKey,
+    });
     const action = String(body?.action || "") as Action;
     const targetUserId = Number(body?.target_user_id);
 
@@ -73,7 +82,12 @@ export async function POST(request: Request, { params }: { params: { roomId: str
           [roomId, requestKey],
         );
         if (existing.rowCount) {
-          return NextResponse.json({ operation_status: "success", user_message: "Call already ended for all." });
+          return NextResponse.json({
+            operation_status: "success",
+            user_message: "Call already ended for all.",
+            correlation_id: correlationId,
+            idempotent_replay: true,
+          });
         }
       }
       const closed = await closeChatCallRoomTransactional({
@@ -85,6 +99,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         messageSenderId: access.user_id,
         eventUserId: access.user_id,
         eventKey: requestKey || `moderator_end:${roomId}:${access.user_id}`,
+        correlationId,
       });
       if (!closed.closed) return NextResponse.json({ operation_status: "blocked", user_message: "Call already ended." }, { status: 409 });
       return NextResponse.json({
@@ -96,6 +111,8 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         can_end: false,
         connection_state: "idle",
         event_accepted: closed.event_accepted,
+        correlation_id: correlationId,
+        idempotent_replay: !closed.event_accepted,
       });
     }
 
@@ -119,7 +136,12 @@ export async function POST(request: Request, { params }: { params: { roomId: str
           [roomId, requestKey],
         );
         if (existing.rowCount) {
-          return NextResponse.json({ operation_status: "success", user_message: "Participant already removed." });
+          return NextResponse.json({
+            operation_status: "success",
+            user_message: "Participant already removed.",
+            correlation_id: correlationId,
+            idempotent_replay: true,
+          });
         }
       }
       await query(
@@ -162,8 +184,9 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         eventType: "remove_participant",
         metadata: { target_user_id: targetUserId },
         eventKey: requestKey || `participant_removed:${roomId}:${targetUserId}:${access.user_id}`,
+        correlationId,
       });
-      return NextResponse.json({ operation_status: "success", user_message: "Participant removed." });
+      return NextResponse.json({ operation_status: "success", user_message: "Participant removed.", correlation_id: correlationId });
     }
 
     if (action === "mute_participant" || action === "unmute_participant") {
@@ -176,6 +199,8 @@ export async function POST(request: Request, { params }: { params: { roomId: str
           return NextResponse.json({
             operation_status: "success",
             user_message: action === "mute_participant" ? "Participant already muted." : "Participant already unmuted.",
+            correlation_id: correlationId,
+            idempotent_replay: true,
           });
         }
       }
@@ -211,10 +236,12 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         eventKey:
           requestKey ||
           `${muteFlag ? "participant_muted" : "participant_unmuted"}:${roomId}:${targetUserId}:${access.user_id}`,
+        correlationId,
       });
       return NextResponse.json({
         operation_status: "success",
         user_message: muteFlag ? "Participant muted." : "Participant unmuted.",
+        correlation_id: correlationId,
       });
     }
 

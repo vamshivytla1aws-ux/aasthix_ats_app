@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
 import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,10 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     }
 
     const requestKey = _request.headers.get("x-idempotency-key")?.trim() || "";
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: _request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: requestKey,
+    });
     await query(
       `
       UPDATE chat_call_participants
@@ -57,6 +62,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
         messageSenderId: access.user_id,
         eventUserId: access.user_id,
         eventKey: requestKey || `call_end:${roomId}:${access.user_id}`,
+        correlationId,
       });
     } else {
       const eventAccepted = await logCallEvent({
@@ -65,6 +71,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
         userId: access.user_id,
         eventType: "drop",
         eventKey: requestKey || `call_drop:${roomId}:${access.user_id}`,
+        correlationId,
       });
       if (eventAccepted) {
         await query(
@@ -75,7 +82,11 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     }
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [room.conversation_id]);
 
-    return NextResponse.json({ operation_status: "success", user_message: "Left call room." });
+    return NextResponse.json({
+      operation_status: "success",
+      user_message: "Left call room.",
+      correlation_id: correlationId,
+    });
   } catch (error) {
     return NextResponse.json(
       {

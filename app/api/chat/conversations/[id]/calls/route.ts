@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { createChatCallRoom, endChatCallRoom, getChatCallSignalSchemaHealth } from "@/lib/chatCalls";
 import { canStartCallByPolicy, getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +60,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     const body = await request.json().catch(() => ({}));
     const requestKey = request.headers.get("x-idempotency-key")?.trim() || "";
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: requestKey,
+    });
     const mode = normalizeMode(body?.mode);
     const durationMinutesRaw = Number(body?.duration_minutes);
     const durationMinutes =
@@ -88,6 +93,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       eventType: "call_start",
       eventKey: requestKey || `call_start:${room.id}:${access.user_id}`,
       metadata: { session_mode: mode },
+      correlationId,
     });
     if (eventAccepted) {
       await query(
@@ -113,6 +119,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
       status_priority: mode === "screenshare" ? 1 : 2,
       provider: "ats_native",
       schema_ready: true,
+      correlation_id: correlationId,
+      event_accepted: eventAccepted,
+      idempotent_replay: !eventAccepted,
     });
   } catch (error) {
     return NextResponse.json(
@@ -143,6 +152,10 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
 
     const url = new URL(request.url);
     const requestKey = request.headers.get("x-idempotency-key")?.trim() || "";
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: requestKey,
+    });
     const eventId = Number(url.searchParams.get("event_id"));
     if (!Number.isFinite(eventId)) return NextResponse.json({ error: "event_id is required." }, { status: 400 });
 
@@ -185,6 +198,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       eventType: "end",
       eventKey: requestKey || `call_end:${event.id}:${access.user_id}`,
       metadata: { reason: "ended" },
+      correlationId,
     });
     if (endEventAccepted) {
       await query(
@@ -202,6 +216,9 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       operation_status: "success",
       user_message: "Call ended successfully.",
       room_closed_reason: "ended",
+      correlation_id: correlationId,
+      event_accepted: endEventAccepted,
+      idempotent_replay: !endEventAccepted,
     });
   } catch (error) {
     return NextResponse.json(

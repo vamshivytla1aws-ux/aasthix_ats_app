@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -96,6 +97,10 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     }
 
     const requestKey = _request.headers.get("x-idempotency-key")?.trim() || "";
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: _request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: requestKey,
+    });
     const activeRowRes = await query(
       `SELECT 1 FROM chat_call_participants WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL LIMIT 1`,
       [roomId, access.user_id],
@@ -130,6 +135,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
         userId: access.user_id,
         eventType: "join_success",
         eventKey: requestKey || `join_success:${roomId}:${access.user_id}`,
+        correlationId,
       });
       if (joinEventAccepted) {
         await query(
@@ -152,6 +158,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       operation_status: "success",
       user_message: "Joined call room.",
       joined_count: Number((countRes.rows[0] as { count?: number } | undefined)?.count || 0),
+      correlation_id: correlationId,
       room_state: {
         room_id: roomId,
         conversation_id: room.conversation_id,

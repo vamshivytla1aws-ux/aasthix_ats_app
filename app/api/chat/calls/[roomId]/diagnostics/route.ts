@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,10 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     const gate = await requirePermission("chat.view");
     if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
     const access = gate.access;
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: _request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: _request.headers.get("x-idempotency-key"),
+    });
     const roomId = Number(params.roomId);
     if (!Number.isFinite(roomId)) return NextResponse.json({ operation_status: "blocked", user_message: "Invalid room id." }, { status: 400 });
 
@@ -216,6 +221,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
 
     return NextResponse.json({
       operation_status: "success",
+      correlation_id: correlationId,
       diagnostics: {
         room: {
           ...room,

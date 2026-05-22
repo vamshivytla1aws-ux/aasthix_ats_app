@@ -120,6 +120,7 @@ export async function closeChatCallRoomTransactional(input: {
   messageSenderId?: number | null;
   eventUserId?: number | null;
   eventKey: string;
+  correlationId?: string | null;
 }) {
   const closeRes = await query(
     `
@@ -157,6 +158,7 @@ export async function closeChatCallRoomTransactional(input: {
     eventType: "end",
     metadata: { reason: input.reason },
     eventKey: input.eventKey,
+    correlationId: input.correlationId,
   });
   if (eventAccepted) {
     await query(

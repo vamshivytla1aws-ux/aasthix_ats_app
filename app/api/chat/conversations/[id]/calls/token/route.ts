@@ -10,6 +10,7 @@ import {
   liveKitUrl,
   parseRtcIceServers,
 } from "@/lib/livekit";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,11 @@ export async function POST(_request: Request, { params }: { params: { id: string
       );
     }
     const access = gate.access;
+    const requestKey = _request.headers.get("x-idempotency-key")?.trim() || "";
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: _request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: requestKey,
+    });
     const conversationId = Number(params.id);
     if (!Number.isFinite(conversationId)) {
       return NextResponse.json({ error: "Invalid conversation id." }, { status: 400 });
@@ -98,6 +104,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
       identity_prefix: identity.slice(0, 20),
       ice_has_turn: iceConfig.hasTurn,
       ice_parse_error: iceConfig.parseError,
+      correlation_id: correlationId,
     });
     return NextResponse.json({
       operation_status: "success",
@@ -108,6 +115,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
       media_state: "ready",
       turn_ready: iceConfig.hasTurn,
       ice_parse_error: iceConfig.parseError,
+      correlation_id: correlationId,
     });
   } catch (error) {
     return NextResponse.json(

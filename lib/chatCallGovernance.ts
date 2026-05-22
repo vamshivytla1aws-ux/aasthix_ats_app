@@ -70,14 +70,19 @@ export async function logCallEvent(input: {
   eventType: string;
   metadata?: Record<string, unknown>;
   eventKey?: string;
+  correlationId?: string | null;
 }) {
+  const metadata = {
+    ...(input.metadata || {}),
+    ...(input.correlationId ? { correlation_id: input.correlationId } : {}),
+  };
   const args = [
     input.roomId,
     input.conversationId,
     input.userId ?? null,
     input.eventType,
     input.eventKey ?? null,
-    JSON.stringify(input.metadata || {}),
+    JSON.stringify(metadata),
   ];
   try {
     const res = await query(

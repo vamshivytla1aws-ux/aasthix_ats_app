@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { buildLiveKitRoomName } from "@/lib/livekit";
 import { logCallEvent } from "@/lib/chatCallGovernance";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,10 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const gate = await requirePermission("chat.view");
     if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
     const access = gate.access;
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: _request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: _request.headers.get("x-idempotency-key"),
+    });
     const conversationId = Number(params.id);
     if (!Number.isFinite(conversationId)) return NextResponse.json({ error: "Invalid conversation id." }, { status: 400 });
 
@@ -70,7 +75,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const room = roomRes.rows[0] as
       | { id: number; status: string; session_mode: "call" | "screenshare"; start_at: string; end_at: string; created_by_user_id: number | null }
       | undefined;
-    if (!room) return NextResponse.json({ operation_status: "success", call: null });
+    if (!room) return NextResponse.json({ operation_status: "success", call: null, correlation_id: correlationId });
 
     const participantsRes = await query(
       `
@@ -109,13 +114,14 @@ export async function GET(_request: Request, { params }: { params: { id: string 
             eventType: "end",
             metadata: { reason: "timeout" },
             eventKey: `auto_timeout:${room.id}`,
+            correlationId,
           });
           await query(
             `INSERT INTO messages (conversation_id, sender_id, content, is_system)
              VALUES ($1, NULL, $2, TRUE)`,
             [conversationId, "Call ended due to no participants."],
           );
-          return NextResponse.json({ operation_status: "success", call: null });
+          return NextResponse.json({ operation_status: "success", call: null, correlation_id: correlationId });
         }
       }
     }
@@ -248,6 +254,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
                   : "idle";
     return NextResponse.json({
       operation_status: "success",
+      correlation_id: correlationId,
       call: {
         ...room,
         room_name: buildLiveKitRoomName(conversationId, Number(room.id)),

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export async function POST() {
       `,
     );
     let closed = 0;
+    const correlationId = resolveCallCorrelationId({});
     for (const row of staleRes.rows as Array<{ id: number; conversation_id: number }>) {
       const result = await closeChatCallRoomTransactional({
         roomId: row.id,
@@ -38,6 +40,7 @@ export async function POST() {
         messageSenderId: null,
         eventUserId: null,
         eventKey: `stale_end:${row.id}`,
+        correlationId,
       });
       if (!result.closed) continue;
       closed += 1;
@@ -47,6 +50,7 @@ export async function POST() {
       operation_status: "success",
       user_message: `Closed ${closed} stale call room(s).`,
       closed,
+      correlation_id: correlationId,
     });
   } catch (error) {
     return NextResponse.json({ operation_status: "error", error: error instanceof Error ? error.message : "Failed to cleanup stale calls." }, { status: 500 });

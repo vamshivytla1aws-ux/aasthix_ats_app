@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { canShareByPolicy, getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -129,6 +130,10 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     if (!memberRes.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
 
     const body = await request.json().catch(() => ({}));
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: request.headers.get("x-idempotency-key"),
+    });
     const signalType = normalizeSignalType(body?.signal_type);
     const toUserId = await resolveTargetUserId(roomId, room.conversation_id, body?.to_user_id);
     const payload = body?.payload && typeof body.payload === "object" ? body.payload : {};
@@ -146,6 +151,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
           userId: access.user_id,
           eventType: "share_blocked",
           metadata: { scope: policy.call_share_scope },
+          correlationId,
         });
         return NextResponse.json(
           {
@@ -166,7 +172,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
       `,
       [roomId, access.user_id, toUserId, signalType, JSON.stringify(payload)],
     );
-    return NextResponse.json({ operation_status: "success", id: Number(ins.rows[0]?.id || 0) });
+    return NextResponse.json({ operation_status: "success", id: Number(ins.rows[0]?.id || 0), correlation_id: correlationId });
   } catch (error) {
     const pgError = error as { code?: string; constraint?: string };
     if (pgError?.code === "23514" && pgError?.constraint === "chat_call_signals_type_chk") {

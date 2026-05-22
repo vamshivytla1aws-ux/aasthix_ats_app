@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,10 @@ export async function POST(_request: Request, { params }: { params: { id: string
     if (!room) return NextResponse.json({ operation_status: "blocked", user_message: "No active call to ring." }, { status: 409 });
 
     const requestKey = _request.headers.get("x-idempotency-key")?.trim() || "";
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: _request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: requestKey,
+    });
     const ringLogged = await logCallEvent({
       roomId: Number(room.id),
       conversationId,
@@ -35,6 +40,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
       eventType: "ring",
       eventKey: requestKey || `ring:${room.id}:${access.user_id}`,
       metadata: { title: room.title },
+      correlationId,
     });
     if (ringLogged) {
       await query(
@@ -43,7 +49,14 @@ export async function POST(_request: Request, { params }: { params: { id: string
       );
     }
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
-    return NextResponse.json({ operation_status: "success", user_message: "Call ring signal sent.", room_id: Number(room.id) });
+    return NextResponse.json({
+      operation_status: "success",
+      user_message: "Call ring signal sent.",
+      room_id: Number(room.id),
+      correlation_id: correlationId,
+      event_accepted: ringLogged,
+      idempotent_replay: !ringLogged,
+    });
   } catch (error) {
     return NextResponse.json(
       { operation_status: "error", error: error instanceof Error ? error.message : "Failed to ring participants." },

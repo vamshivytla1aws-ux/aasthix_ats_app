@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     const body = await request.json().catch(() => ({}));
     const reason = String(body?.reason || "ended").trim().slice(0, 80);
+    const requestKey = request.headers.get("x-idempotency-key")?.trim() || "";
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: requestKey,
+    });
     const roomRes = await query(
       `SELECT id, title FROM chat_call_rooms WHERE conversation_id = $1 AND status IN ('active','scheduled') ORDER BY id DESC LIMIT 1`,
       [conversationId],
@@ -44,7 +50,6 @@ export async function POST(request: Request, { params }: { params: { id: string 
         room_closed_reason: "ended",
       });
     }
-    const requestKey = request.headers.get("x-idempotency-key")?.trim() || "";
     const closed = await closeChatCallRoomTransactional({
       roomId: Number(room.id),
       conversationId,
@@ -54,12 +59,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
       messageSenderId: access.user_id,
       eventUserId: access.user_id,
       eventKey: requestKey || `call_end:${room.id}:${access.user_id}`,
+      correlationId,
     });
     if (!closed.closed) {
       return NextResponse.json({
         operation_status: "success",
         user_message: "Call already ended.",
         room_closed_reason: "ended",
+        correlation_id: correlationId,
+        idempotent_replay: true,
       });
     }
     return NextResponse.json({
@@ -73,6 +81,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
       can_end: false,
       connection_state: "idle",
       event_accepted: closed.event_accepted,
+      correlation_id: correlationId,
+      idempotent_replay: !closed.event_accepted,
     });
   } catch (error) {
     return NextResponse.json(

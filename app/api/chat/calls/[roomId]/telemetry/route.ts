@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +56,10 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     }
 
     const body = await request.json().catch(() => ({}));
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: request.headers.get("x-idempotency-key"),
+    });
     const reason = String(body?.reason || "sample").trim().slice(0, 40) || "sample";
     const metadata = {
       reason,
@@ -80,6 +85,10 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         body?.recovery_attempt && typeof body.recovery_attempt === "object"
           ? body.recovery_attempt
           : null,
+      prejoin_summary:
+        body?.prejoin_summary && typeof body.prejoin_summary === "object"
+          ? body.prejoin_summary
+          : null,
     };
 
     await logCallEvent({
@@ -89,6 +98,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
       eventType: "media_telemetry",
       metadata,
       eventKey: `media_telemetry:${roomId}:${access.user_id}:${Date.now()}`,
+      correlationId,
     });
     if (reason !== "interval") {
       console.info("[chat-call] telemetry_event", {
@@ -103,12 +113,14 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         subscribe_state: metadata.subscribe_state,
         local_audio_track_present: metadata.local_audio_track_present,
         remote_audio_tracks_count: metadata.remote_audio_tracks_count,
+        correlation_id: correlationId,
       });
     }
 
     return NextResponse.json({
       operation_status: "success",
       user_message: "Telemetry captured.",
+      correlation_id: correlationId,
     });
   } catch (error) {
     return NextResponse.json(

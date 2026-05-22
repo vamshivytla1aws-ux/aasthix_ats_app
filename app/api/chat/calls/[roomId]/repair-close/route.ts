@@ -2,17 +2,22 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
+import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(_request: Request, { params }: { params: { roomId: string } }) {
+export async function POST(request: Request, { params }: { params: { roomId: string } }) {
   try {
     const gate = await requireAdmin();
     if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: request.headers.get("x-idempotency-key"),
+    });
     const roomId = Number(params.roomId);
     if (!Number.isFinite(roomId)) {
-      return NextResponse.json({ operation_status: "blocked", user_message: "Invalid room id." }, { status: 400 });
+      return NextResponse.json({ operation_status: "blocked", user_message: "Invalid room id.", correlation_id: correlationId }, { status: 400 });
     }
     const roomRes = await query(
       `SELECT id, conversation_id, status FROM chat_call_rooms WHERE id = $1 LIMIT 1`,
@@ -20,7 +25,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     );
     const room = roomRes.rows[0] as { id: number; conversation_id: number; status: string } | undefined;
     if (!room) {
-      return NextResponse.json({ operation_status: "blocked", user_message: "Call room not found." }, { status: 404 });
+      return NextResponse.json({ operation_status: "blocked", user_message: "Call room not found.", correlation_id: correlationId }, { status: 404 });
     }
 
     await query(
@@ -41,12 +46,14 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       eventType: "end",
       metadata: { reason: "repair_close" },
       eventKey: `repair_close:${roomId}`,
+      correlationId,
     });
 
     return NextResponse.json({
       operation_status: "success",
       user_message: "Call room force-closed successfully.",
       room_closed_reason: "repair_close",
+      correlation_id: correlationId,
     });
   } catch (error) {
     return NextResponse.json(
