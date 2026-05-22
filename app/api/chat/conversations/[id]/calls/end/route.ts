@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
+import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,48 +44,23 @@ export async function POST(request: Request, { params }: { params: { id: string 
         room_closed_reason: "ended",
       });
     }
-    const endRes = await query(
-      `
-      WITH closed_room AS (
-        UPDATE chat_call_rooms
-        SET status = 'ended', ended_by_user_id = $2, ended_at = NOW(), updated_at = NOW()
-        WHERE id = $1
-          AND status IN ('active', 'scheduled')
-        RETURNING id
-      ),
-      closed_participants AS (
-        UPDATE chat_call_participants
-        SET left_at = NOW()
-        WHERE room_id = $1
-          AND left_at IS NULL
-        RETURNING user_id
-      )
-      SELECT
-        (SELECT COUNT(*)::int FROM closed_room) AS room_closed,
-        (SELECT COUNT(*)::int FROM closed_participants) AS participants_closed
-      `,
-      [Number(room.id), access.user_id],
-    );
-    const roomClosed = Number((endRes.rows[0] as { room_closed?: number } | undefined)?.room_closed || 0) > 0;
-    if (!roomClosed) {
+    const requestKey = request.headers.get("x-idempotency-key")?.trim() || "";
+    const closed = await closeChatCallRoomTransactional({
+      roomId: Number(room.id),
+      conversationId,
+      endedByUserId: access.user_id,
+      reason: "ended",
+      systemMessage: "Call ended.",
+      messageSenderId: access.user_id,
+      eventUserId: access.user_id,
+      eventKey: requestKey || `call_end:${room.id}:${access.user_id}`,
+    });
+    if (!closed.closed) {
       return NextResponse.json({
         operation_status: "success",
         user_message: "Call already ended.",
         room_closed_reason: "ended",
       });
-    }
-    try {
-      await query(
-        `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-        [conversationId, access.user_id, "Call ended."],
-      );
-    } catch (error) {
-      console.warn("[chat-calls] failed to write call end system message", error);
-    }
-    try {
-      await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
-    } catch (error) {
-      console.warn("[chat-calls] failed to touch conversation timestamp on end route", error);
     }
     return NextResponse.json({
       operation_status: "success",
@@ -96,6 +72,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       can_join: false,
       can_end: false,
       connection_state: "idle",
+      event_accepted: closed.event_accepted,
     });
   } catch (error) {
     return NextResponse.json(

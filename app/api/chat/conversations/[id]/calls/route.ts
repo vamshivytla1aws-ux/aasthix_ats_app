@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { createChatCallRoom, endChatCallRoom } from "@/lib/chatCalls";
+import { createChatCallRoom, endChatCallRoom, getChatCallSignalSchemaHealth } from "@/lib/chatCalls";
 import { canStartCallByPolicy, getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
 
 export const runtime = "nodejs";
@@ -43,6 +43,19 @@ export async function POST(request: Request, { params }: { params: { id: string 
         { status: 403 },
       );
     }
+    const schemaHealth = await getChatCallSignalSchemaHealth();
+    if (!schemaHealth.schema_ready) {
+      return NextResponse.json(
+        {
+          operation_status: "blocked",
+          user_message: "Chat call schema is not ready on this deployment.",
+          hint: `Run latest migrations. Missing: ${schemaHealth.missing_types.join(", ")}`,
+          schema_ready: false,
+          missing_types: schemaHealth.missing_types,
+        },
+        { status: 409 },
+      );
+    }
 
     const body = await request.json().catch(() => ({}));
     const requestKey = request.headers.get("x-idempotency-key")?.trim() || "";
@@ -67,29 +80,20 @@ export async function POST(request: Request, { params }: { params: { id: string 
       activateNow: true,
     });
 
-    const systemMessage =
-      mode === "screenshare"
-        ? "Screen share started."
-        : "Call started.";
-    try {
+    const systemMessage = mode === "screenshare" ? "Screen share started." : "Call started.";
+    const eventAccepted = await logCallEvent({
+      roomId: Number(room.id),
+      conversationId,
+      userId: access.user_id,
+      eventType: "call_start",
+      eventKey: requestKey || `call_start:${room.id}:${access.user_id}`,
+      metadata: { session_mode: mode },
+    });
+    if (eventAccepted) {
       await query(
         `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
         [conversationId, access.user_id, systemMessage],
       );
-    } catch (error) {
-      console.warn("[chat-calls] failed to write call start system message", error);
-    }
-    try {
-      await logCallEvent({
-        roomId: Number(room.id),
-        conversationId,
-        userId: access.user_id,
-        eventType: "call_start",
-        eventKey: requestKey || `call_start:${room.id}:${access.user_id}`,
-        metadata: { session_mode: mode },
-      });
-    } catch (error) {
-      console.warn("[chat-calls] failed to write call_start event", error);
     }
     try {
       await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
@@ -108,6 +112,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       status_kind: mode === "screenshare" ? "presenting" : "in_call",
       status_priority: mode === "screenshare" ? 1 : 2,
       provider: "ats_native",
+      schema_ready: true,
     });
   } catch (error) {
     return NextResponse.json(
@@ -173,25 +178,19 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     } catch (error) {
       console.warn("[chat-calls] failed to close open participants on call end", error);
     }
-    try {
+    const endEventAccepted = await logCallEvent({
+      roomId: Number(event.id),
+      conversationId,
+      userId: access.user_id,
+      eventType: "end",
+      eventKey: requestKey || `call_end:${event.id}:${access.user_id}`,
+      metadata: { reason: "ended" },
+    });
+    if (endEventAccepted) {
       await query(
         `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
         [conversationId, access.user_id, "Call ended."],
       );
-    } catch (error) {
-      console.warn("[chat-calls] failed to write call end system message", error);
-    }
-    try {
-      await logCallEvent({
-        roomId: Number(event.id),
-        conversationId,
-        userId: access.user_id,
-        eventType: "end",
-        eventKey: requestKey || `call_end:${event.id}:${access.user_id}`,
-        metadata: { reason: "ended" },
-      });
-    } catch (error) {
-      console.warn("[chat-calls] failed to write call end event", error);
     }
     try {
       await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);

@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { buildPublicUrl } from "@/lib/publicUrl";
+import { logCallEvent } from "@/lib/chatCallGovernance";
 
 export type ChatCallMode = "call" | "screenshare";
 export type ChatCallStatus = "scheduled" | "active" | "ended" | "cancelled";
@@ -18,6 +19,38 @@ export type ChatCallRoom = {
   created_at: string;
   ended_at: string | null;
 };
+
+const REQUIRED_CHAT_SIGNAL_TYPES = [
+  "offer",
+  "answer",
+  "ice",
+  "leave",
+  "presenting",
+  "media_repair",
+  "moderation_mute",
+  "moderation_unmute",
+  "moderation_remove",
+  "moderation_end",
+] as const;
+
+export async function getChatCallSignalSchemaHealth() {
+  const res = await query(
+    `
+    SELECT pg_get_constraintdef(oid) AS def
+    FROM pg_constraint
+    WHERE conname = 'chat_call_signals_type_chk'
+      AND conrelid = 'chat_call_signals'::regclass
+    LIMIT 1
+    `,
+  );
+  const def = String((res.rows[0] as { def?: string } | undefined)?.def || "");
+  const missingTypes = REQUIRED_CHAT_SIGNAL_TYPES.filter((type) => !def.includes(`'${type}'`));
+  return {
+    schema_ready: missingTypes.length === 0,
+    missing_types: missingTypes,
+    required_types: [...REQUIRED_CHAT_SIGNAL_TYPES],
+  };
+}
 
 function modeFromTitle(title: string, fallback: ChatCallMode) {
   const t = String(title || "").toLowerCase();
@@ -78,6 +111,67 @@ export async function endChatCallRoom(roomId: number, endedByUserId: number) {
   return (res.rows[0] as ChatCallRoom | undefined) ?? null;
 }
 
+export async function closeChatCallRoomTransactional(input: {
+  roomId: number;
+  conversationId: number;
+  endedByUserId: number | null;
+  reason: "ended" | "moderator_end" | "last_participant_left" | "timeout";
+  systemMessage: string;
+  messageSenderId?: number | null;
+  eventUserId?: number | null;
+  eventKey: string;
+}) {
+  const closeRes = await query(
+    `
+    WITH closed_room AS (
+      UPDATE chat_call_rooms
+      SET status = 'ended',
+          ended_by_user_id = COALESCE($3, ended_by_user_id),
+          ended_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $1
+        AND status IN ('active', 'scheduled')
+      RETURNING id
+    ),
+    closed_participants AS (
+      UPDATE chat_call_participants
+      SET left_at = NOW()
+      WHERE room_id = $1
+        AND left_at IS NULL
+      RETURNING user_id
+    )
+    SELECT
+      (SELECT COUNT(*)::int FROM closed_room) AS room_closed,
+      (SELECT COUNT(*)::int FROM closed_participants) AS participants_closed
+    `,
+    [input.roomId, input.conversationId, input.endedByUserId],
+  );
+  const roomClosed = Number((closeRes.rows[0] as { room_closed?: number } | undefined)?.room_closed || 0) > 0;
+  if (!roomClosed) {
+    return { closed: false, participants_closed: 0, event_accepted: false };
+  }
+  const eventAccepted = await logCallEvent({
+    roomId: input.roomId,
+    conversationId: input.conversationId,
+    userId: input.eventUserId ?? input.endedByUserId ?? null,
+    eventType: "end",
+    metadata: { reason: input.reason },
+    eventKey: input.eventKey,
+  });
+  if (eventAccepted) {
+    await query(
+      `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+      [input.conversationId, input.messageSenderId ?? null, input.systemMessage],
+    );
+  }
+  await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [input.conversationId]);
+  return {
+    closed: true,
+    participants_closed: Number((closeRes.rows[0] as { participants_closed?: number } | undefined)?.participants_closed || 0),
+    event_accepted: eventAccepted,
+  };
+}
+
 export async function listConversationCallRooms(conversationId: number, limit = 25) {
   const rows = await query(
     `
@@ -132,4 +226,3 @@ export async function listUserUpcomingAndRecentCalls(userId: number, limit = 10)
     recent: recent.rows as Array<ChatCallRoom & { conversation_name: string | null }>,
   };
 }
-

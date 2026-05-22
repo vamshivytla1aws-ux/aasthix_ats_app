@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import AccessGate from "@/components/AccessGate";
@@ -9,6 +9,7 @@ import GifPicker from "@/components/chat/GifPicker";
 import Toast, { type ToastTone } from "@/components/Toast";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
+import { callStateReducer, type CallUiState } from "@/lib/chat/callStateReducer";
 import {
   Bell,
   CalendarDays,
@@ -475,11 +476,19 @@ function getRtcIceServers() {
 }
 
 function buildCallMutationHeaders() {
-  return { "x-idempotency-key": `${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
+  const correlationId = `call-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return {
+    "x-idempotency-key": correlationId,
+    "x-call-correlation-id": correlationId,
+  };
 }
 
 function buildCallMutationHeadersWithKey(idempotencyKey?: string) {
-  return { "x-idempotency-key": idempotencyKey || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
+  const correlationId = idempotencyKey || `call-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return {
+    "x-idempotency-key": correlationId,
+    "x-call-correlation-id": correlationId,
+  };
 }
 
 function mapCallActionError(error: unknown, fallback: string) {
@@ -923,7 +932,10 @@ function ChatWorkspace({
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [drawerView, setDrawerView] = useState<DrawerView | null>(null);
   const [callLoading, setCallLoading] = useState<null | "call" | "screenshare">(null);
-  const [callState, setCallState] = useState<"idle" | "ringing_outgoing" | "ringing_incoming" | "connecting_media" | "connected">("idle");
+  const [callState, dispatchCallState] = useReducer(callStateReducer, "idle" as CallUiState);
+  const setCallState = useCallback((next: CallUiState) => {
+    dispatchCallState({ type: "FORCE_STATE", next });
+  }, []);
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null);
   const [ringDismissedRoomId, setRingDismissedRoomId] = useState<number | null>(null);
   const [micEnabled, setMicEnabled] = useState(true);
@@ -977,7 +989,7 @@ function ChatWorkspace({
   const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "connected" | "reconnecting" | "failed">("idle");
   const [localAudioTrackPresent, setLocalAudioTrackPresent] = useState(false);
   const [remoteAudioTracksCount, setRemoteAudioTracksCount] = useState(0);
-  const callStateRef = useRef<"idle" | "ringing_outgoing" | "ringing_incoming" | "connecting_media" | "connected">(callState);
+  const callStateRef = useRef<CallUiState>(callState);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1048,7 +1060,7 @@ function ChatWorkspace({
     { refreshInterval: 15_000 }
   );
   const isCallHotPath =
-    callState === "ringing_incoming" || callState === "ringing_outgoing" || callState === "connecting_media";
+    callState === "incoming-ringing" || callState === "outgoing-ringing" || callState === "connecting";
   const { data: calendarData, mutate: mutateCalendar } = useSWR<{ events: ChatCalendarEvent[] }>(
     `/api/chat/conversations/${conversation.id}/calendar?limit=40`,
     dashboardFetcher,
@@ -1457,7 +1469,7 @@ function ChatWorkspace({
       (activeCall.joined_participants ?? []).map((member) => Number(member.user_id));
     const meJoined = joinedUserIds.includes(Number(currentUserId || 0));
     const dismissed = ringDismissedRoomId === roomId;
-    let nextState: "idle" | "ringing_outgoing" | "ringing_incoming" | "connecting_media" | "connected" = "idle";
+    let nextState: CallUiState = "idle";
     if (activeCall.status === "ended" || activeCall.status === "cancelled" || activeCall.is_active === false) {
       setActiveRoomId(null);
     } else if (dismissed && activeRoomId !== roomId && !shouldForceActiveCallVisibility) {
@@ -1474,15 +1486,15 @@ function ChatWorkspace({
           liveKitConnectedRef.current &&
           connectionState === "connected" &&
           (!expectsRemote || hasRemoteAudio);
-        nextState = mediaConnected ? "connected" : "connecting_media";
+        nextState = mediaConnected ? "connected" : "connecting";
       } else if (!dismissed && activeCall.can_join !== false) {
-        nextState = "ringing_incoming";
+        nextState = "incoming-ringing";
       }
     } else if (activeCall.status === "scheduled" && isHost && !dismissed) {
-      nextState = "ringing_outgoing";
+      nextState = "outgoing-ringing";
     }
     if (nextState !== callState) setCallState(nextState);
-    if ((prefData?.user?.desktop_sound ?? true) && (nextState === "ringing_incoming" || nextState === "ringing_outgoing")) {
+    if ((prefData?.user?.desktop_sound ?? true) && (nextState === "incoming-ringing" || nextState === "outgoing-ringing")) {
       if (!ringIntervalRef.current) {
         playTone("ring", 260, ringVolume);
         ringIntervalRef.current = window.setInterval(() => playTone("ring", 260, ringVolume), 1200);
@@ -1527,7 +1539,7 @@ function ChatWorkspace({
 
   useEffect(() => {
     if (!activeCall) return;
-    if (callState !== "ringing_incoming") return;
+    if (callState !== "incoming-ringing") return;
     if (!(prefData?.user?.desktop_toast ?? true)) return;
     const roomId = Number(activeCall.id || 0);
     if (!roomId || roomId === lastDesktopNotifiedCallRoomRef.current) return;
@@ -2063,7 +2075,7 @@ function ChatWorkspace({
         setConnectionState("connected");
         reconnectAttemptedRef.current = false;
         window.setTimeout(() => {
-          if (liveKitAudioRef.current.size === 0 && (callStateRef.current === "connected" || callStateRef.current === "connecting_media")) {
+          if (liveKitAudioRef.current.size === 0 && (callStateRef.current === "connected" || callStateRef.current === "connecting")) {
             if (!reconnectAttemptedRef.current && room?.localParticipant) {
               reconnectAttemptedRef.current = true;
               void room.localParticipant.setMicrophoneEnabled(false)
@@ -2271,7 +2283,7 @@ function ChatWorkspace({
 
   useEffect(() => {
     if (liveKitPrimary) return;
-    if (!activeRoomId || (callState !== "connecting_media" && callState !== "connected" && callState !== "ringing_outgoing")) {
+    if (!activeRoomId || (callState !== "connecting" && callState !== "connected" && callState !== "outgoing-ringing")) {
       if (signalPollRef.current) {
         window.clearInterval(signalPollRef.current);
         signalPollRef.current = null;
@@ -2293,7 +2305,7 @@ function ChatWorkspace({
       }
     };
     void pollSignals();
-    const pollMs = callState === "ringing_outgoing" || callState === "connecting_media" ? 600 : 1200;
+    const pollMs = callState === "outgoing-ringing" || callState === "connecting" ? 600 : 1200;
     signalPollRef.current = window.setInterval(() => void pollSignals(), pollMs);
     return () => {
       if (signalPollRef.current) {
@@ -2306,7 +2318,7 @@ function ChatWorkspace({
   useEffect(() => {
     if (liveKitPrimary) return;
     if (!activeCall || !activeRoomId || activeCall.id !== activeRoomId) return;
-    if (callState !== "connected" && callState !== "connecting_media" && callState !== "ringing_outgoing") return;
+    if (callState !== "connected" && callState !== "connecting" && callState !== "outgoing-ringing") return;
     const myId = Number(currentUserId || 0);
     if (!myId) return;
     const peers = (activeCall.joined_user_ids ?? []).filter((id) => id !== myId);
@@ -2321,7 +2333,7 @@ function ChatWorkspace({
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             await sendSignal(activeRoomId, "offer", { sdp: offer }, peerId);
-            setCallState("connecting_media");
+            setCallState("connecting");
           }
         } catch {
           // no-op
@@ -2362,7 +2374,7 @@ function ChatWorkspace({
         if (activeCall) {
         setRingDismissedRoomId(null);
         setActiveRoomId(activeCall.id);
-        setCallState("connecting_media");
+        setCallState("connecting");
         setConnectionState("connecting");
         const joinRes = await apiFetchJson<{ operation_status?: string; user_message?: string }>(`/api/chat/calls/${activeCall.id}/join`, {
           method: "POST",
@@ -2376,7 +2388,7 @@ function ChatWorkspace({
           void pushCallTelemetry("state_change");
           onToast(joinRes.user_message || "Joined active call.", "success");
         } catch (connectError) {
-          setCallState("connecting_media");
+          setCallState("connecting");
           setConnectionState("reconnecting");
           const rawMsg = connectError instanceof ApiError ? connectError.message : "Joined call, but audio is still connecting.";
           const msg = /request failed/i.test(rawMsg) ? "Joined call. Establishing audio channel…" : rawMsg;
@@ -2406,7 +2418,7 @@ function ChatWorkspace({
           });
           setRingDismissedRoomId(null);
           setActiveRoomId(roomId);
-          setCallState("connecting_media");
+          setCallState("connecting");
           setConnectionState("connecting");
           try {
             await connectLiveKitRoom(conversation.id);
@@ -2415,7 +2427,7 @@ function ChatWorkspace({
             setMediaError(null);
             void pushCallTelemetry("state_change");
           } catch (connectError) {
-            setCallState("connecting_media");
+            setCallState("connecting");
             setConnectionState("reconnecting");
             const rawMsg = connectError instanceof ApiError ? connectError.message : "Call started, but audio is still connecting.";
             const msg = /request failed/i.test(rawMsg) ? "Call started. Establishing audio channel…" : rawMsg;
@@ -2494,7 +2506,7 @@ function ChatWorkspace({
         callActionRef.current.joining = true;
         setRingDismissedRoomId(null);
         setActiveRoomId(roomId);
-        setCallState("connecting_media");
+        setCallState("connecting");
         setConnectionState("connecting");
         const joinRes = await apiFetchJson<{ operation_status?: string; user_message?: string }>(`/api/chat/calls/${roomId}/join`, {
           method: "POST",
@@ -2508,7 +2520,7 @@ function ChatWorkspace({
           void pushCallTelemetry("state_change");
           onToast(joinRes.user_message || successMessage, "success");
         } catch (connectError) {
-          setCallState("connecting_media");
+          setCallState("connecting");
           setConnectionState("reconnecting");
           const rawMsg = connectError instanceof ApiError ? connectError.message : "Joined call, but audio is still connecting.";
           const msg = /request failed/i.test(rawMsg) ? "Joined call. Establishing audio channel…" : rawMsg;
@@ -2549,7 +2561,7 @@ function ChatWorkspace({
         headers: buildCallMutationHeaders(),
       });
       setActiveRoomId(roomId);
-      setCallState("connecting_media");
+      setCallState("connecting");
       await connectLiveKitRoom(conversation.id);
       setCallState("connected");
       setConnectionState("connected");
@@ -3213,7 +3225,7 @@ function ChatWorkspace({
               ? <span className="text-[11px] text-amber-200/90">Microphone not published…</span>
               : null}
             {!publishMissingLocal && connectionState === "reconnecting" ? <span className="text-[11px] text-amber-200/90">Reconnecting…</span> : null}
-            {!publishMissingLocal && callState === "connecting_media" ? <span className="text-[11px] text-emerald-200/90">Connecting audio…</span> : null}
+            {!publishMissingLocal && callState === "connecting" ? <span className="text-[11px] text-emerald-200/90">Connecting audio…</span> : null}
             {!publishMissingLocal && callState === "connected" && !hasRemoteAudioActive && Number(activeCall.joined_count || 0) > 1 ? (
               <span className="text-[11px] text-amber-200/90">Waiting for remote audio…</span>
             ) : null}
@@ -3246,7 +3258,7 @@ function ChatWorkspace({
                 Mic {micEnabled ? "on" : "off"}
               </span>
             ) : null}
-            {callState === "ringing_incoming" ? (
+            {callState === "incoming-ringing" ? (
               <>
                 <button
                   type="button"

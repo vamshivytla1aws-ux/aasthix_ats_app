@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { canModerateCall, logCallEvent } from "@/lib/chatCallGovernance";
+import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,41 +76,17 @@ export async function POST(request: Request, { params }: { params: { roomId: str
           return NextResponse.json({ operation_status: "success", user_message: "Call already ended for all." });
         }
       }
-      const endRes = await query(
-        `
-        WITH closed_room AS (
-          UPDATE chat_call_rooms
-          SET status = 'ended', ended_by_user_id = $2, ended_at = NOW(), updated_at = NOW()
-          WHERE id = $1
-            AND status IN ('active', 'scheduled')
-          RETURNING id
-        ),
-        closed_participants AS (
-          UPDATE chat_call_participants
-          SET left_at = NOW()
-          WHERE room_id = $1
-            AND left_at IS NULL
-          RETURNING user_id
-        )
-        SELECT (SELECT COUNT(*)::int FROM closed_room) AS room_closed
-        `,
-        [roomId, access.user_id],
-      );
-      const roomClosed = Number((endRes.rows[0] as { room_closed?: number } | undefined)?.room_closed || 0) > 0;
-      if (!roomClosed) return NextResponse.json({ operation_status: "blocked", user_message: "Call already ended." }, { status: 409 });
-      await query(`INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`, [
-        room.conversation_id,
-        access.user_id,
-        "Call ended by moderator.",
-      ]);
-      await logCallEvent({
+      const closed = await closeChatCallRoomTransactional({
         roomId,
         conversationId: room.conversation_id,
-        userId: access.user_id,
-        eventType: "end",
-        metadata: { reason: "moderator_end" },
+        endedByUserId: access.user_id,
+        reason: "moderator_end",
+        systemMessage: "Call ended by moderator.",
+        messageSenderId: access.user_id,
+        eventUserId: access.user_id,
         eventKey: requestKey || `moderator_end:${roomId}:${access.user_id}`,
       });
+      if (!closed.closed) return NextResponse.json({ operation_status: "blocked", user_message: "Call already ended." }, { status: 409 });
       return NextResponse.json({
         operation_status: "success",
         user_message: "Call ended for all.",
@@ -118,6 +95,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         can_join: false,
         can_end: false,
         connection_state: "idle",
+        event_accepted: closed.event_accepted,
       });
     }
 

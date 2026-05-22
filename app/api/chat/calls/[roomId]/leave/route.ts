@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
+import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,56 +48,32 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       [roomId],
     );
     if (!openParticipants.rowCount) {
-      await query(
-        `UPDATE chat_call_rooms SET status = 'ended', ended_at = NOW(), updated_at = NOW() WHERE id = $1 AND status <> 'ended'`,
-        [roomId],
-      );
-      try {
-        await query(
-          `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-          [room.conversation_id, access.user_id, "Call ended."],
-        );
-      } catch (error) {
-        console.warn("[chat-calls] failed to write ended system message on leave", error);
-      }
-      try {
-        await logCallEvent({
-          roomId,
-          conversationId: room.conversation_id,
-          userId: access.user_id,
-          eventType: "end",
-          eventKey: requestKey || `call_end:${roomId}:${access.user_id}`,
-          metadata: { reason: "last_participant_left" },
-        });
-      } catch (error) {
-        console.warn("[chat-calls] failed to write end event on leave", error);
-      }
+      await closeChatCallRoomTransactional({
+        roomId,
+        conversationId: room.conversation_id,
+        endedByUserId: access.user_id,
+        reason: "last_participant_left",
+        systemMessage: "Call ended.",
+        messageSenderId: access.user_id,
+        eventUserId: access.user_id,
+        eventKey: requestKey || `call_end:${roomId}:${access.user_id}`,
+      });
     } else {
-      try {
+      const eventAccepted = await logCallEvent({
+        roomId,
+        conversationId: room.conversation_id,
+        userId: access.user_id,
+        eventType: "drop",
+        eventKey: requestKey || `call_drop:${roomId}:${access.user_id}`,
+      });
+      if (eventAccepted) {
         await query(
           `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
           [room.conversation_id, access.user_id, "Left call."],
         );
-      } catch (error) {
-        console.warn("[chat-calls] failed to write left system message", error);
-      }
-      try {
-        await logCallEvent({
-          roomId,
-          conversationId: room.conversation_id,
-          userId: access.user_id,
-          eventType: "drop",
-          eventKey: requestKey || `call_drop:${roomId}:${access.user_id}`,
-        });
-      } catch (error) {
-        console.warn("[chat-calls] failed to write drop event", error);
       }
     }
-    try {
-      await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [room.conversation_id]);
-    } catch (error) {
-      console.warn("[chat-calls] failed to touch conversation timestamp on leave", error);
-    }
+    await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [room.conversation_id]);
 
     return NextResponse.json({ operation_status: "success", user_message: "Left call room." });
   } catch (error) {

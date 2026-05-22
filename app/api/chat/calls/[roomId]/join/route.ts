@@ -124,24 +124,18 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       [roomId],
     );
     if (!alreadyJoined) {
-      try {
+      const joinEventAccepted = await logCallEvent({
+        roomId,
+        conversationId: room.conversation_id,
+        userId: access.user_id,
+        eventType: "join_success",
+        eventKey: requestKey || `join_success:${roomId}:${access.user_id}`,
+      });
+      if (joinEventAccepted) {
         await query(
           `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
           [room.conversation_id, access.user_id, "Joined call."],
         );
-      } catch (error) {
-        console.warn("[chat-calls] failed to write joined system message", error);
-      }
-      try {
-        await logCallEvent({
-          roomId,
-          conversationId: room.conversation_id,
-          userId: access.user_id,
-          eventType: "join_success",
-          eventKey: requestKey || `join_success:${roomId}:${access.user_id}`,
-        });
-      } catch (error) {
-        console.warn("[chat-calls] failed to write join_success event", error);
       }
     }
     try {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
-import { logCallEvent } from "@/lib/chatCallGovernance";
+import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,28 +29,18 @@ export async function POST() {
     );
     let closed = 0;
     for (const row of staleRes.rows as Array<{ id: number; conversation_id: number }>) {
-      const closeRes = await query(
-        `UPDATE chat_call_rooms
-         SET status = 'ended', ended_at = NOW(), updated_at = NOW()
-         WHERE id = $1 AND status IN ('active', 'scheduled')
-         RETURNING id`,
-        [row.id],
-      );
-      if (!closeRes.rowCount) continue;
-      closed += 1;
-      await query(`UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`, [row.id]);
-      await query(
-        `INSERT INTO messages (conversation_id, sender_id, content, is_system)
-         VALUES ($1, NULL, $2, TRUE)`,
-        [row.conversation_id, "Call ended due to stale timeout."],
-      );
-      await logCallEvent({
+      const result = await closeChatCallRoomTransactional({
         roomId: row.id,
         conversationId: row.conversation_id,
-        eventType: "end",
-        metadata: { reason: "timeout" },
+        endedByUserId: null,
+        reason: "timeout",
+        systemMessage: "Call ended due to stale timeout.",
+        messageSenderId: null,
+        eventUserId: null,
         eventKey: `stale_end:${row.id}`,
       });
+      if (!result.closed) continue;
+      closed += 1;
     }
 
     return NextResponse.json({
