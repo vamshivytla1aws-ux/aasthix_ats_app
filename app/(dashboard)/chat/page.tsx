@@ -456,7 +456,17 @@ function getRtcIceServers() {
   if (fromEnv) {
     try {
       const parsed = JSON.parse(fromEnv);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        const normalized = parsed
+          .map((entry: any) => {
+            const urls: unknown[] = Array.isArray(entry?.urls) ? entry.urls : [entry?.urls];
+            const safeUrls = urls.map((u: unknown) => String(u || "").trim()).filter(Boolean);
+            if (!safeUrls.length) return null;
+            return { ...entry, urls: safeUrls };
+          })
+          .filter(Boolean);
+        if (normalized.length) return normalized as RTCIceServer[];
+      }
     } catch {
       // fallback below
     }

@@ -80,7 +80,22 @@ export async function logCallEvent(input: {
     JSON.stringify(input.metadata || {}),
   ];
   try {
-    await query(
+    const res = await query(
+      `
+      INSERT INTO chat_call_events (room_id, conversation_id, user_id, event_type, event_key, metadata)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+      RETURNING 1
+      `,
+      args,
+    );
+    return res.rowCount > 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!/no unique or exclusion constraint matching the ON CONFLICT specification/i.test(message)) {
+      throw error;
+    }
+    // Backward-compat fallback for DBs missing unique index on event_key.
+    const res = await query(
       `
       INSERT INTO chat_call_events (room_id, conversation_id, user_id, event_type, event_key, metadata)
       VALUES ($1, $2, $3, $4, $5, $6::jsonb)
@@ -88,18 +103,6 @@ export async function logCallEvent(input: {
       `,
       args,
     );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (!/no unique or exclusion constraint matching the ON CONFLICT specification/i.test(message)) {
-      throw error;
-    }
-    // Backward-compat fallback for DBs missing unique index on event_key.
-    await query(
-      `
-      INSERT INTO chat_call_events (room_id, conversation_id, user_id, event_type, event_key, metadata)
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-      `,
-      args,
-    );
+    return res.rowCount > 0;
   }
 }

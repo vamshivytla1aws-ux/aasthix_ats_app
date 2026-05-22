@@ -90,6 +90,21 @@ export async function POST(request: Request, { params }: { params: { roomId: str
       metadata,
       eventKey: `media_telemetry:${roomId}:${access.user_id}:${Date.now()}`,
     });
+    if (reason !== "interval") {
+      console.info("[chat-call] telemetry_event", {
+        room_id: roomId,
+        conversation_id: room.conversation_id,
+        user_id: access.user_id,
+        reason,
+        call_state: metadata.call_state,
+        connection_state: metadata.connection_state,
+        media_state: metadata.media_state,
+        publish_state: metadata.publish_state,
+        subscribe_state: metadata.subscribe_state,
+        local_audio_track_present: metadata.local_audio_track_present,
+        remote_audio_tracks_count: metadata.remote_audio_tracks_count,
+      });
+    }
 
     return NextResponse.json({
       operation_status: "success",

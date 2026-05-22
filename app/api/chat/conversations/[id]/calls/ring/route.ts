@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
+import { logCallEvent } from "@/lib/chatCallGovernance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,10 +27,21 @@ export async function POST(_request: Request, { params }: { params: { id: string
     const room = roomRes.rows[0] as { id: number; title: string } | undefined;
     if (!room) return NextResponse.json({ operation_status: "blocked", user_message: "No active call to ring." }, { status: 409 });
 
-    await query(
-      `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-      [conversationId, access.user_id, `Incoming call: ${room.title}`],
-    );
+    const requestKey = _request.headers.get("x-idempotency-key")?.trim() || "";
+    const ringLogged = await logCallEvent({
+      roomId: Number(room.id),
+      conversationId,
+      userId: access.user_id,
+      eventType: "ring",
+      eventKey: requestKey || `ring:${room.id}:${access.user_id}`,
+      metadata: { title: room.title },
+    });
+    if (ringLogged) {
+      await query(
+        `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
+        [conversationId, access.user_id, `Incoming call: ${room.title}`],
+      );
+    }
     await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
     return NextResponse.json({ operation_status: "success", user_message: "Call ring signal sent.", room_id: Number(room.id) });
   } catch (error) {
@@ -39,4 +51,3 @@ export async function POST(_request: Request, { params }: { params: { id: string
     );
   }
 }
-
