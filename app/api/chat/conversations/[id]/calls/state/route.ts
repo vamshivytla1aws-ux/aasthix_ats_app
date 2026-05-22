@@ -93,7 +93,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     if (room.status === "active" && participants.length === 0) {
       const ageMs = Date.now() - new Date(room.start_at).getTime();
-      if (ageMs >= 60_000) {
+      if (ageMs >= 20_000) {
         const closeRes = await query(
           `UPDATE chat_call_rooms
            SET status = 'ended', ended_at = NOW(), updated_at = NOW()
@@ -151,15 +151,21 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     );
     const firstJoinedAt =
       (firstJoinRes.rows[0] as { first_joined_at?: string | null } | undefined)?.first_joined_at || null;
-    const publishState = participants.some((p) => Number(p.user_id) === Number(access.user_id)) ? "published" : "pending";
-    const subscribeState = participants.length > 1 ? "subscribed" : "waiting_remote";
+    const publishState = isTerminal
+      ? "pending"
+      : participants.some((p) => Number(p.user_id) === Number(access.user_id))
+        ? "published"
+        : "pending";
+    const subscribeState = isTerminal ? "waiting_remote" : participants.length > 1 ? "subscribed" : "waiting_remote";
     const signalSchema = await getSignalSchemaHealthInline().catch(() => ({
       schema_ready: false,
       missing_types: [] as string[],
       required_types: [] as string[],
     }));
     const effectiveMediaState =
-      room.status !== "active"
+      isTerminal
+        ? "idle"
+        : room.status !== "active"
         ? "idle"
         : publishState !== "published"
           ? "publish_missing"
@@ -178,14 +184,14 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         is_presenting: isPresenting,
         presenter_user_id: presenterUserId,
         room_closed_reason: roomClosedReason || null,
-        connection_state: room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle",
+        connection_state: isTerminal ? "idle" : room.status === "active" ? "connected" : room.status === "scheduled" ? "connecting" : "idle",
         media_state: "ok",
         can_join: !isTerminal && isActiveLike,
         can_end: !isTerminal && (Number(room.created_by_user_id || 0) === Number(access.user_id) || meJoined),
         publish_state: publishState,
         subscribe_state: subscribeState,
-        local_audio_track_present: publishState === "published",
-        remote_audio_tracks_count: Math.max(0, participants.length - 1),
+        local_audio_track_present: isTerminal ? false : publishState === "published",
+        remote_audio_tracks_count: isTerminal ? 0 : Math.max(0, participants.length - 1),
         effective_media_state: effectiveMediaState,
         autoplay_blocked: false,
         permission_state: "granted",

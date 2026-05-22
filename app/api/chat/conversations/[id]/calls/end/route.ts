@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { endChatCallRoom } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,18 +43,35 @@ export async function POST(request: Request, { params }: { params: { id: string 
         room_closed_reason: "ended",
       });
     }
-    const ended = await endChatCallRoom(Number(room.id), access.user_id);
-    if (!ended) {
+    const endRes = await query(
+      `
+      WITH closed_room AS (
+        UPDATE chat_call_rooms
+        SET status = 'ended', ended_by_user_id = $2, ended_at = NOW(), updated_at = NOW()
+        WHERE id = $1
+          AND status IN ('active', 'scheduled')
+        RETURNING id
+      ),
+      closed_participants AS (
+        UPDATE chat_call_participants
+        SET left_at = NOW()
+        WHERE room_id = $1
+          AND left_at IS NULL
+        RETURNING user_id
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM closed_room) AS room_closed,
+        (SELECT COUNT(*)::int FROM closed_participants) AS participants_closed
+      `,
+      [Number(room.id), access.user_id],
+    );
+    const roomClosed = Number((endRes.rows[0] as { room_closed?: number } | undefined)?.room_closed || 0) > 0;
+    if (!roomClosed) {
       return NextResponse.json({
         operation_status: "success",
         user_message: "Call already ended.",
         room_closed_reason: "ended",
       });
-    }
-    try {
-      await query(`UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`, [room.id]);
-    } catch (error) {
-      console.warn("[chat-calls] failed to close open participants on end route", error);
     }
     try {
       await query(
@@ -75,6 +91,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
       user_message: "Call ended successfully.",
       room_id: Number(room.id),
       room_closed_reason: reason || "ended",
+      room_status: "ended",
+      is_active: false,
+      can_join: false,
+      can_end: false,
+      connection_state: "idle",
     });
   } catch (error) {
     return NextResponse.json(

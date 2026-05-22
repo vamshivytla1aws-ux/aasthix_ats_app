@@ -1031,15 +1031,17 @@ function ChatWorkspace({
     dashboardFetcher,
     { refreshInterval: 15_000 }
   );
+  const isCallHotPath =
+    callState === "ringing_incoming" || callState === "ringing_outgoing" || callState === "connecting_media";
   const { data: calendarData, mutate: mutateCalendar } = useSWR<{ events: ChatCalendarEvent[] }>(
     `/api/chat/conversations/${conversation.id}/calendar?limit=40`,
     dashboardFetcher,
-    { refreshInterval: callState === "idle" ? 20_000 : 2_000 }
+    { refreshInterval: callState === "idle" ? 20_000 : isCallHotPath ? 1_000 : 2_000 }
   );
   const { data: callStateData, mutate: mutateCallState } = useSWR<{ operation_status: string; call: ChatCalendarEvent | null }>(
     `/api/chat/conversations/${conversation.id}/calls/state`,
     dashboardFetcher,
-    { refreshInterval: callState === "idle" ? 10_000 : 1_500 }
+    { refreshInterval: callState === "idle" ? 10_000 : isCallHotPath ? 650 : 1_500 }
   );
 
   useEffect(() => {
@@ -2222,7 +2224,8 @@ function ChatWorkspace({
       }
     };
     void pollSignals();
-    signalPollRef.current = window.setInterval(() => void pollSignals(), 1200);
+    const pollMs = callState === "ringing_outgoing" || callState === "connecting_media" ? 600 : 1200;
+    signalPollRef.current = window.setInterval(() => void pollSignals(), pollMs);
     return () => {
       if (signalPollRef.current) {
         window.clearInterval(signalPollRef.current);
@@ -2288,28 +2291,30 @@ function ChatWorkspace({
       try {
         callActionRef.current.joining = true;
         if (activeCall) {
-          const joinRes = await apiFetchJson<{ operation_status?: string; user_message?: string }>(`/api/chat/calls/${activeCall.id}/join`, {
-            method: "POST",
-            headers: buildCallMutationHeaders(),
-          });
-          setRingDismissedRoomId(null);
-          setActiveRoomId(activeCall.id);
+        setRingDismissedRoomId(null);
+        setActiveRoomId(activeCall.id);
+        setCallState("connecting_media");
+        setConnectionState("connecting");
+        const joinRes = await apiFetchJson<{ operation_status?: string; user_message?: string }>(`/api/chat/calls/${activeCall.id}/join`, {
+          method: "POST",
+          headers: buildCallMutationHeaders(),
+        });
+        try {
+          await connectLiveKitRoom(conversation.id);
+          setCallState("connected");
+          setConnectionState("connected");
+          setMediaError(null);
+          void pushCallTelemetry("state_change");
+          onToast(joinRes.user_message || "Joined active call.", "success");
+        } catch (connectError) {
           setCallState("connecting_media");
-          setConnectionState("connecting");
-          try {
-            await connectLiveKitRoom(conversation.id);
-            setCallState("connected");
-            setConnectionState("connected");
-            setMediaError(null);
-            onToast(joinRes.user_message || "Joined active call.", "success");
-          } catch (connectError) {
-            setCallState("connecting_media");
-            setConnectionState("reconnecting");
-            const rawMsg = connectError instanceof ApiError ? connectError.message : "Joined call, but audio is still connecting.";
-            const msg = /request failed/i.test(rawMsg) ? "Joined call. Establishing audio channel…" : rawMsg;
-            setMediaError(msg);
-            onToast(msg, "info");
-          }
+          setConnectionState("reconnecting");
+          const rawMsg = connectError instanceof ApiError ? connectError.message : "Joined call, but audio is still connecting.";
+          const msg = /request failed/i.test(rawMsg) ? "Joined call. Establishing audio channel…" : rawMsg;
+          setMediaError(msg);
+          void pushCallTelemetry("state_change");
+          onToast(msg, "info");
+        }
           void mutateCalendar();
           void mutateCallState();
           return;
@@ -2339,12 +2344,14 @@ function ChatWorkspace({
             setCallState("connected");
             setConnectionState("connected");
             setMediaError(null);
+            void pushCallTelemetry("state_change");
           } catch (connectError) {
             setCallState("connecting_media");
             setConnectionState("reconnecting");
             const rawMsg = connectError instanceof ApiError ? connectError.message : "Call started, but audio is still connecting.";
             const msg = /request failed/i.test(rawMsg) ? "Call started. Establishing audio channel…" : rawMsg;
             setMediaError(msg);
+            void pushCallTelemetry("state_change");
             onToast(msg, "info");
           }
           await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls/ring`, { method: "POST" }).catch(() => {});
@@ -2363,7 +2370,7 @@ function ChatWorkspace({
         setCallLoading(null);
       }
     },
-    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast]
+    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast, pushCallTelemetry]
   );
 
   const endActiveCall = useCallback(
@@ -2374,6 +2381,7 @@ function ChatWorkspace({
       setRingDismissedRoomId(eventId);
       setConnectionState("idle");
       setMediaError(null);
+      stopMediaSession();
       try {
         callActionRef.current.ending = true;
         await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls/end`, {
@@ -2381,16 +2389,20 @@ function ChatWorkspace({
           headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
           body: JSON.stringify({ reason: "ended" }),
         });
-        stopMediaSession();
         onToast("Call ended.", "success");
+        window.setTimeout(() => {
+          void mutateCallState();
+          void mutateCalendar();
+        }, 350);
         void mutateCalendar();
         void mutateCallState();
         void mutateMessages();
         onMutateConversations();
       } catch (error) {
-        setConnectionState("failed");
+        // Keep local teardown optimistic; reconcile from server state.
         const msg = mapCallActionError(error, "Unable to end call.");
         onToast(msg, "error");
+        void mutateCallState();
       } finally {
         callActionRef.current.ending = false;
       }
@@ -2411,19 +2423,20 @@ function ChatWorkspace({
       }
       try {
         callActionRef.current.joining = true;
-        const joinRes = await apiFetchJson<{ operation_status?: string; user_message?: string }>(`/api/chat/calls/${roomId}/join`, {
-          method: "POST",
-          headers: buildCallMutationHeaders(),
-        });
         setRingDismissedRoomId(null);
         setActiveRoomId(roomId);
         setCallState("connecting_media");
         setConnectionState("connecting");
+        const joinRes = await apiFetchJson<{ operation_status?: string; user_message?: string }>(`/api/chat/calls/${roomId}/join`, {
+          method: "POST",
+          headers: buildCallMutationHeaders(),
+        });
         try {
           await connectLiveKitRoom(conversation.id);
           setCallState("connected");
           setConnectionState("connected");
           setMediaError(null);
+          void pushCallTelemetry("state_change");
           onToast(joinRes.user_message || successMessage, "success");
         } catch (connectError) {
           setCallState("connecting_media");
@@ -2431,6 +2444,7 @@ function ChatWorkspace({
           const rawMsg = connectError instanceof ApiError ? connectError.message : "Joined call, but audio is still connecting.";
           const msg = /request failed/i.test(rawMsg) ? "Joined call. Establishing audio channel…" : rawMsg;
           setMediaError(msg);
+          void pushCallTelemetry("state_change");
           onToast(msg, "info");
         }
         void mutateCalendar();
@@ -2451,7 +2465,7 @@ function ChatWorkspace({
         callActionRef.current.joining = false;
       }
     },
-    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast]
+    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast, pushCallTelemetry]
   );
 
   const retryCallConnection = useCallback(async () => {
@@ -2530,7 +2544,14 @@ function ChatWorkspace({
         if (action === "end_for_all") {
           setCallState("idle");
           setActiveRoomId(null);
+          setRingDismissedRoomId(Number(activeCall.id || 0));
+          setConnectionState("idle");
+          setMediaError(null);
           stopMediaSession();
+          window.setTimeout(() => {
+            void mutateCallState();
+            void mutateCalendar();
+          }, 350);
         }
         void mutateCalendar();
         void mutateCallState();
