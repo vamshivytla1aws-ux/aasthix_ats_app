@@ -88,11 +88,14 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       correlation_id: correlationId,
     });
   } catch (error) {
+    const requestId = crypto.randomUUID();
+    console.error("[chat-call] leave_route_error", { request_id: requestId, error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         operation_status: "error",
         user_message: "Unable to leave call.",
         error: error instanceof Error ? error.message : "Failed to leave call room.",
+        request_id: requestId,
       },
       { status: 500 },
     );

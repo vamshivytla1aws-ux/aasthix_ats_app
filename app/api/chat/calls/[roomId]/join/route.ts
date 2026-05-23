@@ -147,6 +147,8 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     try {
       await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [room.conversation_id]);
     } catch (error) {
+      const requestId = crypto.randomUUID();
+      console.error("[chat-call] join_touch_conversation_error", { request_id: requestId, error: error instanceof Error ? error.message : String(error) });
       console.warn("[chat-calls] failed to touch conversation timestamp on join", error);
     }
 
@@ -166,11 +168,14 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       },
     });
   } catch (error) {
+    const requestId = crypto.randomUUID();
+    console.error("[chat-call] join_route_error", { request_id: requestId, error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         operation_status: "error",
         user_message: "Unable to join call.",
         error: error instanceof Error ? error.message : "Failed to join call room.",
+        request_id: requestId,
       },
       { status: 500 },
     );

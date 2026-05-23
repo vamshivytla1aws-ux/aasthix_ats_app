@@ -236,6 +236,20 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     const recentErrors = (eventsRes.rows as Array<{ event_type: string; metadata: unknown; created_at: string }>)
       .filter((e) => e.event_type.includes("fail") || e.event_type.includes("blocked"))
       .slice(0, 8);
+    const telemetryRows = telemetryTimelineRes.rows as Array<{ created_at: string; metadata?: Record<string, unknown> | null }>;
+    const publishRecoveryAttemptCount = telemetryRows.filter(
+      (row) => String((row.metadata || {}).reason || "") === "publish_recovery_start",
+    ).length;
+    const publishRecoveryTimeoutCount = telemetryRows.filter(
+      (row) => String((row.metadata || {}).reason || "") === "publish_recovery_timeout",
+    ).length;
+    const fiveMinutesAgo = Date.now() - 5 * 60_000;
+    const api5xxCountLast5m = (eventsRes.rows as Array<{ event_type: string; created_at: string }>).filter((row) => {
+      const ageOk = new Date(row.created_at).getTime() >= fiveMinutesAgo;
+      if (!ageOk) return false;
+      const type = String(row.event_type || "");
+      return type.includes("fail") || type.includes("error") || type.includes("blocked");
+    }).length;
     const closeReasonRow = (eventsRes.rows as Array<{ event_type: string; metadata?: { reason?: string } }>)
       .find((row) => row.event_type === "end");
     const roomClosedReason = String(closeReasonRow?.metadata?.reason || "");
@@ -316,9 +330,16 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
         telemetry_timeline: telemetryTimelineRes.rows,
         recent_events: eventsRes.rows,
         recent_errors: recentErrors,
+        counters: {
+          publish_recovery_attempt_count: publishRecoveryAttemptCount,
+          publish_recovery_timeout_count: publishRecoveryTimeoutCount,
+          api_5xx_count_last_5m: api5xxCountLast5m,
+        },
       },
     });
   } catch (error) {
-    return NextResponse.json({ operation_status: "error", error: error instanceof Error ? error.message : "Failed to fetch call diagnostics." }, { status: 500 });
+    const requestId = crypto.randomUUID();
+    console.error("[chat-call] diagnostics_route_error", { request_id: requestId, error: error instanceof Error ? error.message : String(error) });
+    return NextResponse.json({ operation_status: "error", error: error instanceof Error ? error.message : "Failed to fetch call diagnostics.", request_id: requestId }, { status: 500 });
   }
 }

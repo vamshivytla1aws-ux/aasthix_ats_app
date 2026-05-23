@@ -332,8 +332,10 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       },
     });
   } catch (error) {
+    const requestId = crypto.randomUUID();
+    console.error("[chat-call] state_route_error", { request_id: requestId, error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
-      { operation_status: "error", error: error instanceof Error ? error.message : "Failed to load call state." },
+      { operation_status: "error", error: error instanceof Error ? error.message : "Failed to load call state.", request_id: requestId },
       { status: 500 },
     );
   }

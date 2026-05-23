@@ -118,8 +118,10 @@ export async function POST(_request: Request, { params }: { params: { id: string
       correlation_id: correlationId,
     });
   } catch (error) {
+    const requestId = randomUUID();
+    console.error("[chat-call] token_route_error", { request_id: requestId, error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
-      { operation_status: "error", error: error instanceof Error ? error.message : "Failed to issue call token." },
+      { operation_status: "error", error: error instanceof Error ? error.message : "Failed to issue call token.", request_id: requestId },
       { status: 500 },
     );
   }

@@ -85,6 +85,15 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         body?.recovery_attempt && typeof body.recovery_attempt === "object"
           ? body.recovery_attempt
           : null,
+      publish_attempt_id: String(body?.publish_attempt_id || "").slice(0, 120) || null,
+      attempt_started_at: String(body?.attempt_started_at || "").slice(0, 80) || null,
+      attempt_result: String(body?.attempt_result || "").slice(0, 40) || null,
+      call_presence_state: String(body?.call_presence_state || "").slice(0, 40) || null,
+      media_readiness_state: String(body?.media_readiness_state || "").slice(0, 40) || null,
+      receiver_join_seen_at: String(body?.receiver_join_seen_at || "").slice(0, 80) || null,
+      caller_bar_visible_at: String(body?.caller_bar_visible_at || "").slice(0, 80) || null,
+      caller_visibility_delay_ms: toFiniteNumber(body?.caller_visibility_delay_ms, -1),
+      caller_visibility_slo_miss: Boolean(body?.caller_visibility_slo_miss),
       prejoin_summary:
         body?.prejoin_summary && typeof body.prejoin_summary === "object"
           ? body.prejoin_summary
@@ -123,8 +132,10 @@ export async function POST(request: Request, { params }: { params: { roomId: str
       correlation_id: correlationId,
     });
   } catch (error) {
+    const requestId = crypto.randomUUID();
+    console.error("[chat-call] telemetry_route_error", { request_id: requestId, error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
-      { operation_status: "error", error: error instanceof Error ? error.message : "Failed to capture telemetry." },
+      { operation_status: "error", error: error instanceof Error ? error.message : "Failed to capture telemetry.", request_id: requestId },
       { status: 500 },
     );
   }

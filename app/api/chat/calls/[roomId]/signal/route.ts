@@ -103,7 +103,9 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
     );
     return NextResponse.json({ signals: signalsRes.rows });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to fetch signals." }, { status: 400 });
+    const requestId = crypto.randomUUID();
+    console.error("[chat-call] signal_fetch_error", { request_id: requestId, error: error instanceof Error ? error.message : String(error) });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to fetch signals.", request_id: requestId }, { status: 400 });
   }
 }
 
@@ -185,6 +187,8 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to publish signal." }, { status: 400 });
+    const requestId = crypto.randomUUID();
+    console.error("[chat-call] signal_publish_error", { request_id: requestId, error: error instanceof Error ? error.message : String(error) });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to publish signal.", request_id: requestId }, { status: 400 });
   }
 }

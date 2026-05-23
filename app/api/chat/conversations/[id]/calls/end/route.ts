@@ -85,11 +85,14 @@ export async function POST(request: Request, { params }: { params: { id: string 
       idempotent_replay: !closed.event_accepted,
     });
   } catch (error) {
+    const requestId = crypto.randomUUID();
+    console.error("[chat-call] calls_end_short_route_error", { request_id: requestId, error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         operation_status: "error",
         user_message: "Unable to end call.",
         error: error instanceof Error ? error.message : "Failed to end call.",
+        request_id: requestId,
       },
       { status: 500 },
     );

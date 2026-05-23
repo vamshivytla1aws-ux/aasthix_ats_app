@@ -524,6 +524,30 @@ function mapCallActionError(error: unknown, fallback: string) {
   return fallback;
 }
 
+async function callApiWithRetry<T = unknown>(
+  url: string,
+  init: RequestInit,
+  options?: { retries?: number; retryDelayMs?: number }
+) {
+  const retries = options?.retries ?? 1;
+  const retryDelayMs = options?.retryDelayMs ?? 180;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await apiFetchJson<T>(url, init);
+    } catch (error) {
+      lastError = error;
+      const isRetryable =
+        error instanceof ApiError
+          ? error.status === 0 || error.status >= 500
+          : true;
+      if (!isRetryable || attempt >= retries) break;
+      await new Promise((resolve) => window.setTimeout(resolve, retryDelayMs * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 export default function ChatPage() {
   const [activeConvId, setActiveConvId] = useState<number | null>(null);
   const [queryConversationId, setQueryConversationId] = useState<number | null>(null);
@@ -986,6 +1010,8 @@ function ChatWorkspace({
   const remoteTrackRecoveryAttemptedRef = useRef(false);
   const publishRecoveryAttemptedRef = useRef(false);
   const publishRecoveryInFlightRef = useRef<Promise<boolean> | null>(null);
+  const publishRecoveryCooldownUntilRef = useRef<number>(0);
+  const publishAttemptIdRef = useRef<string | null>(null);
   const publishMissingSinceRef = useRef<number | null>(null);
   const publishRecoveryPhaseRef = useRef<"idle" | "recovering" | "timeout" | "success">("idle");
   const publishRecoveryStartedAtRef = useRef<string | null>(null);
@@ -1003,6 +1029,7 @@ function ChatWorkspace({
   const liveKitConnectedRef = useRef(false);
   const telemetryIntervalRef = useRef<number | null>(null);
   const lastTelemetrySignatureRef = useRef<string>("");
+  const lastTelemetrySentAtRef = useRef<Map<string, number>>(new Map());
   const callActionRef = useRef<{ joining: boolean; ending: boolean; sharing: boolean }>({
     joining: false,
     ending: false,
@@ -1701,6 +1728,8 @@ function ChatWorkspace({
     remoteTrackRecoveryAttemptedRef.current = false;
     publishRecoveryAttemptedRef.current = false;
     publishRecoveryInFlightRef.current = null;
+    publishRecoveryCooldownUntilRef.current = 0;
+    publishAttemptIdRef.current = null;
     publishMissingSinceRef.current = null;
     receiverJoinSeenAtRef.current = null;
     callerBarVisibleAtRef.current = null;
@@ -1816,11 +1845,16 @@ function ChatWorkspace({
   }, []);
 
   const recoverLocalAudioPublish = useCallback(async () => {
+    const now = Date.now();
+    if (publishRecoveryCooldownUntilRef.current > now) {
+      return false;
+    }
     if (publishRecoveryInFlightRef.current) {
       return publishRecoveryInFlightRef.current;
     }
     const room = liveKitRoomRef.current;
     if (!room?.localParticipant) return false;
+    publishAttemptIdRef.current = `pub-${room.name || "room"}-${Date.now()}`;
     publishRecoveryInFlightRef.current = (async () => {
       try {
         publishRecoveryPhaseRef.current = "recovering";
@@ -1851,12 +1885,14 @@ function ChatWorkspace({
           publishRecoveryPhaseRef.current = "timeout";
           setMediaError("Microphone not published. Click Retry to restore audio.");
           pendingRecoveryTelemetryReasonRef.current = "publish_recovery_timeout";
+          publishRecoveryCooldownUntilRef.current = Date.now() + 12_000;
           return false;
         }
         publishRecoveryPhaseRef.current = "success";
         setMediaError(null);
         publishMissingSinceRef.current = null;
         pendingRecoveryTelemetryReasonRef.current = "publish_recovery_success";
+        publishRecoveryCooldownUntilRef.current = 0;
         return true;
       } finally {
         publishRecoveryInFlightRef.current = null;
@@ -1939,6 +1975,16 @@ function ChatWorkspace({
           publishRecoveryPhaseRef.current === "recovering" || publishRecoveryPhaseRef.current === "timeout"
             ? { phase: publishRecoveryPhaseRef.current, attempt_ts: publishRecoveryStartedAtRef.current }
             : null,
+        publish_attempt_id: publishAttemptIdRef.current,
+        attempt_started_at: publishRecoveryStartedAtRef.current,
+        attempt_result:
+          publishRecoveryPhaseRef.current === "success"
+            ? "success"
+            : publishRecoveryPhaseRef.current === "timeout"
+              ? "timeout"
+              : publishRecoveryPhaseRef.current === "recovering"
+                ? "recovering"
+                : null,
         remote_track_seen: remoteTrackSeenRef.current,
         playback_started: playbackStartedRef.current,
         audio_level: audioLevel,
@@ -1979,12 +2025,17 @@ function ChatWorkspace({
       };
       const signature = JSON.stringify(payload);
       if (reason !== "interval" && signature === lastTelemetrySignatureRef.current) return;
+      const minMs = reason === "state_change" ? 1200 : 0;
+      const lastAt = lastTelemetrySentAtRef.current.get(reason) || 0;
+      const nowMs = Date.now();
+      if (minMs > 0 && nowMs - lastAt < minMs) return;
+      lastTelemetrySentAtRef.current.set(reason, nowMs);
       lastTelemetrySignatureRef.current = signature;
-      await apiFetchJson(`/api/chat/calls/${roomId}/telemetry`, {
+      await callApiWithRetry(`/api/chat/calls/${roomId}/telemetry`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      })
+      }, { retries: 1, retryDelayMs: 160 })
         .then(() => {
           if (prejoinSummaryPendingRef.current) prejoinSummaryPendingRef.current = null;
         })
@@ -2294,7 +2345,7 @@ function ChatWorkspace({
       payload: Record<string, unknown>,
       toUserId?: number
     ) => {
-      await apiFetchJson(`/api/chat/calls/${roomId}/signal`, {
+      await callApiWithRetry(`/api/chat/calls/${roomId}/signal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2302,7 +2353,7 @@ function ChatWorkspace({
           payload,
           to_user_id: Number.isFinite(Number(toUserId)) ? Number(toUserId) : null,
         }),
-      });
+      }, { retries: 1, retryDelayMs: 140 });
     },
     []
   );
@@ -2480,8 +2531,10 @@ function ChatWorkspace({
     if (signalPollRef.current) return;
     const pollSignals = async () => {
       try {
-        const data = await apiFetchJson<{ signals: CallSignal[] }>(
+        const data = await callApiWithRetry<{ signals: CallSignal[] }>(
           `/api/chat/calls/${activeRoomId}/signal?after_id=${signalCursorRef.current}`,
+          { method: "GET" },
+          { retries: 1, retryDelayMs: 120 }
         );
         for (const signal of data.signals || []) {
           signalCursorRef.current = Math.max(signalCursorRef.current, Number(signal.id || 0));
