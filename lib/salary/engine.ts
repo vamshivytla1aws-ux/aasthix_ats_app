@@ -35,9 +35,14 @@ async function loadSalarySettings(): Promise<SalarySettings> {
 
 function validateInput(input: SalaryCalcInput) {
   if (!(input.ctcAnnual > 0)) throw new Error("CTC Annual must be greater than 0.");
+  if (!(input.definedWorkDays > 0)) throw new Error("Defined Work Days must be greater than 0.");
   if (!(input.totalPaidDays > 0)) throw new Error("Total Paid Days must be greater than 0.");
+  if (input.totalPaidDays < 0) throw new Error("Total Paid Days cannot be negative.");
   if (input.lopDays < 0) throw new Error("LOP Days cannot be negative.");
   if (input.lopDays > input.totalPaidDays) throw new Error("LOP Days cannot exceed Total Paid Days.");
+  if (input.totalPaidDays > input.definedWorkDays) {
+    throw new Error("Total Paid Days cannot exceed Defined Work Days.");
+  }
   if (input.manualTdsAnnual != null && input.manualTdsAnnual < 0) throw new Error("Manual TDS cannot be negative.");
   const m = new Date(`${input.salaryMonth}T00:00:00`);
   if (!Number.isNaN(m.getTime())) {
@@ -60,6 +65,11 @@ export async function calculateSalaryStructure(input: SalaryCalcInput): Promise<
   validateInput(input);
   const settings = await loadSalarySettings();
   const ctcAnnual = Number(input.ctcAnnual);
+  const definedWorkDays = Number(input.definedWorkDays);
+  const payableDays = Math.max(0, Number(input.totalPaidDays) - Number(input.lopDays || 0));
+  const monthlyCtc = roundMonthly(ctcAnnual / 12, settings.monthlyRoundingMode);
+  const dayWiseCtc = roundMonthly(monthlyCtc / definedWorkDays, settings.monthlyRoundingMode);
+  const prorationRatio = Math.max(0, Math.min(1, payableDays / definedWorkDays));
 
   const basicAnnual = roundAnnual(ctcAnnual * 0.30);
   const hraAnnual = roundAnnual(ctcAnnual * 0.15);
@@ -105,7 +115,8 @@ export async function calculateSalaryStructure(input: SalaryCalcInput): Promise<
   }
 
   const grossAnnualTaxableSalary = roundAnnual(earnings.reduce((acc, item) => acc + item.annual, 0));
-  const grossMonthlySalary = roundMonthly(earnings.reduce((acc, item) => acc + item.monthly, 0), settings.monthlyRoundingMode);
+  const grossMonthlySalaryBase = roundMonthly(earnings.reduce((acc, item) => acc + item.monthly, 0), settings.monthlyRoundingMode);
+  const grossMonthlySalary = roundMonthly(grossMonthlySalaryBase * prorationRatio, settings.monthlyRoundingMode);
 
   const professionalTaxMonthly =
     input.professionalTaxMonthly == null ? settings.professionalTaxDefault : Math.max(0, Number(input.professionalTaxMonthly));
@@ -126,14 +137,14 @@ export async function calculateSalaryStructure(input: SalaryCalcInput): Promise<
 
   if (input.taxRegime === "manual_tds") {
     annualTax = Math.max(0, Number(input.manualTdsAnnual || 0));
-    monthlyTds = roundMonthly(annualTax / 12, settings.monthlyRoundingMode);
+    monthlyTds = roundMonthly((annualTax / 12) * prorationRatio, settings.monthlyRoundingMode);
     taxableIncome = Math.max(0, grossAnnualTaxableSalary);
   } else {
     const config = await loadActiveTaxConfig(input.taxRegime);
     const tax = calculateAnnualTaxFromConfig(grossAnnualTaxableSalary, config);
     taxableIncome = roundAnnual(tax.taxableIncome);
     annualTax = roundAnnual(tax.annualTax);
-    monthlyTds = roundMonthly(annualTax / 12, settings.monthlyRoundingMode);
+    monthlyTds = roundMonthly((annualTax / 12) * prorationRatio, settings.monthlyRoundingMode);
   }
 
   const deductions: SalaryComponent[] = [
@@ -141,13 +152,25 @@ export async function calculateSalaryStructure(input: SalaryCalcInput): Promise<
       "Professional Tax",
       "professional_tax",
       professionalTaxAnnual,
-      roundMonthly(professionalTaxMonthly, settings.monthlyRoundingMode),
+      roundMonthly(professionalTaxMonthly * prorationRatio, settings.monthlyRoundingMode),
       110
     ),
-    deduction("Employer PF (CTC Adjustment)", "employer_pf_adjustment", employerPfAdjustmentAnnual, employerPfAdjustmentMonthly, 115),
-    deduction("Employee PF", "employee_pf", employeePfAnnual, employeePfMonthly, 120),
+    deduction(
+      "Employer PF (CTC Adjustment)",
+      "employer_pf_adjustment",
+      employerPfAdjustmentAnnual,
+      roundMonthly(employerPfAdjustmentMonthly * prorationRatio, settings.monthlyRoundingMode),
+      115
+    ),
+    deduction("Employee PF", "employee_pf", employeePfAnnual, roundMonthly(employeePfMonthly * prorationRatio, settings.monthlyRoundingMode), 120),
     deduction("TDS", "tds", roundAnnual(annualTax), monthlyTds, 130),
-    deduction("Health Insurance", "health_insurance", healthInsuranceAnnual, healthInsuranceMonthly, 140),
+    deduction(
+      "Health Insurance",
+      "health_insurance",
+      healthInsuranceAnnual,
+      roundMonthly(healthInsuranceMonthly * prorationRatio, settings.monthlyRoundingMode),
+      140
+    ),
   ].filter((component) => component.annual > 0 || component.monthly > 0);
 
   const totalMonthlyDeductions = roundMonthly(
@@ -166,6 +189,10 @@ export async function calculateSalaryStructure(input: SalaryCalcInput): Promise<
     grossMonthlySalary,
     totalMonthlyDeductions,
     netMonthlySalary,
+    defined_work_days: definedWorkDays,
+    day_wise_ctc: dayWiseCtc,
+    payable_days: payableDays,
+    prorated_monthly_ctc: roundMonthly(dayWiseCtc * payableDays, settings.monthlyRoundingMode),
     netSalaryInWords: amountToRupeesWords(netForWords),
     summary: {
       ctcAnnual: roundAnnual(ctcAnnual),

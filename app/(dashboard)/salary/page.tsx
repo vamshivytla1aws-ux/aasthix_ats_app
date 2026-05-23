@@ -32,6 +32,10 @@ type SalaryCalculation = {
   grossMonthlySalary: number;
   totalMonthlyDeductions: number;
   netMonthlySalary: number;
+  defined_work_days: number;
+  day_wise_ctc: number;
+  payable_days: number;
+  prorated_monthly_ctc: number;
   netSalaryInWords: string;
   summary: {
     ctcAnnual: number;
@@ -75,6 +79,7 @@ export default function SalaryPage() {
   const [ctcAnnual, setCtcAnnual] = React.useState("1600000");
   const [salaryMonth, setSalaryMonth] = React.useState(todayMonthDate());
   const [totalPaidDays, setTotalPaidDays] = React.useState(String(getMonthDaysFromDateString(todayMonthDate())));
+  const [definedWorkDays, setDefinedWorkDays] = React.useState(String(getMonthDaysFromDateString(todayMonthDate())));
   const [lopDays, setLopDays] = React.useState("0");
   const [taxRegime, setTaxRegime] = React.useState<"new_regime" | "old_regime" | "manual_tds">("new_regime");
   const [manualTdsAnnual, setManualTdsAnnual] = React.useState("");
@@ -126,6 +131,7 @@ export default function SalaryPage() {
     setCtcAnnual(String(Number(structure.ctc_annual || 0)));
     const nextSalaryMonth = structure.salary_month ? String(structure.salary_month).slice(0, 10) : todayMonthDate();
     setSalaryMonth(nextSalaryMonth);
+    setDefinedWorkDays(String(Number(structure.defined_work_days || structure.total_paid_days || getMonthDaysFromDateString(nextSalaryMonth))));
     setTotalPaidDays(String(Number(structure.total_paid_days || getMonthDaysFromDateString(nextSalaryMonth))));
     setLopDays(String(Number(structure.lop_days || 0)));
     setTaxRegime((String(structure.tax_regime || "new_regime") as "new_regime" | "old_regime" | "manual_tds"));
@@ -153,6 +159,7 @@ export default function SalaryPage() {
       workLocation: workLocation || null,
       ctcAnnual: Number(ctcAnnual || 0),
       salaryMonth,
+      definedWorkDays: Number(definedWorkDays || 0),
       totalPaidDays: Number(totalPaidDays || 0),
       lopDays: Number(lopDays || 0),
       taxRegime,
@@ -178,6 +185,7 @@ export default function SalaryPage() {
       workLocation,
       ctcAnnual,
       salaryMonth,
+      definedWorkDays,
       totalPaidDays,
       lopDays,
       taxRegime,
@@ -320,8 +328,10 @@ export default function SalaryPage() {
             <label className={UI.label}>Salary Month<input type="month" className={UI.input} value={salaryMonth.slice(0, 7)} onChange={(e) => {
               const next = `${e.target.value}-01`;
               setSalaryMonth(next);
+              setDefinedWorkDays(String(getMonthDaysFromDateString(next)));
               setTotalPaidDays(String(getMonthDaysFromDateString(next)));
             }} /></label>
+            <label className={UI.label}>Defined Work Days<input className={UI.input} type="number" min={1} value={definedWorkDays} onChange={(e) => setDefinedWorkDays(e.target.value)} /></label>
             <label className={UI.label}>Total Paid Days<input className={UI.input} type="number" min={0} value={totalPaidDays} onChange={(e) => setTotalPaidDays(e.target.value)} /></label>
             <label className={UI.label}>LOP Days<input className={UI.input} type="number" min={0} value={lopDays} onChange={(e) => setLopDays(e.target.value)} /></label>
             <label className={UI.label}>
@@ -386,6 +396,10 @@ export default function SalaryPage() {
             </div>
             <div className="mt-4 rounded-xl border border-[var(--ats-border)] bg-slate-50 p-3 text-sm">
               <div>CTC: {inr(calculation.summary.ctcAnnual)}</div>
+              <div>Defined Work Days: {calculation.defined_work_days}</div>
+              <div>Day-wise CTC: {inr(calculation.day_wise_ctc)}</div>
+              <div>Payable Days: {calculation.payable_days}</div>
+              <div>Prorated Monthly CTC: {inr(calculation.prorated_monthly_ctc)}</div>
               <div>Gross Monthly: {inr(calculation.grossMonthlySalary)}</div>
               <div>Total Deductions: {inr(calculation.totalMonthlyDeductions)}</div>
               <div>Net Salary: {inr(calculation.netMonthlySalary)}</div>

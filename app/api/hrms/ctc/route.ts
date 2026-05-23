@@ -47,7 +47,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await createCtcVersion(body, auth.access.user_id);
+    const result = await createCtcVersion(
+      {
+        ...body,
+        taxRegime: body.taxRegime || "new_regime",
+        employeeCode: String(body.employeeCode || ""),
+        salaryMonth: String(body.salaryMonth || new Date().toISOString().slice(0, 10)),
+        definedWorkDays: Number(body.definedWorkDays || body.totalPaidDays || 30),
+        totalPaidDays: Number(body.totalPaidDays || body.definedWorkDays || 30),
+        lopDays: Number(body.lopDays || 0),
+        pfEnabled: Boolean(body.pfEnabled),
+        employerPfIncludedInCtc: Boolean(body.employerPfIncludedInCtc),
+        employeePfEnabled: Boolean(body.employeePfEnabled),
+        healthInsuranceEnabled: Boolean(body.healthInsuranceEnabled),
+      },
+      auth.access.user_id
+    );
     return NextResponse.json({
       operation_status: "success",
       user_message: "CTC version saved.",
@@ -64,4 +79,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

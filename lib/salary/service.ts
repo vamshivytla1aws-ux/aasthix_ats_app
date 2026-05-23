@@ -76,6 +76,7 @@ export async function createSalaryStructure(input: SalaryCalcInput, actorUserId:
     input.workLocation || null,
     input.ctcAnnual,
     input.salaryMonth,
+    input.definedWorkDays,
     input.totalPaidDays,
     input.lopDays,
     input.taxRegime,
@@ -120,22 +121,23 @@ export async function createSalaryStructure(input: SalaryCalcInput, actorUserId:
         work_location = $10,
         ctc_annual = $11,
         salary_month = $12::date,
-        total_paid_days = $13::int,
-        lop_days = $14::int,
-        tax_regime = $15::text,
-        manual_tds_annual = $16::numeric,
-        professional_tax_monthly = $17::numeric,
-        pf_enabled = $18::boolean,
-        employer_pf_included_in_ctc = $19::boolean,
-        employee_pf_enabled = $20::boolean,
-        health_insurance_enabled = $21::boolean,
-        health_insurance_annual = $22::numeric,
-        effective_from = $23::date,
-        created_by_user_id = $24::bigint,
+        defined_work_days = $13::int,
+        total_paid_days = $14::int,
+        lop_days = $15::int,
+        tax_regime = $16::text,
+        manual_tds_annual = $17::numeric,
+        professional_tax_monthly = $18::numeric,
+        pf_enabled = $19::boolean,
+        employer_pf_included_in_ctc = $20::boolean,
+        employee_pf_enabled = $21::boolean,
+        health_insurance_enabled = $22::boolean,
+        health_insurance_annual = $23::numeric,
+        effective_from = $24::date,
+        created_by_user_id = $25::bigint,
         updated_at = NOW()
-      WHERE id = $25::bigint
+      WHERE id = $26::bigint
       `,
-      [...structureArgs.slice(0, 24), salaryStructureId],
+      [...structureArgs.slice(0, 25), salaryStructureId],
     );
     await query(`DELETE FROM salary_components WHERE salary_structure_id = $1`, [salaryStructureId]);
   } else {
@@ -144,11 +146,11 @@ export async function createSalaryStructure(input: SalaryCalcInput, actorUserId:
       INSERT INTO salary_structures
       (
         employee_id, employee_code, department, designation, date_of_joining, pan, uan_number, pf_number, bank_account_number, work_location,
-        ctc_annual, salary_month, total_paid_days, lop_days, tax_regime, manual_tds_annual, professional_tax_monthly, pf_enabled,
+        ctc_annual, salary_month, defined_work_days, total_paid_days, lop_days, tax_regime, manual_tds_annual, professional_tax_monthly, pf_enabled,
         employer_pf_included_in_ctc, employee_pf_enabled, health_insurance_enabled, health_insurance_annual, effective_from, created_by_user_id, created_at, updated_at
       )
       VALUES
-      ($1::bigint,$2::text,$3::text,$4::text,$5::date,$6::text,$7::text,$8::text,$9::text,$10::text,$11::numeric,$12::date,$13::int,$14::int,$15::text,$16::numeric,$17::numeric,$18::boolean,$19::boolean,$20::boolean,$21::boolean,$22::numeric,$23::date,$24::bigint,NOW(),NOW())
+      ($1::bigint,$2::text,$3::text,$4::text,$5::date,$6::text,$7::text,$8::text,$9::text,$10::text,$11::numeric,$12::date,$13::int,$14::int,$15::int,$16::text,$17::numeric,$18::numeric,$19::boolean,$20::boolean,$21::boolean,$22::boolean,$23::numeric,$24::date,$25::bigint,NOW(),NOW())
       RETURNING id
       `,
       structureArgs,
@@ -267,6 +269,7 @@ export function toCalcInputFromStructure(structure: any): SalaryCalcInput {
     workLocation: structure.work_location ? String(structure.work_location) : null,
     ctcAnnual: Number(structure.ctc_annual || 0),
     salaryMonth: String(structure.salary_month).slice(0, 10),
+    definedWorkDays: Number(structure.defined_work_days || structure.total_paid_days || 30),
     totalPaidDays: Number(structure.total_paid_days || 30),
     lopDays: Number(structure.lop_days || 0),
     taxRegime: String(structure.tax_regime || "new_regime") as any,

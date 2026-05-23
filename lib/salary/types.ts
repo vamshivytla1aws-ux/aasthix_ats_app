@@ -14,6 +14,7 @@ export type SalaryCalcInput = {
   workLocation?: string | null;
   ctcAnnual: number;
   salaryMonth: string;
+  definedWorkDays: number;
   totalPaidDays: number;
   lopDays: number;
   taxRegime: TaxRegime;
@@ -42,6 +43,10 @@ export type SalaryCalcResult = {
   grossMonthlySalary: number;
   totalMonthlyDeductions: number;
   netMonthlySalary: number;
+  defined_work_days: number;
+  day_wise_ctc: number;
+  payable_days: number;
+  prorated_monthly_ctc: number;
   taxableIncome: number;
   annualTax: number;
   monthlyTds: number;

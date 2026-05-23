@@ -29,7 +29,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "UAN must be numeric" }, { status: 400 });
   }
   try {
-    const saved = await createSalaryStructure(body, auth.access.user_id);
+    const saved = await createSalaryStructure(
+      {
+        ...body,
+        taxRegime: body.taxRegime || "new_regime",
+        employeeCode: String(body.employeeCode || ""),
+        salaryMonth: String(body.salaryMonth || new Date().toISOString().slice(0, 10)),
+        definedWorkDays: Number(body.definedWorkDays || body.totalPaidDays || 0),
+        totalPaidDays: Number(body.totalPaidDays || 0),
+        lopDays: Number(body.lopDays || 0),
+        pfEnabled: Boolean(body.pfEnabled),
+        employerPfIncludedInCtc: Boolean(body.employerPfIncludedInCtc),
+        employeePfEnabled: Boolean(body.employeePfEnabled),
+        healthInsuranceEnabled: Boolean(body.healthInsuranceEnabled),
+      },
+      auth.access.user_id
+    );
     return NextResponse.json({
       ok: true,
       salary_structure_id: saved.salaryStructureId,
