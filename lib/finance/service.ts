@@ -1,8 +1,14 @@
 import { query } from "@/lib/db";
 import type {
+  FinanceAnalyticsSeries,
+  FinanceBackupPayload,
   FinanceDashboardTotals,
+  FinanceDateRangePreset,
   FinanceImportBatch,
   FinancePartner,
+  FinancePartnerStatementSummary,
+  FinanceRangeInput,
+  FinanceRestorePreview,
   FinanceTransaction,
   FinanceTransactionKind,
 } from "@/lib/finance/types";
@@ -382,6 +388,351 @@ export async function computeDashboardTotals(workspaceId: number): Promise<Finan
     recentLedger: transactions.slice(0, 10),
     equalization,
   } satisfies FinanceDashboardTotals;
+}
+
+function resolveRange(input: FinanceRangeInput) {
+  if (input.preset === "full") return { from: "", to: "", label: "Full view" };
+  if (input.preset === "monthly" && input.month) {
+    const from = `${input.month}-01`;
+    const [y, m] = input.month.split("-").map((v) => Number(v));
+    const endDay = new Date(y, m, 0).getDate();
+    return { from, to: `${input.month}-${String(endDay).padStart(2, "0")}`, label: input.month };
+  }
+  if (input.preset === "yearly" && input.year) {
+    return { from: `${input.year}-01-01`, to: `${input.year}-12-31`, label: input.year };
+  }
+  return {
+    from: input.from ? toDateOnly(input.from) : "",
+    to: input.to ? toDateOnly(input.to) : "",
+    label: input.from && input.to ? `${input.from} to ${input.to}` : "Custom",
+  };
+}
+
+function inRange(date: string, from: string, to: string) {
+  if (from && date < from) return false;
+  if (to && date > to) return false;
+  return true;
+}
+
+export async function buildPartnerStatement(
+  workspaceId: number,
+  partnerId: number,
+  range: FinanceRangeInput
+): Promise<FinancePartnerStatementSummary> {
+  const [partners, txs] = await Promise.all([listPartners(workspaceId), listTransactions({ workspaceId, sort: "desc" })]);
+  const partner = partners.find((p) => p.id === partnerId);
+  if (!partner) throw new Error("Partner not found.");
+  const { from, to } = resolveRange(range);
+  const rows = txs
+    .filter((tx) => inRange(tx.date, from, to))
+    .filter((tx) => tx.payments.some((p) => p.partnerId === partnerId))
+    .map((tx) => ({
+      txId: tx.txId,
+      date: tx.date,
+      narration: tx.description,
+      category: tx.category,
+      investedMinor: tx.payments
+        .filter((p) => p.partnerId === partnerId)
+        .reduce((sum, p) => sum + p.amountMinor, 0),
+    }))
+    .sort((a, b) => (a.date === b.date ? b.txId.localeCompare(a.txId) : b.date.localeCompare(a.date)));
+
+  let running = 0;
+  const withRunning = [...rows].reverse().map((row) => {
+    running += row.investedMinor;
+    return { ...row, runningBalanceMinor: running };
+  }).reverse();
+
+  const totalInvestedMinor = withRunning.reduce((sum, row) => sum + row.investedMinor, 0);
+  const totalDebitMinor = 0;
+  const totalCreditMinor = totalInvestedMinor;
+  return {
+    partnerId: partner.id,
+    partnerName: partner.name,
+    totalInvestedMinor,
+    totalDebitMinor,
+    totalCreditMinor,
+    netMinor: totalCreditMinor - totalDebitMinor,
+    rowCount: withRunning.length,
+    rows: withRunning,
+  };
+}
+
+export async function buildAnalytics(
+  workspaceId: number,
+  range: FinanceRangeInput
+): Promise<FinanceAnalyticsSeries> {
+  const [partners, txs] = await Promise.all([listPartners(workspaceId), listTransactions({ workspaceId, sort: "desc" })]);
+  const { from, to, label } = resolveRange(range);
+  const filtered = txs.filter((tx) => inRange(tx.date, from, to));
+
+  const monthMap = new Map<string, { investedMinor: number; expensesMinor: number; balanceDeltaMinor: number }>();
+  const categoryMap = new Map<string, number>();
+  for (const tx of filtered) {
+    const month = tx.date.slice(0, 7);
+    const bucket = monthMap.get(month) ?? { investedMinor: 0, expensesMinor: 0, balanceDeltaMinor: 0 };
+    if (tx.kind === "partner_investment" || tx.kind === "expense") {
+      bucket.investedMinor += tx.totalMinor;
+    }
+    if (tx.kind === "company_expense") {
+      bucket.expensesMinor += tx.totalMinor;
+      categoryMap.set(tx.category, (categoryMap.get(tx.category) ?? 0) + tx.totalMinor);
+    }
+    if (tx.kind === "company_account_entry") {
+      bucket.balanceDeltaMinor += tx.accountEntryType === "credit" ? tx.totalMinor : -tx.totalMinor;
+    }
+    monthMap.set(month, bucket);
+  }
+
+  const monthlyInvestedVsExpenses = Array.from(monthMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, row]) => ({ month, investedMinor: row.investedMinor, expensesMinor: row.expensesMinor }));
+  let rolling = 0;
+  const companyBalanceTrend = Array.from(monthMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, row]) => {
+      rolling += row.balanceDeltaMinor;
+      return { month, balanceMinor: rolling };
+    });
+
+  const investedByPartner = new Map<number, number>();
+  for (const tx of filtered.filter((t) => t.kind === "partner_investment" || t.kind === "expense")) {
+    for (const p of tx.payments) {
+      investedByPartner.set(p.partnerId, (investedByPartner.get(p.partnerId) ?? 0) + p.amountMinor);
+    }
+  }
+  const totalInvested = Array.from(investedByPartner.values()).reduce((a, b) => a + b, 0);
+  const partnerContributionShare = partners
+    .filter((p) => p.isActive)
+    .map((p) => {
+      const investedMinor = investedByPartner.get(p.id) ?? 0;
+      return {
+        partnerId: p.id,
+        partnerName: p.name,
+        investedMinor,
+        sharePercent: totalInvested > 0 ? Number(((investedMinor / totalInvested) * 100).toFixed(2)) : 0,
+      };
+    })
+    .sort((a, b) => b.investedMinor - a.investedMinor);
+  const peak = Math.max(...partnerContributionShare.map((p) => p.investedMinor), 0);
+  const equalizationGapByPartner = partnerContributionShare.map((p) => ({
+    partnerId: p.partnerId,
+    partnerName: p.partnerName,
+    deltaMinor: peak - p.investedMinor,
+  }));
+  const categorySpendMix = Array.from(categoryMap.entries())
+    .map(([category, amountMinor]) => ({ category, amountMinor }))
+    .sort((a, b) => b.amountMinor - a.amountMinor);
+
+  return {
+    rangeLabel: label,
+    monthlyInvestedVsExpenses,
+    companyBalanceTrend,
+    partnerContributionShare,
+    equalizationGapByPartner,
+    categorySpendMix,
+    recentLedger: filtered.slice(0, 10),
+  };
+}
+
+export async function exportFinanceBackup(workspaceId: number): Promise<FinanceBackupPayload> {
+  const [workspace, partners, transactions, batches, prefRes] = await Promise.all([
+    getWorkspace(),
+    listPartners(workspaceId),
+    listTransactions({ workspaceId, sort: "desc" }),
+    listImportBatches(workspaceId),
+    query(
+      `SELECT id, user_id, workspace_id, table_density, default_range_preset, contribution_target_minor, last_filters_json
+       FROM finance_user_preferences
+       WHERE workspace_id = $1`,
+      [workspaceId]
+    ),
+  ]);
+  const preferences = prefRes.rows.map((row: Record<string, unknown>) => ({
+    id: Number(row.id),
+    userId: Number(row.user_id),
+    workspaceId: Number(row.workspace_id),
+    tableDensity: (row.table_density as string | null) ?? null,
+    defaultRangePreset: (row.default_range_preset as string | null) ?? null,
+    contributionTargetMinor: row.contribution_target_minor == null ? null : Number(row.contribution_target_minor),
+    lastFilters: (row.last_filters_json as Record<string, unknown>) ?? {},
+  }));
+  return {
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    workspace,
+    partners,
+    transactions,
+    importBatches: batches,
+    preferences,
+  };
+}
+
+export function previewRestoreBackup(payload: FinanceBackupPayload): FinanceRestorePreview {
+  if (!payload || payload.schemaVersion !== 1) throw new Error("Unsupported backup format.");
+  const txs = payload.transactions ?? [];
+  const dates = txs.map((t) => t.date).filter(Boolean).sort();
+  const totalInvestedMinor = txs
+    .filter((t) => t.kind === "partner_investment" || t.kind === "expense")
+    .reduce((sum, t) => sum + t.totalMinor, 0);
+  const totalCompanyExpensesMinor = txs
+    .filter((t) => t.kind === "company_expense")
+    .reduce((sum, t) => sum + t.totalMinor, 0);
+  const totalCompanyAccountDebitsMinor = txs
+    .filter((t) => t.kind === "company_account_entry" && t.accountEntryType === "debit")
+    .reduce((sum, t) => sum + t.totalMinor, 0);
+  const totalCompanyAccountCreditsMinor = txs
+    .filter((t) => t.kind === "company_account_entry" && t.accountEntryType === "credit")
+    .reduce((sum, t) => sum + t.totalMinor, 0);
+  const warnings: string[] = [];
+  if (!payload.workspace?.name) warnings.push("Workspace metadata missing.");
+  if (!payload.partners?.length) warnings.push("No partners found in backup.");
+  return {
+    workspaceName: payload.workspace?.name ?? "Unknown",
+    partnerCount: payload.partners?.length ?? 0,
+    transactionCount: txs.length,
+    batchCount: payload.importBatches?.length ?? 0,
+    totalInvestedMinor,
+    totalCompanyExpensesMinor,
+    totalCompanyAccountDebitsMinor,
+    totalCompanyAccountCreditsMinor,
+    earliestDate: dates[0] ?? null,
+    latestDate: dates[dates.length - 1] ?? null,
+    warnings,
+  };
+}
+
+export async function applyRestoreBackup(input: {
+  workspaceId: number;
+  payload: FinanceBackupPayload;
+  createdByUserId: number;
+}) {
+  const preview = previewRestoreBackup(input.payload);
+  const client = await query("SELECT 1"); // connectivity check
+  void client;
+  const poolMod = await import("@/lib/db");
+  const dbClient = await poolMod.pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    const preBackup = await exportFinanceBackup(input.workspaceId);
+    const preBatchId = `pre_restore_${Date.now()}`;
+    await dbClient.query(
+      `INSERT INTO finance_import_batches (
+        workspace_id, batch_id, source, status, notes, imported_transactions, skipped_duplicates, reconciliation_entries, warning_count, source_payload, applied_at
+      ) VALUES ($1, $2, 'finance_backup_restore_pre_snapshot', 'applied', $3, 0, 0, 0, 0, $4::jsonb, NOW())`,
+      [input.workspaceId, preBatchId, "Auto snapshot before restore", JSON.stringify(preBackup)]
+    );
+
+    await dbClient.query(`DELETE FROM finance_transactions WHERE workspace_id = $1`, [input.workspaceId]);
+    await dbClient.query(`DELETE FROM finance_partners WHERE workspace_id = $1`, [input.workspaceId]);
+    await dbClient.query(`DELETE FROM finance_import_batches WHERE workspace_id = $1 AND batch_id <> $2`, [input.workspaceId, preBatchId]);
+    await dbClient.query(`DELETE FROM finance_user_preferences WHERE workspace_id = $1`, [input.workspaceId]);
+
+    const partnerIdMap = new Map<number, number>();
+    for (const partner of input.payload.partners ?? []) {
+      const inserted = await dbClient.query(
+        `INSERT INTO finance_partners (workspace_id, name, email, role_label, joined_at, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id`,
+        [input.workspaceId, partner.name, partner.email, partner.roleLabel, partner.joinedAt, partner.isActive]
+      );
+      partnerIdMap.set(partner.id, Number(inserted.rows[0].id));
+    }
+
+    for (const tx of input.payload.transactions ?? []) {
+      const remapAlloc = (items: Array<{ partnerId: number; amountMinor: number }>) =>
+        items
+          .map((item) => ({ partnerId: partnerIdMap.get(item.partnerId) ?? item.partnerId, amountMinor: item.amountMinor }))
+          .filter((item) => Number.isFinite(item.partnerId));
+      await dbClient.query(
+        `INSERT INTO finance_transactions (
+          workspace_id, tx_id, kind, tx_date, description, category, total_minor, currency, partner_id, account_entry_type,
+          payments_json, shares_json, metadata_json, source_fingerprint, import_batch_id, audit_note, created_by_user_id
+        ) VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::jsonb,$14,$15,$16,$17
+        )`,
+        [
+          input.workspaceId,
+          tx.txId,
+          tx.kind,
+          tx.date,
+          tx.description,
+          tx.category,
+          tx.totalMinor,
+          tx.currency,
+          tx.partnerId ? (partnerIdMap.get(tx.partnerId) ?? null) : null,
+          tx.accountEntryType,
+          JSON.stringify(remapAlloc(tx.payments ?? [])),
+          JSON.stringify(remapAlloc(tx.shares ?? [])),
+          JSON.stringify({ ...(tx.metadata ?? {}), originContext: "backup_restore" }),
+          tx.sourceFingerprint,
+          tx.importBatchId,
+          tx.auditNote,
+          input.createdByUserId,
+        ]
+      );
+    }
+
+    for (const batch of input.payload.importBatches ?? []) {
+      await dbClient.query(
+        `INSERT INTO finance_import_batches (
+          workspace_id, batch_id, source, status, notes, imported_transactions, skipped_duplicates,
+          reconciliation_entries, warning_count, source_payload, created_at, applied_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,NOW(),NOW())`,
+        [
+          input.workspaceId,
+          batch.batchId,
+          batch.source,
+          batch.status,
+          batch.notes,
+          batch.importedTransactions,
+          batch.skippedDuplicates,
+          batch.reconciliationEntries,
+          batch.warningCount,
+          JSON.stringify({ restored: true }),
+        ]
+      );
+    }
+
+    for (const pref of input.payload.preferences ?? []) {
+      await dbClient.query(
+        `INSERT INTO finance_user_preferences (
+          user_id, workspace_id, table_density, default_range_preset, contribution_target_minor, last_filters_json
+        ) VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
+        [
+          pref.userId,
+          input.workspaceId,
+          pref.tableDensity,
+          pref.defaultRangePreset,
+          pref.contributionTargetMinor,
+          JSON.stringify(pref.lastFilters ?? {}),
+        ]
+      );
+    }
+
+    const restoreBatchId = `restore_${Date.now()}`;
+    await dbClient.query(
+      `INSERT INTO finance_import_batches (
+        workspace_id, batch_id, source, status, notes, imported_transactions, skipped_duplicates, reconciliation_entries, warning_count, source_payload, applied_at
+      ) VALUES ($1,$2,'finance_backup_restore','applied',$3,$4,0,0,$5,$6::jsonb,NOW())`,
+      [
+        input.workspaceId,
+        restoreBatchId,
+        "Finance backup restore applied",
+        preview.transactionCount,
+        preview.warnings.length,
+        JSON.stringify({ preview }),
+      ]
+    );
+
+    await dbClient.query("COMMIT");
+    return { restoreBatchId, preview };
+  } catch (error) {
+    await dbClient.query("ROLLBACK");
+    throw error;
+  } finally {
+    dbClient.release();
+  }
 }
 
 export { toMinor };
