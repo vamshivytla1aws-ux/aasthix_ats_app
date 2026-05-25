@@ -522,14 +522,62 @@ export async function computeDashboardTotals(workspaceId: number): Promise<Finan
     })
     .sort((a, b) => b.investedMinor - a.investedMinor);
 
+  const memberTotals: Record<string, { paidCents: number; shareCents: number; balanceCents: number }> = {};
+  const partnerNameById = new Map<number, string>();
+  for (const partner of partners) {
+    partnerNameById.set(partner.id, partner.name);
+    memberTotals[partner.name] = { paidCents: 0, shareCents: 0, balanceCents: 0 };
+  }
+  for (const tx of transactions) {
+    for (const payment of tx.payments) {
+      const name = partnerNameById.get(payment.partnerId);
+      if (!name) continue;
+      memberTotals[name].paidCents += Number(payment.amountMinor ?? 0);
+    }
+    for (const share of tx.shares) {
+      const name = partnerNameById.get(share.partnerId);
+      if (!name) continue;
+      memberTotals[name].shareCents += Number(share.amountMinor ?? 0);
+    }
+  }
+  let totalPaidCents = 0;
+  let totalShareCents = 0;
+  for (const value of Object.values(memberTotals)) {
+    value.balanceCents = value.paidCents - value.shareCents;
+    totalPaidCents += value.paidCents;
+    totalShareCents += value.shareCents;
+  }
+  const now = new Date();
+  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const thisMonthInflowMinor = transactions
+    .filter((tx) => tx.kind === "company_account_entry" && tx.accountEntryType === "credit" && tx.date.startsWith(monthPrefix))
+    .reduce((sum, tx) => sum + tx.totalMinor, 0);
+  const thisMonthOutflowMinor = transactions
+    .filter((tx) => tx.kind === "company_account_entry" && tx.accountEntryType === "debit" && tx.date.startsWith(monthPrefix))
+    .reduce((sum, tx) => sum + tx.totalMinor, 0);
+  const accountBalanceAsOf =
+    transactions
+      .filter((tx) => tx.kind === "company_account_entry")
+      .sort((a, b) => (a.date === b.date ? b.createdAt.localeCompare(a.createdAt) : b.date.localeCompare(a.date)))[0]
+      ?.date ?? null;
+
   return {
     totalPartnerInvestedMinor,
     totalCompanyExpensesMinor,
     totalCompanyAccountDebitsMinor,
     totalCompanyAccountCreditsMinor,
     companyAccountBalanceMinor: totalCompanyAccountCreditsMinor - totalCompanyAccountDebitsMinor,
+    accountBalanceAsOf,
+    thisMonthInflowMinor,
+    thisMonthOutflowMinor,
     recentLedger: transactions.slice(0, 10),
     equalization,
+    splitwiseSummary: {
+      memberTotals,
+      totalPaidCents,
+      totalShareCents,
+      totalBalanceCents: totalPaidCents - totalShareCents,
+    },
   } satisfies FinanceDashboardTotals;
 }
 

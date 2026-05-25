@@ -382,10 +382,10 @@ export default function FinancePage() {
       {tab === "dashboard" && (
         <div className="space-y-4">
           <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">Account balance</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.companyAccountBalanceMinor ?? 0)}</p><p className="mt-1 text-xs text-[var(--ats-text-muted)]">As of: {dashboard?.accountBalanceAsOf ? toDisplayDate(dashboard.accountBalanceAsOf) : "-"}</p></article>
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">This month inflow</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.thisMonthInflowMinor ?? 0)}</p></article>
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">This month outflow</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.thisMonthOutflowMinor ?? 0)}</p></article>
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">Total partners invested</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.totalPartnerInvestedMinor ?? 0)}</p></article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">Total company expenses</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.totalCompanyExpensesMinor ?? 0)}</p></article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">Company credits</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.totalCompanyAccountCreditsMinor ?? 0)}</p></article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">Company account balance</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.companyAccountBalanceMinor ?? 0)}</p></article>
           </section>
 
           <section className="rounded-2xl border border-cyan-500/30 bg-gradient-to-r from-slate-950 to-slate-900 p-4 text-slate-100 shadow-sm">
@@ -480,6 +480,69 @@ export default function FinancePage() {
                 ))}
               </div>
             </article>
+          </section>
+
+          <section className="rounded-2xl border border-[var(--ats-border)] bg-slate-950/70 p-4 text-slate-100">
+            <h3 className="text-2xl font-semibold">Equalization board</h3>
+            <p className="mt-2 text-sm text-slate-300">
+              Total partner invested: {inr(Number(dashboard?.totalPartnerInvestedMinor ?? 0))} · Active partners: {(dashboard?.equalization ?? []).length} · Benchmark (highest invested): {inr(Math.max(...(dashboard?.equalization ?? []).map((r: any) => Number(r.investedMinor ?? 0)), 0))}
+            </p>
+            <div className="mt-3 overflow-auto rounded-xl border border-slate-700/60">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-900/70 text-left text-slate-300">
+                  <tr>
+                    <th className="px-3 py-2">Partner</th>
+                    <th className="px-3 py-2 text-right">Invested till now</th>
+                    <th className="px-3 py-2 text-right">Delta to equal</th>
+                    <th className="px-3 py-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(dashboard?.equalization ?? []).map((row: any) => (
+                    <tr key={row.partnerId} className="border-t border-slate-700/60">
+                      <td className="px-3 py-2">{row.partnerName}</td>
+                      <td className="px-3 py-2 text-right">{inr(row.investedMinor)}</td>
+                      <td className="px-3 py-2 text-right">{inr(row.deltaToEqualMinor)}</td>
+                      <td className="px-3 py-2">{Number(row.deltaToEqualMinor) > 0 ? `Owes company ${inr(row.deltaToEqualMinor)}` : "Benchmark matched"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-[var(--ats-border)] bg-slate-950/70 p-4 text-slate-100">
+            <h3 className="text-2xl font-semibold">Splitwise member totals</h3>
+            <div className="mt-3 overflow-auto rounded-xl border border-slate-700/60">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-900/70 text-left text-slate-300">
+                  <tr>
+                    <th className="px-3 py-2">Member</th>
+                    <th className="px-3 py-2 text-right">Paid</th>
+                    <th className="px-3 py-2 text-right">Share/Owes</th>
+                    <th className="px-3 py-2 text-right">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(dashboard?.splitwiseSummary?.memberTotals ?? {}).map(([member, totals]: any) => (
+                    <tr key={member} className="border-t border-slate-700/60">
+                      <td className="px-3 py-2">{member}</td>
+                      <td className="px-3 py-2 text-right">{inr(totals.paidCents)}</td>
+                      <td className="px-3 py-2 text-right">{inr(totals.shareCents)}</td>
+                      <td className="px-3 py-2 text-right">{inr(totals.balanceCents)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="border-t border-slate-600/70 bg-slate-900/40 font-semibold">
+                  <tr>
+                    <td className="px-3 py-2">Total</td>
+                    <td className="px-3 py-2 text-right">{inr(Number(dashboard?.splitwiseSummary?.totalPaidCents ?? 0))}</td>
+                    <td className="px-3 py-2 text-right">{inr(Number(dashboard?.splitwiseSummary?.totalShareCents ?? 0))}</td>
+                    <td className="px-3 py-2 text-right">{inr(Number(dashboard?.splitwiseSummary?.totalBalanceCents ?? 0))}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </section>
         </div>
       )}

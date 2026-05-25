@@ -60,6 +60,9 @@ export type FinanceDashboardTotals = {
   totalCompanyAccountDebitsMinor: number;
   totalCompanyAccountCreditsMinor: number;
   companyAccountBalanceMinor: number;
+  accountBalanceAsOf: string | null;
+  thisMonthInflowMinor: number;
+  thisMonthOutflowMinor: number;
   recentLedger: FinanceTransaction[];
   equalization: Array<{
     partnerId: number;
@@ -67,6 +70,12 @@ export type FinanceDashboardTotals = {
     investedMinor: number;
     deltaToEqualMinor: number;
   }>;
+  splitwiseSummary: {
+    memberTotals: Record<string, { paidCents: number; shareCents: number; balanceCents: number }>;
+    totalPaidCents: number;
+    totalShareCents: number;
+    totalBalanceCents: number;
+  };
 };
 
 export type FinanceDateRangePreset = "full" | "monthly" | "yearly" | "custom";
