@@ -57,6 +57,8 @@ export const BOARD_PERMISSION_KEYS = [
   "recruiter.view",
   "coordinator.view",
   "chat.view",
+  "finance.view",
+  "finance.manage",
 ] as const;
 
 export type BoardPermissionKey = (typeof BOARD_PERMISSION_KEYS)[number];

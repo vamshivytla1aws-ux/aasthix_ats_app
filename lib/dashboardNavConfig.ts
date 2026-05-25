@@ -47,6 +47,7 @@ export const DASHBOARD_MORE_NAV: DashboardNavItem[] = [
   { id: "copilot", label: "Recruiter Copilot", href: "/recruiter/copilot", permissionKey: "jobs.view" },
   { id: "workload", label: "Recruiter Workload", href: "/recruiter/workload", permissionKey: "jobs.view" },
   { id: "governance", label: "AI Governance", href: "/governance", permissionKey: "jobs.view" },
+  { id: "finance", label: "Finance", href: "/finance", permissionKey: "finance.view" },
 ];
 
 export const DASHBOARD_DOMAIN_NAV: DashboardDomainNav[] = [
@@ -121,6 +122,7 @@ export function isDashboardNavHrefActive(pathname: string, href: string): boolea
   if (href === "/notes") return pathname === "/notes" || pathname.startsWith("/notes/");
   if (href === "/admin/permissions") return pathname.startsWith("/admin/");
   if (href === "/analytics") return pathname === "/analytics" || pathname.startsWith("/usage");
+  if (href === "/finance") return pathname === "/finance" || pathname.startsWith("/finance/");
   if (href === "/chat") return pathname === "/chat" || pathname.startsWith("/notes");
   if (href === "/attendance") return pathname === "/attendance" || pathname.startsWith("/timesheet");
   if (href === "/hrms") {
