@@ -189,13 +189,14 @@ export default function FinancePage() {
     let payload: any = snapshotPayload;
     if (!payload && snapshotText.trim()) payload = JSON.parse(snapshotText);
     if (!payload) throw new Error("Select a snapshot JSON file or paste JSON payload.");
-    const res = await apiFetchJson<{ result: { imported: number; skipped?: number } }>("/api/finance/import-snapshot", {
+    const res = await apiFetchJson<{ result: { imported: number; skipped?: number; errors?: string[] } }>("/api/finance/import-snapshot", {
       method: "POST",
       body: JSON.stringify({ payload }),
     });
     const imported = res.result?.imported ?? 0;
     const skipped = res.result?.skipped ?? 0;
-    setMessage(`Snapshot imported. Rows: ${imported}${skipped ? `, skipped: ${skipped}` : ""}`);
+    const sampleErrors = (res.result?.errors ?? []).slice(0, 2).join(" | ");
+    setMessage(`Snapshot imported. Rows: ${imported}${skipped ? `, skipped: ${skipped}` : ""}${sampleErrors ? ` · ${sampleErrors}` : ""}`);
     setSnapshotText("");
     setSnapshotPayload(null);
     await refreshBase();

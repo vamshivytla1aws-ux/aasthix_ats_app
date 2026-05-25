@@ -404,6 +404,7 @@ export async function importStateSnapshot(input: {
 
   let imported = 0;
   let skipped = 0;
+  const errors: string[] = [];
   for (const tx of txs) {
     const totalMinor = normalizeMinorFromTx(tx);
     const kind = normalizeKind(tx.kind);
@@ -421,6 +422,10 @@ export async function importStateSnapshot(input: {
     const payments = remapAllocations(tx.payments);
     const shares = remapAllocations(tx.shares);
     try {
+      const resolvedPartnerId =
+        partnerId ??
+        (payments.length === 1 ? payments[0].partnerId : null) ??
+        (shares.length === 1 ? shares[0].partnerId : null);
       await upsertTransaction({
         workspaceId: input.workspaceId,
         kind,
@@ -429,7 +434,7 @@ export async function importStateSnapshot(input: {
         category: String(tx.category ?? "General"),
         totalMinor,
         currency: String(tx.currency ?? "INR"),
-        partnerId,
+        partnerId: resolvedPartnerId,
         accountEntryType: (tx.accountEntryType as "debit" | "credit" | undefined) ?? null,
         payments,
         shares,
@@ -444,9 +449,14 @@ export async function importStateSnapshot(input: {
         createdByUserId: input.createdByUserId,
       });
       imported += 1;
-    } catch {
+    } catch (error) {
       // ignore duplicates/failures for idempotent import
       skipped += 1;
+      if (errors.length < 10) {
+        const desc = String(tx.description ?? "Imported transaction");
+        const reason = error instanceof Error ? error.message : "unknown failure";
+        errors.push(`${desc}: ${reason}`);
+      }
     }
   }
 
@@ -455,10 +465,16 @@ export async function importStateSnapshot(input: {
       workspace_id, batch_id, source, status, notes, imported_transactions, skipped_duplicates,
       reconciliation_entries, warning_count, source_payload, applied_at
     ) VALUES ($1, $2, 'state_snapshot_json', 'applied', $3, $4, 0, 0, 0, $5::jsonb, NOW())`,
-    [input.workspaceId, batchId, "JSON snapshot import", imported, JSON.stringify({ imported, skipped })]
+    [
+      input.workspaceId,
+      batchId,
+      "JSON snapshot import",
+      imported,
+      JSON.stringify({ imported, skipped, errors }),
+    ]
   );
 
-  return { batchId, imported, skipped };
+  return { batchId, imported, skipped, errors };
 }
 
 export async function computeDashboardTotals(workspaceId: number): Promise<FinanceDashboardTotals> {
