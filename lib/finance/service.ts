@@ -310,9 +310,14 @@ export async function importStateSnapshot(input: {
   }
 
   function normalizeMinorFromTx(tx: Record<string, unknown>) {
-    const totalMinor = Number(tx.totalMinor ?? 0);
+    const readNumberish = (value: unknown) => {
+      if (typeof value === "number") return value;
+      if (typeof value === "string") return Number(value.replace(/[^0-9.-]/g, ""));
+      return Number(value ?? 0);
+    };
+    const totalMinor = readNumberish(tx.totalMinor);
     if (Number.isFinite(totalMinor) && totalMinor > 0) return Math.round(totalMinor);
-    const amount = Number(tx.amount ?? 0);
+    const amount = readNumberish(tx.amount);
     if (Number.isFinite(amount) && amount > 0) return Math.round(amount * 100);
     return 0;
   }
@@ -379,11 +384,33 @@ export async function importStateSnapshot(input: {
       .filter((v): v is { partnerId: number; amountMinor: number } => Boolean(v));
   }
 
+  function normalizeKind(kindRaw: unknown): FinanceTransactionKind {
+    const kind = String(kindRaw ?? "expense").trim().toLowerCase();
+    if (
+      kind === "partner_investment" ||
+      kind === "company_expense" ||
+      kind === "company_inflow" ||
+      kind === "company_account_entry" ||
+      kind === "expense" ||
+      kind === "reconciliation_adjustment"
+    ) {
+      return kind;
+    }
+    if (kind === "contribution") return "partner_investment";
+    if (kind === "salary_payout") return "company_expense";
+    if (kind === "settlement") return "expense";
+    return "expense";
+  }
+
   let imported = 0;
+  let skipped = 0;
   for (const tx of txs) {
     const totalMinor = normalizeMinorFromTx(tx);
-    const kind = String(tx.kind ?? "expense") as FinanceTransactionKind;
-    if (!Number.isFinite(totalMinor) || totalMinor <= 0) continue;
+    const kind = normalizeKind(tx.kind);
+    if (!Number.isFinite(totalMinor) || totalMinor <= 0) {
+      skipped += 1;
+      continue;
+    }
     const sourceFingerprint = (tx.sourceFingerprint as string | undefined) ?? null;
     const partnerId =
       tx.partnerMemberId != null
@@ -419,6 +446,7 @@ export async function importStateSnapshot(input: {
       imported += 1;
     } catch {
       // ignore duplicates/failures for idempotent import
+      skipped += 1;
     }
   }
 
@@ -427,10 +455,10 @@ export async function importStateSnapshot(input: {
       workspace_id, batch_id, source, status, notes, imported_transactions, skipped_duplicates,
       reconciliation_entries, warning_count, source_payload, applied_at
     ) VALUES ($1, $2, 'state_snapshot_json', 'applied', $3, $4, 0, 0, 0, $5::jsonb, NOW())`,
-    [input.workspaceId, batchId, "JSON snapshot import", imported, JSON.stringify({ imported })]
+    [input.workspaceId, batchId, "JSON snapshot import", imported, JSON.stringify({ imported, skipped })]
   );
 
-  return { batchId, imported };
+  return { batchId, imported, skipped };
 }
 
 export async function computeDashboardTotals(workspaceId: number): Promise<FinanceDashboardTotals> {
