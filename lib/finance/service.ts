@@ -291,32 +291,125 @@ export async function importStateSnapshot(input: {
   createdByUserId: number;
   payload: Record<string, unknown>;
 }) {
+  function normalizeSnapshotPayload(raw: Record<string, unknown>) {
+    const candidates: Array<Record<string, unknown>> = [raw];
+    const nestedKeys = ["payload", "state", "data", "backup"];
+    for (const key of nestedKeys) {
+      const value = raw[key];
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        candidates.push(value as Record<string, unknown>);
+      }
+    }
+    for (const candidate of candidates) {
+      const txs = candidate.transactions;
+      if (Array.isArray(txs)) {
+        return candidate;
+      }
+    }
+    return raw;
+  }
+
+  function normalizeMinorFromTx(tx: Record<string, unknown>) {
+    const totalMinor = Number(tx.totalMinor ?? 0);
+    if (Number.isFinite(totalMinor) && totalMinor > 0) return Math.round(totalMinor);
+    const amount = Number(tx.amount ?? 0);
+    if (Number.isFinite(amount) && amount > 0) return Math.round(amount * 100);
+    return 0;
+  }
+
+  function normalizeDateFromTx(tx: Record<string, unknown>) {
+    const rawDate = String(tx.date ?? "").trim();
+    if (!rawDate) return new Date().toISOString().slice(0, 10);
+    return rawDate;
+  }
+
+  const normalizedPayload = normalizeSnapshotPayload(input.payload ?? {});
   const batchId = `snapshot_${Date.now()}`;
-  const txs = (input.payload.transactions as Array<Record<string, unknown>>) ?? [];
+  const txs = (normalizedPayload.transactions as Array<Record<string, unknown>>) ?? [];
+  const members =
+    (normalizedPayload.members as Array<Record<string, unknown>>) ??
+    (normalizedPayload.partners as Array<Record<string, unknown>>) ??
+    [];
+  const partnerIdByLegacyMemberId = new Map<string, number>();
+
+  if (!txs.length) {
+    throw new Error("Snapshot has no transactions. Use a groups-split-web export JSON with a transactions array.");
+  }
+
+  for (const member of members) {
+    const name = String(member.name ?? "").trim();
+    if (!name) continue;
+    const existing = await query(
+      `SELECT id FROM finance_partners WHERE workspace_id = $1 AND lower(name) = lower($2) LIMIT 1`,
+      [input.workspaceId, name]
+    );
+    let partnerId: number;
+    if (existing.rowCount) {
+      partnerId = Number(existing.rows[0].id);
+    } else {
+      const inserted = await query(
+        `INSERT INTO finance_partners (workspace_id, name, email, role_label, joined_at, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id`,
+        [
+          input.workspaceId,
+          name,
+          (member.email as string | undefined) ?? null,
+          (member.role as string | undefined) ?? null,
+          (member.joinedAt as string | undefined) ?? null,
+          member.active === false ? false : true,
+        ]
+      );
+      partnerId = Number(inserted.rows[0].id);
+    }
+    partnerIdByLegacyMemberId.set(String(member.id ?? ""), partnerId);
+  }
+
+  function remapAllocations(items: unknown): Array<{ partnerId: number; amountMinor: number }> {
+    if (!Array.isArray(items)) return [];
+    return items
+      .map((item) => {
+        const row = item as Record<string, unknown>;
+        const legacyMemberId = String(row.memberId ?? "");
+        const partnerId = partnerIdByLegacyMemberId.get(legacyMemberId);
+        const amountMinor = Number(row.amountMinor ?? 0);
+        if (!partnerId || !Number.isFinite(amountMinor)) return null;
+        return { partnerId, amountMinor };
+      })
+      .filter((v): v is { partnerId: number; amountMinor: number } => Boolean(v));
+  }
+
   let imported = 0;
   for (const tx of txs) {
-    const groupId = String(tx.groupId ?? "");
-    if (!groupId) continue;
-    const totalMinor = Number(tx.totalMinor ?? 0);
+    const totalMinor = normalizeMinorFromTx(tx);
     const kind = String(tx.kind ?? "expense") as FinanceTransactionKind;
     if (!Number.isFinite(totalMinor) || totalMinor <= 0) continue;
     const sourceFingerprint = (tx.sourceFingerprint as string | undefined) ?? null;
+    const partnerId =
+      tx.partnerMemberId != null
+        ? partnerIdByLegacyMemberId.get(String(tx.partnerMemberId)) ?? null
+        : tx.partnerId != null
+        ? Number(tx.partnerId)
+        : null;
+    const payments = remapAllocations(tx.payments);
+    const shares = remapAllocations(tx.shares);
     try {
       await upsertTransaction({
         workspaceId: input.workspaceId,
         kind,
-        date: String(tx.date ?? new Date().toISOString().slice(0, 10)),
+        date: normalizeDateFromTx(tx),
         description: String(tx.description ?? "Imported transaction"),
         category: String(tx.category ?? "General"),
         totalMinor,
         currency: String(tx.currency ?? "INR"),
-        partnerId: null,
+        partnerId,
         accountEntryType: (tx.accountEntryType as "debit" | "credit" | undefined) ?? null,
-        payments: (tx.payments as Array<{ partnerId: number; amountMinor: number }>) ?? [],
-        shares: (tx.shares as Array<{ partnerId: number; amountMinor: number }>) ?? [],
+        payments,
+        shares,
         metadata: {
           sourceTag: tx.sourceTag ?? "snapshot_json",
           legacyTxId: tx.id ?? null,
+          importedFrom: "groups_split_web",
         },
         sourceFingerprint,
         importBatchId: batchId,

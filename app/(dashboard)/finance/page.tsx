@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetchJson } from "@/lib/apiClient";
 
 type Tab = "dashboard" | "partners" | "partner_accounts" | "investments" | "company_account" | "ledger" | "import_audit";
@@ -54,6 +54,7 @@ export default function FinancePage() {
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState("all");
   const [snapshotText, setSnapshotText] = useState("");
+  const [snapshotPayload, setSnapshotPayload] = useState<any>(null);
   const [restorePreview, setRestorePreview] = useState<any>(null);
   const [restorePayload, setRestorePayload] = useState<any>(null);
 
@@ -65,6 +66,7 @@ export default function FinancePage() {
 
   const [selectedPartnerId, setSelectedPartnerId] = useState<number>(0);
   const [partnerStatement, setPartnerStatement] = useState<any>(null);
+  const backupImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const rangeQuery = useMemo(() => {
     const p = new URLSearchParams();
@@ -184,12 +186,29 @@ export default function FinancePage() {
   }
 
   async function importSnapshot() {
-    const payload = JSON.parse(snapshotText);
-    await apiFetchJson("/api/finance/import-snapshot", { method: "POST", body: JSON.stringify({ payload }) });
-    setMessage("Snapshot imported.");
+    let payload: any = snapshotPayload;
+    if (!payload && snapshotText.trim()) payload = JSON.parse(snapshotText);
+    if (!payload) throw new Error("Select a snapshot JSON file or paste JSON payload.");
+    const res = await apiFetchJson<{ result: { imported: number } }>("/api/finance/import-snapshot", {
+      method: "POST",
+      body: JSON.stringify({ payload }),
+    });
+    setMessage(`Snapshot imported. Rows: ${res.result?.imported ?? 0}`);
+    setSnapshotText("");
+    setSnapshotPayload(null);
     await refreshBase();
     await refreshAnalytics();
     if (selectedPartnerId) await refreshPartnerStatement(selectedPartnerId);
+  }
+
+  async function handleSnapshotFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    setSnapshotPayload(parsed);
+    setSnapshotText("");
+    setMessage(`Snapshot file loaded: ${file.name}`);
   }
 
   async function exportBackup() {
@@ -216,6 +235,10 @@ export default function FinancePage() {
     setRestorePayload(backup);
     setRestorePreview(previewRes.preview);
     setMessage("Restore preview ready.");
+  }
+
+  function triggerBackupImportPicker() {
+    backupImportInputRef.current?.click();
   }
 
   async function applyRestore() {
@@ -471,9 +494,12 @@ export default function FinancePage() {
             <h3 className="text-base font-semibold">Backup & restore</h3>
             <div className="mt-2 flex flex-wrap gap-2">
               <button className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" type="button" onClick={exportBackup}>Export Finance Backup</button>
+              <button className="rounded-xl border border-[var(--ats-border)] px-3 py-2 text-sm font-semibold" type="button" onClick={triggerBackupImportPicker}>
+                Import from Export JSON file
+              </button>
               <label className="rounded-xl border border-[var(--ats-border)] px-3 py-2 text-sm font-semibold">
                 Select backup file
-                <input type="file" accept="application/json" className="hidden" onChange={handleRestoreFile} />
+                <input ref={backupImportInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleRestoreFile} />
               </label>
             </div>
             {restorePreview ? (
@@ -496,6 +522,12 @@ export default function FinancePage() {
 
           <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
             <h3 className="text-base font-semibold">Import groups-split-web JSON snapshot</h3>
+            <div className="mt-3">
+              <label className="inline-flex cursor-pointer rounded-xl border border-[var(--ats-border)] px-3 py-2 text-sm font-semibold">
+                Select snapshot file
+                <input type="file" accept="application/json,.json" className="hidden" onChange={handleSnapshotFile} />
+              </label>
+            </div>
             <textarea className="mt-3 min-h-[220px] w-full rounded-xl border border-[var(--ats-border)] bg-transparent p-3 text-sm" placeholder='{"transactions":[...]}' value={snapshotText} onChange={(e) => setSnapshotText(e.target.value)} />
             <button className="mt-3 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" type="button" onClick={importSnapshot}>Import snapshot</button>
           </article>
