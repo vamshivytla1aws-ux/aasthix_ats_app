@@ -9,12 +9,18 @@ export async function POST(request: Request) {
   const access = await requirePermission("finance.manage");
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   try {
-    const body = (await request.json()) as { payload: Record<string, unknown> };
+    const body = (await request.json()) as { payload?: unknown };
+    let payload: Record<string, unknown> = {};
+    if (typeof body.payload === "string") {
+      payload = JSON.parse(body.payload) as Record<string, unknown>;
+    } else if (body.payload && typeof body.payload === "object" && !Array.isArray(body.payload)) {
+      payload = body.payload as Record<string, unknown>;
+    }
     const workspace = await getWorkspace();
     const result = await importStateSnapshot({
       workspaceId: workspace.id,
       createdByUserId: access.access.user_id,
-      payload: body.payload ?? {},
+      payload,
     });
     return NextResponse.json({ result });
   } catch (error) {
