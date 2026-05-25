@@ -330,6 +330,13 @@ export async function importStateSnapshot(input: {
 
   const normalizedPayload = normalizeSnapshotPayload(input.payload ?? {});
   const batchId = `snapshot_${Date.now()}`;
+  await query(
+    `INSERT INTO finance_import_batches (
+      workspace_id, batch_id, source, status, notes, imported_transactions, skipped_duplicates,
+      reconciliation_entries, warning_count, source_payload
+    ) VALUES ($1, $2, 'state_snapshot_json', 'processing', $3, 0, 0, 0, 0, $4::jsonb)`,
+    [input.workspaceId, batchId, "JSON snapshot import", JSON.stringify({ stage: "start" })]
+  );
   const txs = (normalizedPayload.transactions as Array<Record<string, unknown>>) ?? [];
   const members =
     (normalizedPayload.members as Array<Record<string, unknown>>) ??
@@ -461,17 +468,14 @@ export async function importStateSnapshot(input: {
   }
 
   await query(
-    `INSERT INTO finance_import_batches (
-      workspace_id, batch_id, source, status, notes, imported_transactions, skipped_duplicates,
-      reconciliation_entries, warning_count, source_payload, applied_at
-    ) VALUES ($1, $2, 'state_snapshot_json', 'applied', $3, $4, 0, 0, 0, $5::jsonb, NOW())`,
-    [
-      input.workspaceId,
-      batchId,
-      "JSON snapshot import",
-      imported,
-      JSON.stringify({ imported, skipped, errors }),
-    ]
+    `UPDATE finance_import_batches
+     SET status = 'applied',
+         imported_transactions = $3,
+         skipped_duplicates = $4,
+         source_payload = $5::jsonb,
+         applied_at = NOW()
+     WHERE workspace_id = $1 AND batch_id = $2`,
+    [input.workspaceId, batchId, imported, skipped, JSON.stringify({ imported, skipped, errors })]
   );
 
   return { batchId, imported, skipped, errors };
