@@ -22,6 +22,32 @@ function inr(minor: number) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(minor / 100);
 }
 
+function toDisplayDate(value: string) {
+  const v = (value ?? "").trim();
+  const ymd = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (ymd) return `${ymd[3]}-${ymd[2]}-${ymd[1]}`;
+  const dmySlash = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (dmySlash) return `${dmySlash[1]}-${dmySlash[2]}-${dmySlash[3]}`;
+  return v;
+}
+
+function toApiDate(value: string) {
+  const v = (value ?? "").trim();
+  const dmyDash = v.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (dmyDash) return `${dmyDash[3]}-${dmyDash[2]}-${dmyDash[1]}`;
+  const dmySlash = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (dmySlash) return `${dmySlash[3]}-${dmySlash[2]}-${dmySlash[1]}`;
+  return v;
+}
+
+function todayDdMmYyyy() {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yyyy = now.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
 function todayMonth() {
   return new Date().toISOString().slice(0, 7);
 }
@@ -43,13 +69,13 @@ export default function FinancePage() {
   const [partnerEmail, setPartnerEmail] = useState("");
   const [partnerRole, setPartnerRole] = useState("");
 
-  const [txKind, setTxKind] = useState("partner_investment");
-  const [txDate, setTxDate] = useState(new Date().toISOString().slice(0, 10));
+  const [txDate, setTxDate] = useState(todayDdMmYyyy());
   const [txDesc, setTxDesc] = useState("");
   const [txCategory, setTxCategory] = useState("General");
   const [txAmount, setTxAmount] = useState("");
   const [txPartnerId, setTxPartnerId] = useState("");
   const [txAccountType, setTxAccountType] = useState<"debit" | "credit">("debit");
+  const [editingTxId, setEditingTxId] = useState<number | null>(null);
 
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState("all");
@@ -75,8 +101,8 @@ export default function FinancePage() {
     if (rangePreset === "monthly") p.set("month", rangeMonth);
     if (rangePreset === "yearly") p.set("year", rangeYear);
     if (rangePreset === "custom") {
-      if (rangeFrom) p.set("from", rangeFrom);
-      if (rangeTo) p.set("to", rangeTo);
+      if (rangeFrom) p.set("from", toApiDate(rangeFrom));
+      if (rangeTo) p.set("to", toApiDate(rangeTo));
     }
     return p.toString();
   }, [rangePreset, rangeMonth, rangeYear, rangeFrom, rangeTo]);
@@ -176,24 +202,31 @@ export default function FinancePage() {
 
   async function saveTx(e: React.FormEvent) {
     e.preventDefault();
+    const activeKind = tab === "company_account" ? "company_account_entry" : "partner_investment";
     const payload: Record<string, unknown> = {
-      kind: txKind,
-      date: txDate,
+      kind: activeKind,
+      date: toApiDate(txDate),
       description: txDesc || "Entry",
       category: txCategory,
       amount: txAmount,
     };
-    if (txKind === "partner_investment") {
+    if (activeKind === "partner_investment") {
       const partnerId = Number(txPartnerId);
       payload.partnerId = partnerId;
       payload.payments = [{ partnerId, amountMinor: Math.round(Number(txAmount || "0") * 100) }];
       payload.shares = [];
     }
-    if (txKind === "company_account_entry") payload.accountEntryType = txAccountType;
-    await apiFetchJson("/api/finance/transactions", { method: "POST", body: JSON.stringify(payload) });
+    if (activeKind === "company_account_entry") payload.accountEntryType = txAccountType;
+    if (editingTxId) payload.id = editingTxId;
+    await apiFetchJson("/api/finance/transactions", {
+      method: editingTxId ? "PUT" : "POST",
+      body: JSON.stringify(payload),
+    });
     setTxDesc("");
     setTxAmount("");
-    setMessage("Saved.");
+    setEditingTxId(null);
+    setTxDate(todayDdMmYyyy());
+    setMessage(editingTxId ? "Entry updated." : "Saved.");
     await refreshBase();
     await refreshAnalytics();
   }
@@ -216,7 +249,7 @@ export default function FinancePage() {
     const imported = res.result?.imported ?? 0;
     const skipped = res.result?.skipped ?? 0;
     const sampleErrors = (res.result?.errors ?? []).slice(0, 2).join(" | ");
-    setMessage(`Snapshot imported. Rows: ${imported}${skipped ? `, skipped: ${skipped}` : ""}${sampleErrors ? ` · ${sampleErrors}` : ""}`);
+    setMessage(`Snapshot imported. Rows: ${imported}${skipped ? `, skipped: ${skipped}` : ""}${sampleErrors ? ` - ${sampleErrors}` : ""}`);
     setSnapshotText("");
     setSnapshotPayload(null);
     await refreshBase();
@@ -289,6 +322,17 @@ export default function FinancePage() {
     setTab("ledger");
   }
 
+  function editTx(tx: Tx) {
+    setEditingTxId(tx.id);
+    setTxDate(toDisplayDate(tx.date));
+    setTxDesc(tx.description ?? "");
+    setTxCategory(tx.category ?? "General");
+    setTxAmount((Number(tx.totalMinor ?? 0) / 100).toString());
+    setTxPartnerId(tx.partnerId ? String(tx.partnerId) : "");
+    setTxAccountType(tx.accountEntryType ?? "debit");
+    setTab(tx.kind === "company_account_entry" ? "company_account" : "investments");
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
@@ -328,8 +372,8 @@ export default function FinancePage() {
           {rangePreset === "yearly" ? <input className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={rangeYear} onChange={(e) => setRangeYear(e.target.value)} placeholder="YYYY" /> : null}
           {rangePreset === "custom" ? (
             <>
-              <input className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} placeholder="From YYYY-MM-DD" />
-              <input className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} placeholder="To YYYY-MM-DD" />
+              <input className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} placeholder="From dd-mm-yyyy" />
+              <input className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} placeholder="To dd-mm-yyyy" />
             </>
           ) : null}
         </div>
@@ -344,7 +388,7 @@ export default function FinancePage() {
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">Company account balance</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.companyAccountBalanceMinor ?? 0)}</p></article>
           </section>
 
-          <section className="rounded-2xl border border-[var(--ats-border)] bg-slate-950/80 p-4 text-slate-100">
+          <section className="rounded-2xl border border-cyan-500/30 bg-gradient-to-r from-slate-950 to-slate-900 p-4 text-slate-100 shadow-sm">
             <h3 className="text-2xl font-semibold">Cash Position Strip</h3>
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-semibold text-emerald-300">
@@ -361,7 +405,7 @@ export default function FinancePage() {
 
           <section className="grid gap-3 lg:grid-cols-3">
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-4xl font-semibold leading-tight">Monthly Invested vs Company Expenses</h3>
+              <h3 className="text-3xl font-semibold leading-tight">Monthly Invested vs Company Expenses</h3>
               <div className="mt-2 space-y-1">
                 {(analytics?.monthlyInvestedVsExpenses ?? []).map((r: any) => (
                   <button key={r.month} type="button" onClick={() => applyLedgerDrill("partner_investment")} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
@@ -375,7 +419,7 @@ export default function FinancePage() {
               </div>
             </article>
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-4xl font-semibold leading-tight">Partner Contribution Share</h3>
+              <h3 className="text-3xl font-semibold leading-tight">Partner Contribution Share</h3>
               <div className="mt-3">
                 <input
                   className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2 text-sm"
@@ -398,7 +442,7 @@ export default function FinancePage() {
               </div>
             </article>
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-4xl font-semibold leading-tight">Equalization Gap by Partner</h3>
+              <h3 className="text-3xl font-semibold leading-tight">Equalization Gap by Partner</h3>
               <div className="mt-2 space-y-1">
                 {(analytics?.equalizationGapByPartner ?? []).map((r: any) => (
                   <button key={r.partnerId} type="button" onClick={() => { setSelectedPartnerId(r.partnerId); setTab("partner_accounts"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
@@ -464,7 +508,7 @@ export default function FinancePage() {
                   <tbody>
                     {(partnerStatement.rows ?? []).map((row: any) => (
                       <tr className="border-t border-[var(--ats-border)]" key={row.txId}>
-                        <td className="py-2">{row.date}</td><td>{row.narration}</td><td>{row.category}</td><td className="text-right">{inr(row.investedMinor)}</td><td className="text-right">{inr(row.runningBalanceMinor)}</td>
+                        <td className="py-2">{toDisplayDate(row.date)}</td><td>{row.narration}</td><td>{row.category}</td><td className="text-right">{inr(row.investedMinor)}</td><td className="text-right">{inr(row.runningBalanceMinor)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -497,7 +541,7 @@ export default function FinancePage() {
         <section className="grid gap-4 lg:grid-cols-3">
           <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
             <form className="space-y-2" onSubmit={saveTx}>
-              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" value={txDate} onChange={(e) => setTxDate(e.target.value)} />
+              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" value={txDate} onChange={(e) => setTxDate(e.target.value)} placeholder="dd-mm-yyyy" />
               {tab === "investments" ? (
                 <select className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" value={txPartnerId} onChange={(e) => setTxPartnerId(e.target.value)}>
                   <option value="">Select partner</option>
@@ -511,12 +555,13 @@ export default function FinancePage() {
               <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Description" value={txDesc} onChange={(e) => setTxDesc(e.target.value)} />
               <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Category" value={txCategory} onChange={(e) => setTxCategory(e.target.value)} />
               <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Amount" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} />
-              <button className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" type="submit">Save entry</button>
+              <button className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" type="submit">{editingTxId ? "Update entry" : "Save entry"}</button>
+              {editingTxId ? <button className="rounded-xl border border-[var(--ats-border)] px-3 py-2 text-sm font-semibold" type="button" onClick={() => { setEditingTxId(null); setTxDate(todayDdMmYyyy()); setTxDesc(""); setTxCategory("General"); setTxAmount(""); setTxPartnerId(""); setTxAccountType("debit"); }}>Cancel edit</button> : null}
             </form>
           </article>
           <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4 lg:col-span-2">
             <table className="w-full text-sm"><thead><tr className="text-left text-[var(--ats-text-muted)]"><th className="py-2">Date</th><th>Description</th><th>Partner</th><th>Type</th><th className="text-right">Amount</th><th>Action</th></tr></thead>
-              <tbody>{ledger.filter((tx) => (tab === "investments" ? tx.kind === "partner_investment" || tx.kind === "expense" : tx.kind === "company_account_entry")).map((tx) => <tr className="border-t border-[var(--ats-border)]" key={tx.id}><td className="py-2">{tx.date}</td><td>{tx.description}</td><td>{tx.partnerId ? partnerById.get(tx.partnerId)?.name ?? "-" : "-"}</td><td>{tx.accountEntryType ?? tx.kind}</td><td className="text-right">{inr(tx.totalMinor)}</td><td><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => removeTx(tx.id)}>Delete</button></td></tr>)}</tbody>
+              <tbody>{ledger.filter((tx) => (tab === "investments" ? tx.kind === "partner_investment" || tx.kind === "expense" : tx.kind === "company_account_entry")).map((tx) => <tr className="border-t border-[var(--ats-border)]" key={tx.id}><td className="py-2">{toDisplayDate(tx.date)}</td><td>{tx.description}</td><td>{tx.partnerId ? partnerById.get(tx.partnerId)?.name ?? "-" : "-"}</td><td>{tx.accountEntryType ?? tx.kind}</td><td className="text-right">{inr(tx.totalMinor)}</td><td className="space-x-2"><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => editTx(tx)}>Edit</button><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => removeTx(tx.id)}>Delete</button></td></tr>)}</tbody>
             </table>
           </article>
         </section>
@@ -531,7 +576,7 @@ export default function FinancePage() {
             </select>
           </div>
           <table className="w-full text-sm"><thead><tr className="text-left text-[var(--ats-text-muted)]"><th className="py-2">Date</th><th>Description</th><th>Category</th><th>Kind</th><th className="text-right">Amount</th><th>Action</th></tr></thead>
-            <tbody>{ledger.map((tx) => <tr className="border-t border-[var(--ats-border)]" key={tx.id}><td className="py-2">{tx.date}</td><td>{tx.description}</td><td>{tx.category}</td><td>{tx.kind}</td><td className="text-right">{inr(tx.totalMinor)}</td><td><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => removeTx(tx.id)}>Delete</button></td></tr>)}</tbody>
+            <tbody>{ledger.map((tx) => <tr className="border-t border-[var(--ats-border)]" key={tx.id}><td className="py-2">{toDisplayDate(tx.date)}</td><td>{tx.description}</td><td>{tx.category}</td><td>{tx.kind}</td><td className="text-right">{inr(tx.totalMinor)}</td><td className="space-x-2"><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => editTx(tx)}>Edit</button><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => removeTx(tx.id)}>Delete</button></td></tr>)}</tbody>
           </table>
         </section>
       )}
@@ -591,3 +636,4 @@ export default function FinancePage() {
     </div>
   );
 }
+

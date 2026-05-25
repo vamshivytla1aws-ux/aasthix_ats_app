@@ -23,6 +23,8 @@ function toDateOnly(input: string) {
   if (ymd) return trimmed;
   const dmy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  const dmyDash = trimmed.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (dmyDash) return `${dmyDash[3]}-${dmyDash[2]}-${dmyDash[1]}`;
   throw new Error("Date must be DD/MM/YYYY or YYYY-MM-DD");
 }
 
