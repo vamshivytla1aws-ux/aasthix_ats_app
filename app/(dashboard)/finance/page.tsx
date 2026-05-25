@@ -67,6 +67,7 @@ export default function FinancePage() {
   const [selectedPartnerId, setSelectedPartnerId] = useState<number>(0);
   const [partnerStatement, setPartnerStatement] = useState<any>(null);
   const backupImportInputRef = useRef<HTMLInputElement | null>(null);
+  const [contributionTargetMinor, setContributionTargetMinor] = useState<number>(100000000);
 
   const rangeQuery = useMemo(() => {
     const p = new URLSearchParams();
@@ -85,6 +86,25 @@ export default function FinancePage() {
     for (const p of partners) m.set(p.id, p);
     return m;
   }, [partners]);
+  const maxMonthlyExpenseMinor = useMemo(() => {
+    const values = (analytics?.monthlyInvestedVsExpenses ?? []).map((r: any) =>
+      Math.max(Number(r.investedMinor ?? 0), Number(r.expensesMinor ?? 0))
+    );
+    return Math.max(...values, 1);
+  }, [analytics]);
+  const maxEqualizationMinor = useMemo(() => {
+    const values = (analytics?.equalizationGapByPartner ?? []).map((r: any) => Math.abs(Number(r.deltaMinor ?? 0)));
+    return Math.max(...values, 1);
+  }, [analytics]);
+  const cashStrip = useMemo(() => {
+    const monthExpenses = (analytics?.monthlyInvestedVsExpenses ?? []).map((r: any) => Number(r.expensesMinor ?? 0));
+    const avgMonthlyOutflowMinor = monthExpenses.length
+      ? Math.round(monthExpenses.reduce((sum: number, v: number) => sum + v, 0) / monthExpenses.length)
+      : 0;
+    const companyBalanceMinor = Number(dashboard?.companyAccountBalanceMinor ?? 0);
+    const runwayMonths = avgMonthlyOutflowMinor > 0 ? companyBalanceMinor / avgMonthlyOutflowMinor : 0;
+    return { avgMonthlyOutflowMinor, runwayMonths };
+  }, [analytics, dashboard]);
 
   async function refreshBase() {
     const [workspace, p, tx, b] = await Promise.all([
@@ -324,51 +344,76 @@ export default function FinancePage() {
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">Company account balance</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.companyAccountBalanceMinor ?? 0)}</p></article>
           </section>
 
-          <section className="grid gap-3 md:grid-cols-2">
+          <section className="rounded-2xl border border-[var(--ats-border)] bg-slate-950/80 p-4 text-slate-100">
+            <h3 className="text-2xl font-semibold">Cash Position Strip</h3>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-semibold text-emerald-300">
+                Runway: {Number.isFinite(cashStrip.runwayMonths) ? cashStrip.runwayMonths.toFixed(1) : "0.0"} months
+              </span>
+              <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-semibold text-emerald-300">
+                Avg Monthly Outflow: {inr(cashStrip.avgMonthlyOutflowMinor)}
+              </span>
+              <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-semibold text-emerald-300">
+                Partner Invested (supporting): {inr(Number(dashboard?.totalPartnerInvestedMinor ?? 0))}
+              </span>
+            </div>
+          </section>
+
+          <section className="grid gap-3 lg:grid-cols-3">
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-base font-semibold">Monthly invested vs company expenses</h3>
+              <h3 className="text-4xl font-semibold leading-tight">Monthly Invested vs Company Expenses</h3>
               <div className="mt-2 space-y-1">
                 {(analytics?.monthlyInvestedVsExpenses ?? []).map((r: any) => (
                   <button key={r.month} type="button" onClick={() => applyLedgerDrill("partner_investment")} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
-                    <span>{r.month}</span>
-                    <span>{inr(r.investedMinor)} / {inr(r.expensesMinor)}</span>
+                    <span>{String(r.month).slice(-2)}</span>
+                    <div className="mx-3 h-3 flex-1 overflow-hidden rounded-full bg-slate-900/60">
+                      <div className="h-full rounded-full bg-sky-400" style={{ width: `${Math.max((Math.max(Number(r.investedMinor ?? 0), Number(r.expensesMinor ?? 0)) / maxMonthlyExpenseMinor) * 100, 4)}%` }} />
+                    </div>
+                    <span className="tabular-nums">{inr(r.investedMinor)} / {inr(r.expensesMinor)}</span>
                   </button>
                 ))}
               </div>
             </article>
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-base font-semibold">Company account balance trend</h3>
-              <div className="mt-2 space-y-1">
-                {(analytics?.companyBalanceTrend ?? []).map((r: any) => (
-                  <div key={r.month} className="flex justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-sm">
-                    <span>{r.month}</span>
-                    <span>{inr(r.balanceMinor)}</span>
-                  </div>
-                ))}
+              <h3 className="text-4xl font-semibold leading-tight">Partner Contribution Share</h3>
+              <div className="mt-3">
+                <input
+                  className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2 text-sm"
+                  value={(contributionTargetMinor / 100).toString()}
+                  onChange={(e) => {
+                    const amount = Number(e.target.value);
+                    if (Number.isFinite(amount) && amount > 0) setContributionTargetMinor(Math.round(amount * 100));
+                  }}
+                  placeholder="Contribution target"
+                />
+                <p className="mt-2 text-sm text-[var(--ats-text-muted)]">100% is reached at {inr(contributionTargetMinor)}</p>
               </div>
-            </article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-base font-semibold">Partner contribution share</h3>
               <div className="mt-2 space-y-1">
                 {(analytics?.partnerContributionShare ?? []).map((r: any) => (
                   <button key={r.partnerId} type="button" onClick={() => { setSelectedPartnerId(r.partnerId); setTab("partner_accounts"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
                     <span>{r.partnerName}</span>
-                    <span>{r.sharePercent}%</span>
+                    <span>{Math.min(999, (Number(r.investedMinor ?? 0) / Math.max(contributionTargetMinor, 1)) * 100).toFixed(1)}%</span>
                   </button>
                 ))}
               </div>
             </article>
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-base font-semibold">Equalization gap by partner</h3>
+              <h3 className="text-4xl font-semibold leading-tight">Equalization Gap by Partner</h3>
               <div className="mt-2 space-y-1">
                 {(analytics?.equalizationGapByPartner ?? []).map((r: any) => (
                   <button key={r.partnerId} type="button" onClick={() => { setSelectedPartnerId(r.partnerId); setTab("partner_accounts"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
                     <span>{r.partnerName}</span>
+                    <div className="mx-3 h-3 flex-1 overflow-hidden rounded-full bg-slate-900/60">
+                      <div className="h-full rounded-full bg-teal-400" style={{ width: `${Math.max((Math.abs(Number(r.deltaMinor ?? 0)) / maxEqualizationMinor) * 100, 4)}%` }} />
+                    </div>
                     <span>{inr(r.deltaMinor)}</span>
                   </button>
                 ))}
               </div>
             </article>
+          </section>
+
+          <section className="grid gap-3 md:grid-cols-2">
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
               <h3 className="text-base font-semibold">Category spend mix</h3>
               <div className="mt-2 space-y-1">
