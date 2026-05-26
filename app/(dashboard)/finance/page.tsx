@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetchJson } from "@/lib/apiClient";
 
-type Tab = "dashboard" | "partners" | "partner_accounts" | "investments" | "company_account" | "ledger" | "import_audit";
+type Tab = "dashboard" | "partners" | "partner_accounts" | "investments" | "company_account" | "direct_others" | "ledger" | "import_audit";
 type Preset = "full" | "monthly" | "yearly" | "custom";
 
 type Partner = { id: number; name: string; email: string | null; roleLabel: string | null; isActive: boolean };
@@ -75,6 +75,7 @@ export default function FinancePage() {
   const [txAmount, setTxAmount] = useState("");
   const [txPartnerId, setTxPartnerId] = useState("");
   const [txAccountType, setTxAccountType] = useState<"debit" | "credit">("debit");
+  const [postToDirectOthers, setPostToDirectOthers] = useState(false);
   const [editingTxId, setEditingTxId] = useState<number | null>(null);
 
   const [search, setSearch] = useState("");
@@ -202,7 +203,7 @@ export default function FinancePage() {
 
   async function saveTx(e: React.FormEvent) {
     e.preventDefault();
-    const activeKind = tab === "company_account" ? "company_account_entry" : "partner_investment";
+    const activeKind = tab === "company_account" ? "company_account_entry" : tab === "direct_others" ? "direct_others_account_entry" : "partner_investment";
     const payload: Record<string, unknown> = {
       kind: activeKind,
       date: toApiDate(txDate),
@@ -216,15 +217,30 @@ export default function FinancePage() {
       payload.payments = [{ partnerId, amountMinor: Math.round(Number(txAmount || "0") * 100) }];
       payload.shares = [];
     }
-    if (activeKind === "company_account_entry") payload.accountEntryType = txAccountType;
+    if (activeKind === "company_account_entry" || activeKind === "direct_others_account_entry") payload.accountEntryType = txAccountType;
     if (editingTxId) payload.id = editingTxId;
     await apiFetchJson("/api/finance/transactions", {
       method: editingTxId ? "PUT" : "POST",
       body: JSON.stringify(payload),
     });
+    if (!editingTxId && activeKind === "partner_investment" && postToDirectOthers) {
+      await apiFetchJson("/api/finance/transactions", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "direct_others_account_entry",
+          date: toApiDate(txDate),
+          description: txDesc || "Partner investment mirrored to direct/others",
+          category: txCategory,
+          amount: txAmount,
+          accountEntryType: "credit",
+          metadata: { linkedSource: "partner_investment" },
+        }),
+      });
+    }
     setTxDesc("");
     setTxAmount("");
     setEditingTxId(null);
+    setPostToDirectOthers(false);
     setTxDate(todayDdMmYyyy());
     setMessage(editingTxId ? "Entry updated." : "Saved.");
     await refreshBase();
@@ -330,7 +346,7 @@ export default function FinancePage() {
     setTxAmount((Number(tx.totalMinor ?? 0) / 100).toString());
     setTxPartnerId(tx.partnerId ? String(tx.partnerId) : "");
     setTxAccountType(tx.accountEntryType ?? "debit");
-    setTab(tx.kind === "company_account_entry" ? "company_account" : "investments");
+    setTab(tx.kind === "company_account_entry" ? "company_account" : tx.kind === "direct_others_account_entry" ? "direct_others" : "investments");
   }
 
   return (
@@ -349,6 +365,7 @@ export default function FinancePage() {
             ["partner_accounts", "Partner Accounts"],
             ["investments", "Partner Investments"],
             ["company_account", "Company Account"],
+            ["direct_others", "Direct/Others Account"],
             ["ledger", "Ledger"],
             ["import_audit", "Import & Audit"],
           ].map(([key, label]) => (
@@ -409,7 +426,7 @@ export default function FinancePage() {
               <div className="mt-2 space-y-1">
                 {(analytics?.monthlyInvestedVsExpenses ?? []).map((r: any) => (
                   <button key={r.month} type="button" onClick={() => applyLedgerDrill("partner_investment")} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
-                    <span>{String(r.month).slice(-2)}</span>
+                    <span>{String(r.month)}</span>
                     <div className="mx-3 h-3 flex-1 overflow-hidden rounded-full bg-slate-900/60">
                       <div className="h-full rounded-full bg-sky-400" style={{ width: `${Math.max((Math.max(Number(r.investedMinor ?? 0), Number(r.expensesMinor ?? 0)) / maxMonthlyExpenseMinor) * 100, 4)}%` }} />
                     </div>
@@ -600,7 +617,7 @@ export default function FinancePage() {
         </section>
       )}
 
-      {(tab === "investments" || tab === "company_account") && (
+      {(tab === "investments" || tab === "company_account" || tab === "direct_others") && (
         <section className="grid gap-4 lg:grid-cols-3">
           <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
             <form className="space-y-2" onSubmit={saveTx}>
@@ -618,13 +635,19 @@ export default function FinancePage() {
               <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Description" value={txDesc} onChange={(e) => setTxDesc(e.target.value)} />
               <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Category" value={txCategory} onChange={(e) => setTxCategory(e.target.value)} />
               <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Amount" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} />
+              {tab === "investments" ? (
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={postToDirectOthers} onChange={(e) => setPostToDirectOthers(e.target.checked)} />
+                  Post to Direct/Others account (credit)
+                </label>
+              ) : null}
               <button className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" type="submit">{editingTxId ? "Update entry" : "Save entry"}</button>
-              {editingTxId ? <button className="rounded-xl border border-[var(--ats-border)] px-3 py-2 text-sm font-semibold" type="button" onClick={() => { setEditingTxId(null); setTxDate(todayDdMmYyyy()); setTxDesc(""); setTxCategory("General"); setTxAmount(""); setTxPartnerId(""); setTxAccountType("debit"); }}>Cancel edit</button> : null}
+              {editingTxId ? <button className="rounded-xl border border-[var(--ats-border)] px-3 py-2 text-sm font-semibold" type="button" onClick={() => { setEditingTxId(null); setTxDate(todayDdMmYyyy()); setTxDesc(""); setTxCategory("General"); setTxAmount(""); setTxPartnerId(""); setTxAccountType("debit"); setPostToDirectOthers(false); }}>Cancel edit</button> : null}
             </form>
           </article>
           <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4 lg:col-span-2">
             <table className="w-full text-sm"><thead><tr className="text-left text-[var(--ats-text-muted)]"><th className="py-2">Date</th><th>Description</th><th>Partner</th><th>Type</th><th className="text-right">Amount</th><th>Action</th></tr></thead>
-              <tbody>{ledger.filter((tx) => (tab === "investments" ? tx.kind === "partner_investment" || tx.kind === "expense" : tx.kind === "company_account_entry")).map((tx) => <tr className="border-t border-[var(--ats-border)]" key={tx.id}><td className="py-2">{toDisplayDate(tx.date)}</td><td>{tx.description}</td><td>{tx.partnerId ? partnerById.get(tx.partnerId)?.name ?? "-" : "-"}</td><td>{tx.accountEntryType ?? tx.kind}</td><td className="text-right">{inr(tx.totalMinor)}</td><td className="space-x-2"><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => editTx(tx)}>Edit</button><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => removeTx(tx.id)}>Delete</button></td></tr>)}</tbody>
+              <tbody>{ledger.filter((tx) => (tab === "investments" ? tx.kind === "partner_investment" || tx.kind === "expense" : tab === "direct_others" ? tx.kind === "direct_others_account_entry" : tx.kind === "company_account_entry")).map((tx) => <tr className="border-t border-[var(--ats-border)]" key={tx.id}><td className="py-2">{toDisplayDate(tx.date)}</td><td>{tx.description}</td><td>{tx.partnerId ? partnerById.get(tx.partnerId)?.name ?? "-" : "-"}</td><td>{tx.accountEntryType ?? tx.kind}</td><td className="text-right">{inr(tx.totalMinor)}</td><td className="space-x-2"><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => editTx(tx)}>Edit</button><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => removeTx(tx.id)}>Delete</button></td></tr>)}</tbody>
             </table>
           </article>
         </section>
@@ -635,7 +658,7 @@ export default function FinancePage() {
           <div className="mb-3 flex flex-wrap gap-2">
             <input className="rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2 text-sm" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
             <select className="rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2 text-sm" value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
-              <option value="all">All</option><option value="partner_investment">Partner investment</option><option value="company_expense">Company expense</option><option value="company_inflow">Company inflow</option><option value="company_account_entry">Company account</option><option value="expense">Imported expense</option>
+              <option value="all">All</option><option value="partner_investment">Partner investment</option><option value="company_expense">Company expense</option><option value="company_inflow">Company inflow</option><option value="company_account_entry">Company account</option><option value="direct_others_account_entry">Direct/Others account</option><option value="expense">Imported expense</option>
             </select>
           </div>
           <table className="w-full text-sm"><thead><tr className="text-left text-[var(--ats-text-muted)]"><th className="py-2">Date</th><th>Description</th><th>Category</th><th>Kind</th><th className="text-right">Amount</th><th>Action</th></tr></thead>

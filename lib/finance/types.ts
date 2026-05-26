@@ -3,6 +3,7 @@ export type FinanceTransactionKind =
   | "company_expense"
   | "company_inflow"
   | "company_account_entry"
+  | "direct_others_account_entry"
   | "expense"
   | "reconciliation_adjustment";
 

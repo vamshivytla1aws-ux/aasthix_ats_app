@@ -400,6 +400,7 @@ export async function importStateSnapshot(input: {
       kind === "company_expense" ||
       kind === "company_inflow" ||
       kind === "company_account_entry" ||
+      kind === "direct_others_account_entry" ||
       kind === "expense" ||
       kind === "reconciliation_adjustment"
     ) {
