@@ -219,22 +219,27 @@ export default function FinancePage() {
     }
     if (activeKind === "company_account_entry" || activeKind === "direct_others_account_entry") payload.accountEntryType = txAccountType;
     if (editingTxId) payload.id = editingTxId;
-    await apiFetchJson("/api/finance/transactions", {
-      method: editingTxId ? "PUT" : "POST",
-      body: JSON.stringify(payload),
-    });
-    if (!editingTxId && activeKind === "partner_investment" && postToDirectOthers) {
+    if (!editingTxId && activeKind === "partner_investment") {
+      const source = await apiFetchJson<{ transaction?: { txId?: string } }>("/api/finance/transactions", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
       await apiFetchJson("/api/finance/transactions", {
         method: "POST",
         body: JSON.stringify({
-          kind: "direct_others_account_entry",
+          kind: postToDirectOthers ? "direct_others_account_entry" : "company_account_entry",
           date: toApiDate(txDate),
-          description: txDesc || "Partner investment mirrored to direct/others",
+          description: txDesc || `Partner investment mirrored to ${postToDirectOthers ? "direct/others" : "company account"}`,
           category: txCategory,
           amount: txAmount,
           accountEntryType: "credit",
-          metadata: { linkedSource: "partner_investment" },
+          metadata: { linkedSource: "partner_investment", linkedSourceTxId: source?.transaction?.txId ?? null },
         }),
+      });
+    } else {
+      await apiFetchJson("/api/finance/transactions", {
+        method: editingTxId ? "PUT" : "POST",
+        body: JSON.stringify(payload),
       });
     }
     setTxDesc("");
@@ -426,7 +431,7 @@ export default function FinancePage() {
               <div className="mt-2 space-y-1">
                 {(analytics?.monthlyInvestedVsExpenses ?? []).map((r: any) => (
                   <button key={r.month} type="button" onClick={() => applyLedgerDrill("partner_investment")} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
-                    <span>{String(r.month)}</span>
+                    <span>{String(r.month).slice(5, 7)}</span>
                     <div className="mx-3 h-3 flex-1 overflow-hidden rounded-full bg-slate-900/60">
                       <div className="h-full rounded-full bg-sky-400" style={{ width: `${Math.max((Math.max(Number(r.investedMinor ?? 0), Number(r.expensesMinor ?? 0)) / maxMonthlyExpenseMinor) * 100, 4)}%` }} />
                     </div>

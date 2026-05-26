@@ -260,7 +260,27 @@ export async function listTransactions(input: {
 }
 
 export async function deleteTransaction(workspaceId: number, id: number) {
-  await query(`DELETE FROM finance_transactions WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
+  const ref = await query(
+    `SELECT tx_id, metadata_json
+     FROM finance_transactions
+     WHERE workspace_id = $1 AND id = $2
+     LIMIT 1`,
+    [workspaceId, id]
+  );
+  if (!ref.rowCount) return;
+  const txId = String(ref.rows[0].tx_id);
+  const linkedSourceTxId =
+    (ref.rows[0].metadata_json as Record<string, unknown> | undefined)?.linkedSourceTxId;
+  const rootTxId = typeof linkedSourceTxId === "string" && linkedSourceTxId.trim() ? linkedSourceTxId : txId;
+  await query(
+    `DELETE FROM finance_transactions
+     WHERE workspace_id = $1
+       AND (
+         tx_id = $2
+         OR metadata_json->>'linkedSourceTxId' = $2
+       )`,
+    [workspaceId, rootTxId]
+  );
 }
 
 export async function listImportBatches(workspaceId: number): Promise<FinanceImportBatch[]> {
@@ -661,7 +681,14 @@ export async function buildAnalytics(
   const monthMap = new Map<string, { investedMinor: number; expensesMinor: number; balanceDeltaMinor: number }>();
   const categoryMap = new Map<string, number>();
   for (const tx of filtered) {
-    const month = tx.date.slice(0, 7);
+    let month = tx.date.slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      const parsed = new Date(tx.date);
+      if (!Number.isNaN(parsed.getTime())) {
+        month = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+      }
+    }
+    if (!/^\d{4}-\d{2}$/.test(month)) continue;
     const bucket = monthMap.get(month) ?? { investedMinor: 0, expensesMinor: 0, balanceDeltaMinor: 0 };
     if (tx.kind === "partner_investment" || tx.kind === "expense") {
       bucket.investedMinor += tx.totalMinor;
