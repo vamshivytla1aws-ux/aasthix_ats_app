@@ -30,12 +30,18 @@ function toDisplayDate(value: string) {
   if (dmySlash) return `${dmySlash[1]}-${dmySlash[2]}-${dmySlash[3]}`;
   const dmyDash = v.match(/^(\d{2})-(\d{2})-(\d{4})$/);
   if (dmyDash) return v;
-  const parsed = new Date(v);
-  if (!Number.isNaN(parsed.getTime())) {
-    const dd = String(parsed.getDate()).padStart(2, "0");
-    const mm = String(parsed.getMonth() + 1).padStart(2, "0");
-    const yyyy = parsed.getFullYear();
-    return `${dd}-${mm}-${yyyy}`;
+  const dayMonYear = v.match(/^(?:[A-Za-z]{3}\s+)?([A-Za-z]{3})\s+(\d{1,2})(?:\s+(\d{4}))?$/);
+  if (dayMonYear) {
+    const monthMap: Record<string, string> = {
+      jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+      jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+    };
+    const mm = monthMap[dayMonYear[1].toLowerCase()];
+    if (mm) {
+      const dd = String(Number(dayMonYear[2])).padStart(2, "0");
+      const yyyy = dayMonYear[3] ?? String(new Date().getFullYear());
+      return `${dd}-${mm}-${yyyy}`;
+    }
   }
   return v;
 }
