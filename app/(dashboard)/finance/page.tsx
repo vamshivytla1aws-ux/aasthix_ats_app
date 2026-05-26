@@ -28,6 +28,15 @@ function toDisplayDate(value: string) {
   if (ymd) return `${ymd[3]}-${ymd[2]}-${ymd[1]}`;
   const dmySlash = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (dmySlash) return `${dmySlash[1]}-${dmySlash[2]}-${dmySlash[3]}`;
+  const dmyDash = v.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (dmyDash) return v;
+  const parsed = new Date(v);
+  if (!Number.isNaN(parsed.getTime())) {
+    const dd = String(parsed.getDate()).padStart(2, "0");
+    const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+    const yyyy = parsed.getFullYear();
+    return `${dd}-${mm}-${yyyy}`;
+  }
   return v;
 }
 
@@ -479,31 +488,6 @@ export default function FinancePage() {
             </article>
           </section>
 
-          <section className="grid gap-3 md:grid-cols-2">
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-base font-semibold">Category spend mix</h3>
-              <div className="mt-2 space-y-1">
-                {(analytics?.categorySpendMix ?? []).map((r: any) => (
-                  <button key={r.category} type="button" onClick={() => { setKindFilter("company_expense"); setSearch(r.category); setTab("ledger"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
-                    <span>{r.category}</span>
-                    <span>{inr(r.amountMinor)}</span>
-                  </button>
-                ))}
-              </div>
-            </article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-base font-semibold">Recent ledger</h3>
-              <div className="mt-2 space-y-1">
-                {(analytics?.recentLedger ?? []).map((r: any) => (
-                  <button key={`${r.id}-${r.date}`} type="button" onClick={() => { setSearch(r.description); setTab("ledger"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
-                    <span className="truncate pr-2">{r.description}</span>
-                    <span>{inr(r.totalMinor)}</span>
-                  </button>
-                ))}
-              </div>
-            </article>
-          </section>
-
           <section className="rounded-2xl border border-[var(--ats-border)] bg-slate-950/70 p-4 text-slate-100">
             <h3 className="text-2xl font-semibold">Equalization board</h3>
             <p className="mt-2 text-sm text-slate-300">
@@ -565,6 +549,31 @@ export default function FinancePage() {
                 </tfoot>
               </table>
             </div>
+          </section>
+
+          <section className="grid gap-3 md:grid-cols-2">
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
+              <h3 className="text-base font-semibold">Category spend mix</h3>
+              <div className="mt-2 space-y-1">
+                {(analytics?.categorySpendMix ?? []).map((r: any) => (
+                  <button key={r.category} type="button" onClick={() => { setKindFilter("company_expense"); setSearch(r.category); setTab("ledger"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
+                    <span>{r.category}</span>
+                    <span>{inr(r.amountMinor)}</span>
+                  </button>
+                ))}
+              </div>
+            </article>
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
+              <h3 className="text-base font-semibold">Recent ledger</h3>
+              <div className="mt-2 space-y-1">
+                {(analytics?.recentLedger ?? []).map((r: any) => (
+                  <button key={`${r.id}-${r.date}`} type="button" onClick={() => { setSearch(r.description); setTab("ledger"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
+                    <span className="truncate pr-2">{toDisplayDate(r.date)} - {r.description}</span>
+                    <span>{inr(r.totalMinor)}</span>
+                  </button>
+                ))}
+              </div>
+            </article>
           </section>
         </div>
       )}
