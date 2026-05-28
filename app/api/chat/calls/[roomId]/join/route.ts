@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/rbac";
 import { getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 import { normalizeCallClientKind, normalizeCallSessionId } from "@/lib/chat/callSessions";
+import { buildFreshChatCallSessionWhereClause, expireStaleChatCallSessions } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,6 +82,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     const body = await _request.json().catch(() => ({}));
     const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
     const clientKind = normalizeCallClientKind(body?.client_kind, _request.headers.get("user-agent"));
+    await expireStaleChatCallSessions({ roomId });
     const activeRowRes = await query(
       `SELECT 1 FROM chat_call_participants WHERE room_id = $1 AND user_id = $2 AND session_id = $3 AND left_at IS NULL LIMIT 1`,
       [roomId, access.user_id, sessionId],
@@ -88,7 +90,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     const alreadyJoined = Boolean(activeRowRes.rowCount);
     const policy = await getChatCallPolicy();
     const joinedCountRes = await query(
-      `SELECT COUNT(*)::int AS count FROM chat_call_participants WHERE room_id = $1 AND left_at IS NULL`,
+      `SELECT COUNT(*)::int AS count FROM chat_call_participants p WHERE room_id = $1 AND ${buildFreshChatCallSessionWhereClause("p")}`,
       [roomId],
     );
     const joinedCount = Number((joinedCountRes.rows[0] as { count: number } | undefined)?.count || 0);
@@ -153,7 +155,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     }
 
     const countRes = await query(
-      `SELECT COUNT(*)::int AS count FROM chat_call_participants WHERE room_id = $1 AND left_at IS NULL`,
+      `SELECT COUNT(*)::int AS count FROM chat_call_participants p WHERE room_id = $1 AND ${buildFreshChatCallSessionWhereClause("p")}`,
       [roomId],
     );
     return NextResponse.json({

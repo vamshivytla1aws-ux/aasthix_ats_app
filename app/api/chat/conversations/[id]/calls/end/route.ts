@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
+import { closeChatCallRoomTransactional, expireStaleChatCallSessions } from "@/lib/chatCalls";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
@@ -38,6 +38,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       correlationHeader: request.headers.get("x-call-correlation-id"),
       idempotencyHeader: requestKey,
     });
+    await expireStaleChatCallSessions();
     const roomRes = await query(
       `SELECT id, title FROM chat_call_rooms WHERE conversation_id = $1 AND status IN ('active','scheduled') ORDER BY id DESC LIMIT 1`,
       [conversationId],

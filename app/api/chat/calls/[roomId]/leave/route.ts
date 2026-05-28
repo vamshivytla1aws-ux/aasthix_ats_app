@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
-import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
+import { buildFreshChatCallSessionWhereClause, closeChatCallRoomTransactional, expireStaleChatCallSessions } from "@/lib/chatCalls";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 import { normalizeCallSessionId } from "@/lib/chat/callSessions";
 
@@ -40,6 +40,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     });
     const body = await _request.json().catch(() => ({}));
     const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
+    await expireStaleChatCallSessions({ roomId });
     await query(
       `
       UPDATE chat_call_participants
@@ -53,7 +54,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     );
 
     const openParticipants = await query(
-      `SELECT 1 FROM chat_call_participants WHERE room_id = $1 AND left_at IS NULL LIMIT 1`,
+      `SELECT 1 FROM chat_call_participants p WHERE room_id = $1 AND ${buildFreshChatCallSessionWhereClause("p")} LIMIT 1`,
       [roomId],
     );
     if (!openParticipants.rowCount) {

@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { closeChatCallRoomTransactional, createChatCallRoom, getChatCallSignalSchemaHealth } from "@/lib/chatCalls";
+import {
+  buildFreshChatCallSessionWhereClause,
+  closeChatCallRoomTransactional,
+  createChatCallRoom,
+  expireStaleChatCallSessions,
+  getChatCallSignalSchemaHealth,
+} from "@/lib/chatCalls";
 import { canStartCallByPolicy, getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
@@ -75,6 +81,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const modeLabel = mode === "screenshare" ? "Screen Share" : "Call";
     const title = `${modeLabel} - ${conv.name || "Chat conversation"}`;
 
+    await expireStaleChatCallSessions();
+
     const existingRooms = await query(
       `
       SELECT r.id, r.conversation_id, r.title, r.mode, r.status, r.start_at, r.end_at, r.join_url, r.provider, r.created_by_user_id, r.created_at, r.ended_at,
@@ -84,7 +92,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         SELECT COUNT(*)::int AS count
         FROM chat_call_participants p
         WHERE p.room_id = r.id
-          AND p.left_at IS NULL
+          AND ${buildFreshChatCallSessionWhereClause("p")}
       ) active_sessions ON TRUE
       WHERE r.conversation_id = $1
         AND r.status IN ('active','scheduled')

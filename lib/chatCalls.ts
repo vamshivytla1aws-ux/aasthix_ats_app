@@ -20,6 +20,8 @@ export type ChatCallRoom = {
   ended_at: string | null;
 };
 
+export const CHAT_CALL_SESSION_FRESHNESS_SECONDS = 45;
+
 const REQUIRED_CHAT_SIGNAL_TYPES = [
   "offer",
   "answer",
@@ -50,6 +52,26 @@ export async function getChatCallSignalSchemaHealth() {
     missing_types: missingTypes,
     required_types: [...REQUIRED_CHAT_SIGNAL_TYPES],
   };
+}
+
+export function buildFreshChatCallSessionWhereClause(alias = "p") {
+  return `${alias}.left_at IS NULL AND COALESCE(${alias}.last_seen_at, ${alias}.joined_at) >= NOW() - INTERVAL '${CHAT_CALL_SESSION_FRESHNESS_SECONDS} seconds'`;
+}
+
+export async function expireStaleChatCallSessions(input?: { roomId?: number | null }) {
+  const roomFilter = input?.roomId ? `AND room_id = $1` : "";
+  const args = input?.roomId ? [input.roomId] : [];
+  const res = await query(
+    `
+    UPDATE chat_call_participants
+    SET left_at = COALESCE(last_seen_at, joined_at, NOW())
+    WHERE left_at IS NULL
+      ${roomFilter}
+      AND COALESCE(last_seen_at, joined_at) < NOW() - INTERVAL '${CHAT_CALL_SESSION_FRESHNESS_SECONDS} seconds'
+    `,
+    args,
+  );
+  return Number(res.rowCount || 0);
 }
 
 function modeFromTitle(title: string, fallback: ChatCallMode) {

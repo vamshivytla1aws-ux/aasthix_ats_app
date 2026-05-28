@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { createChatCallRoom, listConversationCallRooms } from "@/lib/chatCalls";
+import {
+  buildFreshChatCallSessionWhereClause,
+  createChatCallRoom,
+  expireStaleChatCallSessions,
+  listConversationCallRooms,
+} from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +36,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const url = new URL(request.url);
     const limitRaw = Number(url.searchParams.get("limit"));
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.trunc(limitRaw), 100) : 25;
+    await expireStaleChatCallSessions();
     const rooms = await listConversationCallRooms(conversationId, limit);
     const roomIds = rooms.map((room) => Number(room.id)).filter((id) => Number.isFinite(id) && id > 0);
     const participantsByRoom = new Map<number, Array<{ user_id: number; full_name: string }>>();
@@ -45,7 +51,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
         FROM chat_call_participants p
         LEFT JOIN users u ON u.id = p.user_id
         WHERE p.room_id = ANY($1::bigint[])
-          AND p.left_at IS NULL
+          AND ${buildFreshChatCallSessionWhereClause("p")}
         ORDER BY p.joined_at ASC
         `,
         [roomIds],

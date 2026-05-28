@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
-import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
+import { buildFreshChatCallSessionWhereClause, closeChatCallRoomTransactional, expireStaleChatCallSessions } from "@/lib/chatCalls";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
 export const runtime = "nodejs";
@@ -11,6 +11,7 @@ export async function POST() {
   try {
     const gate = await requireAdmin();
     if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+    await expireStaleChatCallSessions();
     const staleRes = await query(
       `
       SELECT r.id, r.conversation_id
@@ -18,7 +19,7 @@ export async function POST() {
       LEFT JOIN LATERAL (
         SELECT COUNT(*)::int AS active_count
         FROM chat_call_participants p
-        WHERE p.room_id = r.id AND p.left_at IS NULL
+        WHERE p.room_id = r.id AND ${buildFreshChatCallSessionWhereClause("p")}
       ) c ON TRUE
       WHERE r.status IN ('active', 'scheduled')
         AND (

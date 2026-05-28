@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CHAT_CALL_SESSION_FRESHNESS_SECONDS, buildFreshChatCallSessionWhereClause } from "@/lib/chatCalls";
 import {
   buildCallLiveKitIdentity,
   normalizeCallClientKind,
@@ -28,5 +29,11 @@ describe("call session helpers", () => {
     expect(a).toBe(b);
     expect(a).not.toBe(c);
     expect(a).toBe("u-1-r-42-s-s-1");
+  });
+
+  it("builds a freshness clause for active call sessions", () => {
+    expect(buildFreshChatCallSessionWhereClause("cp")).toContain("cp.left_at IS NULL");
+    expect(buildFreshChatCallSessionWhereClause("cp")).toContain("COALESCE(cp.last_seen_at, cp.joined_at)");
+    expect(buildFreshChatCallSessionWhereClause("cp")).toContain(`${CHAT_CALL_SESSION_FRESHNESS_SECONDS} seconds`);
   });
 });

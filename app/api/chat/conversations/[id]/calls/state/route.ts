@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/rbac";
 import { buildLiveKitRoomName } from "@/lib/livekit";
 import { logCallEvent } from "@/lib/chatCallGovernance";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
+import { buildFreshChatCallSessionWhereClause, expireStaleChatCallSessions } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +57,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       [conversationId, access.user_id],
     );
     if (!memberRes.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
+    await expireStaleChatCallSessions();
 
     const roomRes = await query(
       `
@@ -85,7 +87,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
              COUNT(*)::int AS session_count
       FROM chat_call_participants p
       LEFT JOIN users u ON u.id = p.user_id
-      WHERE p.room_id = $1 AND p.left_at IS NULL
+      WHERE p.room_id = $1 AND ${buildFreshChatCallSessionWhereClause("p")}
       GROUP BY p.user_id, u.full_name
       ORDER BY MIN(p.joined_at) ASC
       `,
@@ -113,7 +115,10 @@ export async function GET(_request: Request, { params }: { params: { id: string 
           [room.id],
         );
         if (closeRes.rowCount) {
-          await query(`UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`, [room.id]);
+          await query(
+            `UPDATE chat_call_participants SET left_at = COALESCE(last_seen_at, joined_at, NOW()) WHERE room_id = $1 AND left_at IS NULL`,
+            [room.id],
+          );
           await logCallEvent({
             roomId: room.id,
             conversationId,

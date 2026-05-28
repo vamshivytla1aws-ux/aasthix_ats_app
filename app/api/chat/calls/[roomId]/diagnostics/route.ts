@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
+import { buildFreshChatCallSessionWhereClause, expireStaleChatCallSessions } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       [room.conversation_id, access.user_id],
     );
     if (!memberRes.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
+    await expireStaleChatCallSessions({ roomId });
 
     const participantsRes = await query(
       `SELECT p.user_id, COALESCE(u.full_name, 'Unknown user') AS full_name, p.joined_at, p.left_at, p.muted, p.is_presenting
@@ -44,17 +46,24 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
        LIMIT 50`,
       [roomId],
     );
-    const activeParticipantRows = (participantsRes.rows as Array<{ user_id: number; full_name: string; left_at: string | null }>)
-      .filter((row) => !row.left_at);
-    const activeParticipantMap = new Map<number, { user_id: number; full_name: string; session_count: number }>();
-    for (const row of activeParticipantRows) {
+    const freshParticipantsRes = await query(
+      `SELECT p.user_id, COALESCE(u.full_name, 'Unknown user') AS full_name
+       FROM chat_call_participants p
+       LEFT JOIN users u ON u.id = p.user_id
+       WHERE p.room_id = $1
+         AND ${buildFreshChatCallSessionWhereClause("p")}
+       ORDER BY p.joined_at DESC`,
+      [roomId],
+    );
+    const freshParticipantMap = new Map<number, { user_id: number; full_name: string; session_count: number }>();
+    for (const row of freshParticipantsRes.rows as Array<{ user_id: number; full_name: string }>) {
       const userId = Number(row.user_id);
-      const existing = activeParticipantMap.get(userId);
+      const existing = freshParticipantMap.get(userId);
       if (existing) existing.session_count += 1;
-      else activeParticipantMap.set(userId, { user_id: userId, full_name: String(row.full_name || "Unknown user"), session_count: 1 });
+      else freshParticipantMap.set(userId, { user_id: userId, full_name: String(row.full_name || "Unknown user"), session_count: 1 });
     }
-    const activeParticipants = Array.from(activeParticipantMap.values());
-    const activeSessionCount = activeParticipantRows.length;
+    const activeParticipants = Array.from(freshParticipantMap.values());
+    const freshSessionCount = activeParticipants.reduce((sum, row) => sum + Number(row.session_count || 0), 0);
     const eventsRes = await query(
       `SELECT event_type, metadata, created_at, user_id
        FROM chat_call_events
@@ -106,7 +115,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       return ageMs <= 20_000;
     });
     const isTerminalRoom = room.status === "ended" || room.status === "cancelled";
-    const telemetryForHealth = freshTelemetry.length > 0 || activeSessionCount > 0 ? freshTelemetry : latestTelemetry;
+    const telemetryForHealth = freshTelemetry.length > 0 || freshSessionCount > 0 ? freshTelemetry : latestTelemetry;
     const telemetryStates = telemetryForHealth.map((row) => row.metadata || {});
     const requesterTelemetry = telemetryForHealth.find((row) => Number(row.user_id) === Number(access.user_id))?.metadata || {};
     const anyWaitingRemote = telemetryStates.some((m) => String(m.subscribe_state || "") === "waiting_remote");
@@ -161,7 +170,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
             ? "waiting_remote"
             : mediaHealth === "playback_blocked"
               ? "playback_blocked"
-              : activeParticipants.length > 1
+                : activeParticipants.length > 1
                 ? "connected"
                 : "idle";
     const callPresenceState =
@@ -290,7 +299,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
         room: {
           ...room,
           joined_count: activeParticipants.length,
-          active_session_count: activeSessionCount,
+          active_session_count: freshSessionCount,
           joined_participants: activeParticipants,
           room_closed_reason: roomClosedReason || null,
           connection_state: roomConnectionState,

@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
+import { expireStaleChatCallSessions } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
       [conversationId, access.user_id],
     );
     if (!memberRes.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
+    await expireStaleChatCallSessions();
 
     const roomRes = await query(
       `SELECT id, title FROM chat_call_rooms WHERE conversation_id = $1 AND status IN ('active','scheduled') ORDER BY id DESC LIMIT 1`,

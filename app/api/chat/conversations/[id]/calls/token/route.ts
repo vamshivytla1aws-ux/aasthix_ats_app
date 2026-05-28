@@ -11,6 +11,7 @@ import {
 } from "@/lib/livekit";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 import { buildCallLiveKitIdentity, normalizeCallClientKind, normalizeCallSessionId } from "@/lib/chat/callSessions";
+import { expireStaleChatCallSessions } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,6 +50,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
     const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
     const clientKind = normalizeCallClientKind(body?.client_kind, _request.headers.get("user-agent"));
     const iceConfig = parseRtcIceServers(String(process.env.NEXT_PUBLIC_CHAT_ICE_SERVERS || ""));
+    await expireStaleChatCallSessions();
 
     const roomRes = await query(
       `SELECT id, conversation_id FROM chat_call_rooms WHERE conversation_id = $1 AND status IN ('active','scheduled') ORDER BY id DESC LIMIT 1`,
