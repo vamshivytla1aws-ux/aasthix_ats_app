@@ -1158,7 +1158,7 @@ function ChatWorkspace({
   const { data: callStateData, mutate: mutateCallState } = useSWR<{ operation_status: string; call: ChatCalendarEvent | null }>(
     `/api/chat/conversations/${conversation.id}/calls/state`,
     dashboardFetcher,
-    { refreshInterval: callState === "idle" ? 10_000 : isCallHotPath ? 500 : 1_200 }
+    { refreshInterval: callState === "idle" ? 2_000 : isCallHotPath ? 500 : 1_200 }
   );
 
   useEffect(() => {
@@ -1996,6 +1996,9 @@ function ChatWorkspace({
       const roomId = Number(activeRoomId || activeCall?.id || 0);
       if (!roomId) return;
       if (!activeCall?.is_active || callStateRef.current === "idle") return;
+      if (!currentCallSessionIdRef.current) {
+        currentCallSessionIdRef.current = getStableCallSessionId(roomId);
+      }
       const liveKitRoom = liveKitRoomRef.current;
       const { localAudioPublished, remoteAudioTrackCount } = readLiveKitAudioState();
       setLocalAudioTrackPresent(localAudioPublished);
@@ -2833,11 +2836,11 @@ function ChatWorkspace({
       stopMediaSession();
       try {
         callActionRef.current.ending = true;
-        await apiFetchJson(`/api/chat/conversations/${conversation.id}/calls/end`, {
+        await callApiWithRetry(`/api/chat/conversations/${conversation.id}/calls/end`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
           body: JSON.stringify({ reason: "ended" }),
-        });
+        }, { retries: 2, retryDelayMs: 240 });
         onToast("Call ended.", "success");
         window.setTimeout(() => {
           void mutateCallState();

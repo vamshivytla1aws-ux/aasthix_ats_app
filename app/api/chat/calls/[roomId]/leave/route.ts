@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
 import { buildFreshChatCallSessionWhereClause, closeChatCallRoomTransactional, expireStaleChatCallSessions } from "@/lib/chatCalls";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
-import { normalizeCallSessionId } from "@/lib/chat/callSessions";
+import { requireCallSessionId } from "@/lib/chat/callSessions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       idempotencyHeader: requestKey,
     });
     const body = await _request.json().catch(() => ({}));
-    const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
+    const sessionId = requireCallSessionId(body?.session_id);
     await expireStaleChatCallSessions({ roomId });
     const leaveRes = await query(
       `

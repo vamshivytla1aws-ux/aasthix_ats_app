@@ -3,7 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
-import { normalizeCallClientKind, normalizeCallSessionId } from "@/lib/chat/callSessions";
+import { normalizeCallClientKind, requireCallSessionId } from "@/lib/chat/callSessions";
 import { buildFreshChatCallSessionWhereClause, expireStaleChatCallSessions } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
@@ -80,7 +80,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       idempotencyHeader: requestKey,
     });
     const body = await _request.json().catch(() => ({}));
-    const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
+    const sessionId = requireCallSessionId(body?.session_id);
     const clientKind = normalizeCallClientKind(body?.client_kind, _request.headers.get("user-agent"));
     await expireStaleChatCallSessions({ roomId });
     const activeRowRes = await query(

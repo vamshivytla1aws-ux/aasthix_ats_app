@@ -10,7 +10,7 @@ import {
   parseRtcIceServers,
 } from "@/lib/livekit";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
-import { buildCallLiveKitIdentity, normalizeCallClientKind, normalizeCallSessionId } from "@/lib/chat/callSessions";
+import { buildCallLiveKitIdentity, normalizeCallClientKind, requireCallSessionId } from "@/lib/chat/callSessions";
 import { expireStaleChatCallSessions } from "@/lib/chatCalls";
 
 export const runtime = "nodejs";
@@ -47,7 +47,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
     );
     if (!memberRes.rowCount) return NextResponse.json({ error: "Not a member of this conversation." }, { status: 403 });
     const body = await _request.json().catch(() => ({}));
-    const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
+    const sessionId = requireCallSessionId(body?.session_id);
     const clientKind = normalizeCallClientKind(body?.client_kind, _request.headers.get("user-agent"));
     const iceConfig = parseRtcIceServers(String(process.env.NEXT_PUBLIC_CHAT_ICE_SERVERS || ""));
     await expireStaleChatCallSessions();

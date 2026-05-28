@@ -3,7 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
-import { normalizeCallSessionId } from "@/lib/chat/callSessions";
+import { requireCallSessionId } from "@/lib/chat/callSessions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,7 +57,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     }
 
     const body = await request.json().catch(() => ({}));
-    const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
+    const sessionId = requireCallSessionId(body?.session_id);
     const correlationId = resolveCallCorrelationId({
       correlationHeader: request.headers.get("x-call-correlation-id"),
       idempotencyHeader: request.headers.get("x-idempotency-key"),
