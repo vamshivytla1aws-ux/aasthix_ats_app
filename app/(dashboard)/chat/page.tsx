@@ -142,7 +142,8 @@ type ChatCalendarEvent = {
   created_by_user_id?: number | null;
   joined_count?: number;
   joined_user_ids?: number[];
-  joined_participants?: Array<{ user_id: number; full_name: string; muted?: boolean }>;
+  joined_participants?: Array<{ user_id: number; full_name: string; muted?: boolean; session_count?: number }>;
+  active_session_count?: number;
   room_closed_reason?: "ended" | "missed" | "declined" | "timeout" | null;
   connection_state?: "idle" | "connecting" | "connected" | "reconnecting" | "failed";
   media_state?: "ok" | "permission_denied" | "device_missing" | "failed" | "ready";
@@ -153,6 +154,7 @@ type ChatCalendarEvent = {
   effective_media_state?: "connected" | "reconnecting" | "publish_missing" | "waiting_remote" | "playback_blocked" | "idle";
   call_presence_state?: "idle" | "active_joined" | "active_not_joined" | "incoming_ringing";
   media_readiness_state?: "connected" | "waiting_remote" | "publish_missing" | "reconnecting" | "playback_blocked" | "idle";
+  media_health_hint?: string;
   caller_visibility_delay_ms?: number | null;
   caller_visibility_slo_miss?: boolean;
 };
@@ -192,10 +194,13 @@ type LiveKitSessionToken = {
   operation_status: "success" | "blocked" | "error";
   room_id?: number;
   room_name?: string;
+  session_id?: string;
+  livekit_identity?: string;
   livekit_url?: string;
   token?: string;
   user_message?: string;
   hint?: string;
+  media_health_hint?: string;
   turn_ready?: boolean;
 };
 
@@ -506,6 +511,26 @@ function buildCallMutationHeadersWithKey(idempotencyKey?: string) {
     "x-idempotency-key": correlationId,
     "x-call-correlation-id": correlationId,
   };
+}
+
+function getCallClientKind() {
+  if (typeof window !== "undefined" && Boolean((window as any).atsDesktop)) return "desktop";
+  if (typeof navigator !== "undefined" && /android|iphone|ipad|mobile/i.test(navigator.userAgent || "")) return "mobile";
+  return "web";
+}
+
+function getStableCallSessionId(roomId: number) {
+  const key = `ats_chat_call_session_${roomId}`;
+  const fallback = `s-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+  if (typeof window === "undefined") return fallback;
+  const existing = window.sessionStorage.getItem(key);
+  if (existing) return existing;
+  const next =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? `s-${crypto.randomUUID()}`
+      : fallback;
+  window.sessionStorage.setItem(key, next);
+  return next;
 }
 
 function mapCallActionError(error: unknown, fallback: string) {
@@ -1021,6 +1046,10 @@ function ChatWorkspace({
   const lastJoinedCountRef = useRef(0);
   const reconcileWatchdogRef = useRef<number | null>(null);
   const pendingRecoveryTelemetryReasonRef = useRef<string | null>(null);
+  const currentCallSessionIdRef = useRef<string | null>(null);
+  const liveKitIdentityRef = useRef<string | null>(null);
+  const lastLiveKitEventRef = useRef<string | null>(null);
+  const trackAttachCountRef = useRef(0);
   const disconnectingRef = useRef(false);
   const connectInFlightRef = useRef<Promise<any> | null>(null);
   const remoteTrackSeenRef = useRef(false);
@@ -1045,6 +1074,11 @@ function ChatWorkspace({
   const [localAudioTrackPresent, setLocalAudioTrackPresent] = useState(false);
   const [remoteAudioTracksCount, setRemoteAudioTracksCount] = useState(0);
   const callStateRef = useRef<CallUiState>(callState);
+  const buildCallSessionPayload = useCallback((roomId: number) => {
+    const session_id = getStableCallSessionId(roomId);
+    currentCallSessionIdRef.current = session_id;
+    return { session_id, client_kind: getCallClientKind() };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1490,7 +1524,8 @@ function ChatWorkspace({
       try {
         await apiFetchJson(`/api/chat/calls/${initialRoomId}/join`, {
           method: "POST",
-          headers: buildCallMutationHeaders(),
+          headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
+          body: JSON.stringify(buildCallSessionPayload(initialRoomId)),
         });
         if (cancelled) return;
         setRingDismissedRoomId(null);
@@ -1503,7 +1538,7 @@ function ChatWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [initialRoomId, activeCall, activeRoomId]);
+  }, [initialRoomId, activeCall, activeRoomId, buildCallSessionPayload]);
 
   useEffect(() => {
     callStateRef.current = callState;
@@ -1734,6 +1769,10 @@ function ChatWorkspace({
     receiverJoinSeenAtRef.current = null;
     callerBarVisibleAtRef.current = null;
     callerVisibilitySloMissReportedRef.current = false;
+    currentCallSessionIdRef.current = null;
+    liveKitIdentityRef.current = null;
+    lastLiveKitEventRef.current = null;
+    trackAttachCountRef.current = 0;
     lastJoinedCountRef.current = 0;
     if (reconcileWatchdogRef.current) {
       window.clearTimeout(reconcileWatchdogRef.current);
@@ -1904,6 +1943,41 @@ function ChatWorkspace({
   const runRemoteAudioRecoveryAssist = useCallback((reason: "zero_remote_track_timeout" | "manual_remote_audio_retry") => {
     pendingRecoveryTelemetryReasonRef.current = reason;
     const room = liveKitRoomRef.current;
+    if (room) {
+      for (const participant of Array.from(room.remoteParticipants?.values?.() || []) as any[]) {
+        for (const publication of Array.from(participant?.audioTrackPublications?.values?.() || []) as any[]) {
+          const track = publication?.track;
+          if (!track || track?.kind !== "audio") continue;
+          const key = String(publication?.trackSid || `${participant?.identity || "p"}-${Date.now()}`);
+          if (liveKitAudioRef.current.has(key)) continue;
+          try {
+            const mediaEl = track.attach() as HTMLMediaElement;
+            mediaEl.autoplay = true;
+            mediaEl.muted = false;
+            mediaEl.volume = 1;
+            mediaEl.setAttribute("playsinline", "true");
+            if (!mediaEl.parentElement && typeof document !== "undefined") {
+              mediaEl.style.position = "fixed";
+              mediaEl.style.width = "1px";
+              mediaEl.style.height = "1px";
+              mediaEl.style.opacity = "0";
+              mediaEl.style.pointerEvents = "none";
+              mediaEl.setAttribute("aria-hidden", "true");
+              document.body.appendChild(mediaEl);
+            }
+            liveKitAudioRef.current.set(key, mediaEl);
+            trackAttachCountRef.current += 1;
+            void mediaEl.play().then(() => {
+              playbackStartedRef.current = true;
+              setMediaError(null);
+            }).catch(() => setMediaError("Tap Retry audio to start remote playback."));
+          } catch {
+            setMediaError("Unable to attach remote audio track.");
+          }
+        }
+      }
+      setRemoteAudioTracksCount(readLiveKitAudioState().remoteAudioTrackCount);
+    }
     if (room?.localParticipant) {
       void room.localParticipant
         .setMicrophoneEnabled(false)
@@ -1963,6 +2037,11 @@ function ChatWorkspace({
               : "publish_missing_local_track";
       const payload = {
         reason,
+        session_id: currentCallSessionIdRef.current,
+        livekit_identity_prefix: liveKitIdentityRef.current ? liveKitIdentityRef.current.slice(0, 80) : null,
+        track_attach_count: trackAttachCountRef.current,
+        remote_participant_count: liveKitRoom ? liveKitRoom.remoteParticipants?.size || 0 : 0,
+        last_livekit_event: lastLiveKitEventRef.current,
         call_state: callStateRef.current,
         connection_state: normalizedActiveConnectionState,
         media_state: mediaState,
@@ -2146,7 +2225,7 @@ function ChatWorkspace({
   }, [activeCall, meJoinedInActiveCall, remoteAudioTracksCount, runRemoteAudioRecoveryAssist]);
 
   const connectLiveKitRoom = useCallback(
-    async (conversationId: number) => {
+    async (conversationId: number, roomId: number) => {
       if (liveKitRoomRef.current && liveKitConnectedRef.current) {
         setConnectionState("connected");
         return liveKitRoomRef.current;
@@ -2178,74 +2257,39 @@ function ChatWorkspace({
             if (error instanceof ApiError) throw error;
           }
         }
+        const sessionId = getStableCallSessionId(roomId);
+        currentCallSessionIdRef.current = sessionId;
         const tokenData = await apiFetchJson<LiveKitSessionToken>(
           `/api/chat/conversations/${conversationId}/calls/token`,
-          { method: "POST" },
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
+            body: JSON.stringify({ session_id: sessionId, client_kind: getCallClientKind() }),
+          },
         );
         if (!tokenData.token || !tokenData.livekit_url) {
           throw new ApiError(tokenData.user_message || "Missing LiveKit token.", 503);
         }
+        liveKitIdentityRef.current = tokenData.livekit_identity || null;
         if (tokenData.turn_ready === false) {
-          throw new ApiError(tokenData.user_message || "TURN is not ready.", 503);
+          setMediaError("TURN check did not pass, using LiveKit server ICE configuration.");
         }
         const livekit = await import("livekit-client");
         const room = new livekit.Room({
           adaptiveStream: true,
           dynacast: true,
         });
-        room.on(livekit.RoomEvent.Reconnecting, () => {
-          setConnectionState("reconnecting");
-        });
-        room.on(livekit.RoomEvent.Reconnected, () => {
-          const hasRemote = liveKitAudioRef.current.size > 0;
-          setConnectionState("connected");
-          if (hasRemote) setMediaError(null);
-        });
-        room.on(livekit.RoomEvent.Disconnected, () => {
-          liveKitConnectedRef.current = false;
-          if (disconnectingRef.current || callStateRef.current === "idle") {
-            setConnectionState("idle");
-            return;
-          }
-          setConnectionState("failed");
-          setMediaError("Connection lost. Click Retry to reconnect audio.");
-        });
-        room.on(livekit.RoomEvent.LocalTrackUnpublished, (publication: any) => {
-          const src = String(publication?.source || "").toLowerCase();
-          if (src.includes("screen")) {
-            setIsPresenting(false);
-          }
-          const { localAudioPublished } = readLiveKitAudioState();
-          setLocalAudioTrackPresent(localAudioPublished);
-          void pushCallTelemetry("state_change");
-        });
-        room.on(livekit.RoomEvent.LocalTrackPublished, () => {
-          const { localAudioPublished } = readLiveKitAudioState();
-          setLocalAudioTrackPresent(localAudioPublished);
-          if (localAudioPublished) {
-            setMediaError(null);
-            publishMissingSinceRef.current = null;
-            publishRecoveryAttemptedRef.current = false;
-          }
-          void pushCallTelemetry("state_change");
-        });
-        room.on(livekit.RoomEvent.ConnectionStateChanged, (state: string) => {
-          if (state === "connected") {
-            const hasRemote = liveKitAudioRef.current.size > 0;
-            setConnectionState("connected");
-            if (hasRemote) setMediaError(null);
-          } else if (state === "connecting") {
-            setConnectionState("connecting");
-          } else if (state === "reconnecting") {
-            setConnectionState("reconnecting");
-          } else if (state === "disconnected" && !disconnectingRef.current && callStateRef.current !== "idle") {
-            setConnectionState("failed");
-          }
-        });
-        room.on(livekit.RoomEvent.TrackSubscribed, (track: any, publication: any, participant: any) => {
+        liveKitRoomRef.current = room;
+        const attachRemoteAudioTrack = (track: any, publication: any, participant: any) => {
           try {
             if (track?.kind !== "audio") return;
             remoteTrackSeenRef.current = true;
+            lastLiveKitEventRef.current = "track_subscribed";
+            const key = String(publication?.trackSid || `${participant?.identity || "p"}-${Date.now()}`);
+            if (liveKitAudioRef.current.has(key)) {
+              setRemoteAudioTracksCount(readLiveKitAudioState().remoteAudioTrackCount);
+              return;
+            }
             const mediaEl = track.attach() as HTMLMediaElement;
             mediaEl.autoplay = true;
             mediaEl.muted = false;
@@ -2260,21 +2304,94 @@ function ChatWorkspace({
               mediaEl.setAttribute("aria-hidden", "true");
               document.body.appendChild(mediaEl);
             }
-            liveKitAudioRef.current.set(String(publication?.trackSid || `${participant?.identity || "p"}-${Date.now()}`), mediaEl);
+            liveKitAudioRef.current.set(key, mediaEl);
+            trackAttachCountRef.current += 1;
             setRemoteAudioTracksCount(readLiveKitAudioState().remoteAudioTrackCount);
             void mediaEl.play().then(() => {
               playbackStartedRef.current = true;
               setMediaError(null);
               void pushCallTelemetry("state_change");
             }).catch(() => {
-              setMediaError("Remote audio was blocked by browser autoplay. Tap anywhere and press Retry.");
+              setMediaError("Tap Retry audio to start remote playback.");
               void pushCallTelemetry("state_change");
             });
           } catch {
             setMediaError("Unable to attach remote audio track.");
           }
+        };
+        const scanRemoteAudioTracks = () => {
+          for (const participant of Array.from(room.remoteParticipants.values()) as any[]) {
+            for (const publication of Array.from(participant?.audioTrackPublications?.values?.() || []) as any[]) {
+              if (publication?.track) attachRemoteAudioTrack(publication.track, publication, participant);
+            }
+          }
+        };
+        room.on(livekit.RoomEvent.Reconnecting, () => {
+          lastLiveKitEventRef.current = "reconnecting";
+          setConnectionState("reconnecting");
+        });
+        room.on(livekit.RoomEvent.Reconnected, () => {
+          lastLiveKitEventRef.current = "reconnected";
+          scanRemoteAudioTracks();
+          const hasRemote = liveKitAudioRef.current.size > 0;
+          setConnectionState("connected");
+          if (hasRemote) setMediaError(null);
+        });
+        room.on(livekit.RoomEvent.Disconnected, () => {
+          lastLiveKitEventRef.current = "disconnected";
+          liveKitConnectedRef.current = false;
+          if (disconnectingRef.current || callStateRef.current === "idle") {
+            setConnectionState("idle");
+            return;
+          }
+          setConnectionState("failed");
+          setMediaError("Connection lost. Click Retry to reconnect audio.");
+        });
+        room.on(livekit.RoomEvent.LocalTrackUnpublished, (publication: any) => {
+          lastLiveKitEventRef.current = "local_track_unpublished";
+          const src = String(publication?.source || "").toLowerCase();
+          if (src.includes("screen")) {
+            setIsPresenting(false);
+          }
+          const { localAudioPublished } = readLiveKitAudioState();
+          setLocalAudioTrackPresent(localAudioPublished);
+          void pushCallTelemetry("state_change");
+        });
+        room.on(livekit.RoomEvent.LocalTrackPublished, () => {
+          lastLiveKitEventRef.current = "local_track_published";
+          const { localAudioPublished } = readLiveKitAudioState();
+          setLocalAudioTrackPresent(localAudioPublished);
+          if (localAudioPublished) {
+            setMediaError(null);
+            publishMissingSinceRef.current = null;
+            publishRecoveryAttemptedRef.current = false;
+          }
+          void pushCallTelemetry("state_change");
+        });
+        room.on(livekit.RoomEvent.ConnectionStateChanged, (state: string) => {
+          lastLiveKitEventRef.current = `connection_${state}`;
+          if (state === "connected") {
+            const hasRemote = liveKitAudioRef.current.size > 0;
+            setConnectionState("connected");
+            if (hasRemote) setMediaError(null);
+          } else if (state === "connecting") {
+            setConnectionState("connecting");
+          } else if (state === "reconnecting") {
+            setConnectionState("reconnecting");
+          } else if (state === "disconnected" && !disconnectingRef.current && callStateRef.current !== "idle") {
+            setConnectionState("failed");
+          }
+        });
+        room.on(livekit.RoomEvent.ParticipantConnected, () => {
+          lastLiveKitEventRef.current = "participant_connected";
+          window.setTimeout(scanRemoteAudioTracks, 250);
+          void pushCallTelemetry("state_change");
+        });
+        room.on(livekit.RoomEvent.TrackSubscribed, (track: any, publication: any, participant: any) => {
+          attachRemoteAudioTrack(track, publication, participant);
         });
         room.on(livekit.RoomEvent.TrackUnsubscribed, (track: any, publication: any) => {
+          lastLiveKitEventRef.current = "track_unsubscribed";
           try {
             const key = String(publication?.trackSid || "");
             const mediaEl = key ? liveKitAudioRef.current.get(key) : null;
@@ -2299,11 +2416,8 @@ function ChatWorkspace({
         await room.connect(tokenData.livekit_url, tokenData.token, {
           autoSubscribe: true,
         });
-        await room.localParticipant.setMicrophoneEnabled(true).catch((error: unknown) => {
-          setMediaError(error instanceof Error ? error.message : "Unable to publish microphone audio.");
-        });
+        await room.localParticipant.setMicrophoneEnabled(true);
         await room.localParticipant.setCameraEnabled(false).catch(() => {});
-        liveKitRoomRef.current = room;
         liveKitConnectedRef.current = true;
         setMicEnabled(true);
         const firstAudioState = readLiveKitAudioState();
@@ -2311,6 +2425,8 @@ function ChatWorkspace({
         setRemoteAudioTracksCount(firstAudioState.remoteAudioTrackCount);
         setCameraEnabled(false);
         setConnectionState("connected");
+        scanRemoteAudioTracks();
+        window.setTimeout(scanRemoteAudioTracks, 800);
         reconnectAttemptedRef.current = false;
         window.setTimeout(() => {
           if (liveKitAudioRef.current.size === 0 && (callStateRef.current === "connected" || callStateRef.current === "connecting")) {
@@ -2628,10 +2744,11 @@ function ChatWorkspace({
         setConnectionState("connecting");
         const joinRes = await apiFetchJson<{ operation_status?: string; user_message?: string }>(`/api/chat/calls/${activeCall.id}/join`, {
           method: "POST",
-          headers: buildCallMutationHeaders(),
+          headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
+          body: JSON.stringify(buildCallSessionPayload(activeCall.id)),
         });
         try {
-          await connectLiveKitRoom(conversation.id);
+          await connectLiveKitRoom(conversation.id, activeCall.id);
           setCallState("connected");
           setConnectionState("connected");
           setMediaError(null);
@@ -2664,14 +2781,15 @@ function ChatWorkspace({
         if (roomId) {
           await apiFetchJson(`/api/chat/calls/${roomId}/join`, {
             method: "POST",
-            headers: buildCallMutationHeaders(),
+            headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
+            body: JSON.stringify(buildCallSessionPayload(roomId)),
           });
           setRingDismissedRoomId(null);
           setActiveRoomId(roomId);
           setCallState("connecting");
           setConnectionState("connecting");
           try {
-            await connectLiveKitRoom(conversation.id);
+            await connectLiveKitRoom(conversation.id, roomId);
             setCallState("connected");
             setConnectionState("connected");
             setMediaError(null);
@@ -2701,7 +2819,7 @@ function ChatWorkspace({
         setCallLoading(null);
       }
     },
-    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast, pushCallTelemetry, runPrejoinDiagnostics]
+    [activeCall, buildCallSessionPayload, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, mutateMessages, onMutateConversations, onToast, pushCallTelemetry, runPrejoinDiagnostics]
   );
 
   const endActiveCall = useCallback(
@@ -2770,10 +2888,11 @@ function ChatWorkspace({
         setConnectionState("connecting");
         const joinRes = await apiFetchJson<{ operation_status?: string; user_message?: string }>(`/api/chat/calls/${roomId}/join`, {
           method: "POST",
-          headers: buildCallMutationHeaders(),
+          headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
+          body: JSON.stringify(buildCallSessionPayload(roomId)),
         });
         try {
-          await connectLiveKitRoom(conversation.id);
+          await connectLiveKitRoom(conversation.id, roomId);
           setCallState("connected");
           setConnectionState("connected");
           setMediaError(null);
@@ -2806,7 +2925,7 @@ function ChatWorkspace({
         callActionRef.current.joining = false;
       }
     },
-    [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast, pushCallTelemetry, runPrejoinDiagnostics]
+    [activeCall, buildCallSessionPayload, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast, pushCallTelemetry, runPrejoinDiagnostics]
   );
 
   const retryCallConnection = useCallback(async () => {
@@ -2818,11 +2937,12 @@ function ChatWorkspace({
       setMediaError(null);
       await apiFetchJson(`/api/chat/calls/${roomId}/join`, {
         method: "POST",
-        headers: buildCallMutationHeaders(),
+        headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
+        body: JSON.stringify(buildCallSessionPayload(roomId)),
       });
       setActiveRoomId(roomId);
       setCallState("connecting");
-      await connectLiveKitRoom(conversation.id);
+      await connectLiveKitRoom(conversation.id, roomId);
       setCallState("connected");
       setConnectionState("connected");
       setMediaError(null);
@@ -2835,7 +2955,7 @@ function ChatWorkspace({
       setMediaError(msg);
       onToast(msg, "error");
     }
-  }, [activeCall, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast]);
+  }, [activeCall, buildCallSessionPayload, connectLiveKitRoom, conversation.id, mutateCalendar, mutateCallState, onToast]);
 
   const dismissIncomingCall = useCallback((roomId: number, toastMessage = "Call dismissed.") => {
     setActiveRoomId((curr) => (curr === roomId ? null : curr));
@@ -2850,11 +2970,12 @@ function ChatWorkspace({
     }
     void apiFetchJson(`/api/chat/calls/${roomId}/leave`, {
       method: "POST",
-      headers: buildCallMutationHeaders(),
+      headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
+      body: JSON.stringify(buildCallSessionPayload(roomId)),
     }).catch(() => {});
     void mutateCallState();
     onToast(toastMessage, "success");
-  }, [mutateCallState, onToast, stopMediaSession]);
+  }, [buildCallSessionPayload, mutateCallState, onToast, stopMediaSession]);
 
   const moderateCall = useCallback(
     async (action: "mute_participant" | "unmute_participant" | "remove_participant" | "end_for_all", targetUserId?: number) => {
@@ -3013,7 +3134,8 @@ function ChatWorkspace({
       try {
         await apiFetchJson(`/api/chat/calls/${roomId}/leave`, {
           method: "POST",
-          headers: buildCallMutationHeaders(),
+          headers: { "Content-Type": "application/json", ...buildCallMutationHeaders() },
+          body: JSON.stringify(buildCallSessionPayload(roomId)),
         }).catch(() => {});
         await sendSignal(roomId, "leave", {}).catch(() => {});
       } finally {
@@ -3024,7 +3146,7 @@ function ChatWorkspace({
         void mutateCallState();
       }
     },
-    [mutateCalendar, mutateCallState, sendSignal, stopMediaSession]
+    [buildCallSessionPayload, mutateCalendar, mutateCallState, sendSignal, stopMediaSession]
   );
 
   const toggleScreenShare = useCallback(

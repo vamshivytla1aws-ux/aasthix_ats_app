@@ -95,6 +95,8 @@ export async function logCallEvent(input: {
     );
     return res.rowCount > 0;
   } catch (error) {
+    const pgError = error as { code?: string };
+    if (pgError?.code === "23505") return false;
     const message = error instanceof Error ? error.message : "";
     if (!/no unique or exclusion constraint matching the ON CONFLICT specification/i.test(message)) {
       throw error;

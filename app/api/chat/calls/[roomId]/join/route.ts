@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
+import { normalizeCallClientKind, normalizeCallSessionId } from "@/lib/chat/callSessions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,19 +73,33 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
         { status: 403 },
       );
     }
+    const requestKey = _request.headers.get("x-idempotency-key")?.trim() || "";
+    const correlationId = resolveCallCorrelationId({
+      correlationHeader: _request.headers.get("x-call-correlation-id"),
+      idempotencyHeader: requestKey,
+    });
+    const body = await _request.json().catch(() => ({}));
+    const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
+    const clientKind = normalizeCallClientKind(body?.client_kind, _request.headers.get("user-agent"));
+    const activeRowRes = await query(
+      `SELECT 1 FROM chat_call_participants WHERE room_id = $1 AND user_id = $2 AND session_id = $3 AND left_at IS NULL LIMIT 1`,
+      [roomId, access.user_id, sessionId],
+    );
+    const alreadyJoined = Boolean(activeRowRes.rowCount);
     const policy = await getChatCallPolicy();
     const joinedCountRes = await query(
       `SELECT COUNT(*)::int AS count FROM chat_call_participants WHERE room_id = $1 AND left_at IS NULL`,
       [roomId],
     );
     const joinedCount = Number((joinedCountRes.rows[0] as { count: number } | undefined)?.count || 0);
-    if (joinedCount >= policy.max_call_participants) {
+    if (!alreadyJoined && joinedCount >= policy.max_call_participants) {
       await logCallEvent({
         roomId,
         conversationId: room.conversation_id,
         userId: access.user_id,
         eventType: "join_fail",
-        metadata: { reason: "max_participants", max: policy.max_call_participants },
+        metadata: { reason: "max_participants", max: policy.max_call_participants, session_id: sessionId },
+        correlationId,
       });
       return NextResponse.json(
         {
@@ -95,33 +110,18 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
         { status: 409 },
       );
     }
-
-    const requestKey = _request.headers.get("x-idempotency-key")?.trim() || "";
-    const correlationId = resolveCallCorrelationId({
-      correlationHeader: _request.headers.get("x-call-correlation-id"),
-      idempotencyHeader: requestKey,
-    });
-    const activeRowRes = await query(
-      `SELECT 1 FROM chat_call_participants WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL LIMIT 1`,
-      [roomId, access.user_id],
-    );
-    const alreadyJoined = Boolean(activeRowRes.rowCount);
     if (!alreadyJoined) {
       await query(
-        `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
-        [roomId, access.user_id],
-      );
-      await query(
         `
-        INSERT INTO chat_call_participants (room_id, user_id, joined_at, left_at, muted)
-        VALUES ($1, $2, NOW(), NULL, FALSE)
+        INSERT INTO chat_call_participants (room_id, user_id, joined_at, left_at, muted, session_id, client_kind, last_seen_at)
+        VALUES ($1, $2, NOW(), NULL, FALSE, $3, $4, NOW())
         `,
-        [roomId, access.user_id],
+        [roomId, access.user_id, sessionId, clientKind],
       );
     } else {
       await query(
-        `UPDATE chat_call_participants SET muted = FALSE WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL`,
-        [roomId, access.user_id],
+        `UPDATE chat_call_participants SET muted = FALSE, client_kind = $4, last_seen_at = NOW() WHERE room_id = $1 AND user_id = $2 AND session_id = $3 AND left_at IS NULL`,
+        [roomId, access.user_id, sessionId, clientKind],
       );
     }
     await query(
@@ -160,6 +160,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       operation_status: "success",
       user_message: "Joined call room.",
       joined_count: Number((countRes.rows[0] as { count?: number } | undefined)?.count || 0),
+      session_id: sessionId,
       correlation_id: correlationId,
       room_state: {
         room_id: roomId,

@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
 import { closeChatCallRoomTransactional } from "@/lib/chatCalls";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
+import { normalizeCallSessionId } from "@/lib/chat/callSessions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,15 +38,18 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       correlationHeader: _request.headers.get("x-call-correlation-id"),
       idempotencyHeader: requestKey,
     });
+    const body = await _request.json().catch(() => ({}));
+    const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
     await query(
       `
       UPDATE chat_call_participants
       SET left_at = NOW()
       WHERE room_id = $1
         AND user_id = $2
+        AND session_id = $3
         AND left_at IS NULL
       `,
-      [roomId, access.user_id],
+      [roomId, access.user_id, sessionId],
     );
 
     const openParticipants = await query(
@@ -70,7 +74,8 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
         conversationId: room.conversation_id,
         userId: access.user_id,
         eventType: "drop",
-        eventKey: requestKey || `call_drop:${roomId}:${access.user_id}`,
+        eventKey: requestKey || `call_drop:${roomId}:${access.user_id}:${sessionId}`,
+        metadata: { session_id: sessionId },
         correlationId,
       });
       if (eventAccepted) {
@@ -85,6 +90,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     return NextResponse.json({
       operation_status: "success",
       user_message: "Left call room.",
+      session_id: sessionId,
       correlation_id: correlationId,
     });
   } catch (error) {

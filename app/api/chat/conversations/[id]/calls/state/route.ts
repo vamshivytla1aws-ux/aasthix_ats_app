@@ -79,19 +79,25 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     const participantsRes = await query(
       `
-      SELECT p.user_id, COALESCE(u.full_name, 'Unknown user') AS full_name, COALESCE(p.muted, FALSE) AS muted
+      SELECT p.user_id,
+             COALESCE(u.full_name, 'Unknown user') AS full_name,
+             BOOL_OR(COALESCE(p.muted, FALSE)) AS muted,
+             COUNT(*)::int AS session_count
       FROM chat_call_participants p
       LEFT JOIN users u ON u.id = p.user_id
       WHERE p.room_id = $1 AND p.left_at IS NULL
-      ORDER BY p.joined_at ASC
+      GROUP BY p.user_id, u.full_name
+      ORDER BY MIN(p.joined_at) ASC
       `,
       [room.id],
     );
-    const participants = (participantsRes.rows as Array<{ user_id: number; full_name: string; muted?: boolean }>).map((p) => ({
+    const participants = (participantsRes.rows as Array<{ user_id: number; full_name: string; muted?: boolean; session_count?: number }>).map((p) => ({
       user_id: Number(p.user_id),
       full_name: String(p.full_name || "Unknown user"),
       muted: Boolean(p.muted),
+      session_count: Number(p.session_count || 1),
     }));
+    const activeSessionCount = participants.reduce((sum, p) => sum + Number(p.session_count || 1), 0);
     const isTerminal = room.status === "ended" || room.status === "cancelled";
     const isActiveLike = room.status === "active" || room.status === "scheduled";
     const meJoined = participants.some((p) => Number(p.user_id) === Number(access.user_id));
@@ -141,7 +147,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const presenterUserId = isPresenting ? Number(presentingRow?.from_user_id || 0) : null;
     const telemetryRes = await query(
       `
-      SELECT DISTINCT ON (e.user_id)
+      SELECT DISTINCT ON (COALESCE(e.metadata->>'session_id', e.user_id::text))
         e.user_id,
         e.created_at,
         e.metadata
@@ -149,7 +155,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       WHERE e.room_id = $1
         AND e.event_type = 'media_telemetry'
         AND e.user_id IS NOT NULL
-      ORDER BY e.user_id, e.created_at DESC
+      ORDER BY COALESCE(e.metadata->>'session_id', e.user_id::text), e.created_at DESC
       `,
       [room.id],
     );
@@ -163,7 +169,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       const ageMs = Math.max(0, nowMs - new Date(row.created_at).getTime());
       return ageMs <= 20_000;
     });
-    const telemetryForRoom = freshTelemetry.length > 0 ? freshTelemetry : latestTelemetry;
+    const telemetryForRoom = freshTelemetry.length > 0 || activeSessionCount > 0 ? freshTelemetry : latestTelemetry;
     const telemetryStates = telemetryForRoom.map((row) => row.metadata || {});
     const requesterTelemetry = telemetryForRoom.find((row) => Number(row.user_id) === Number(access.user_id))?.metadata || {};
     const endEventRes = await query(
@@ -291,6 +297,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         ...room,
         room_name: buildLiveKitRoomName(conversationId, Number(room.id)),
         joined_count: participants.length,
+        active_session_count: activeSessionCount,
         joined_participants: participants,
         is_active: isActiveLike && !isTerminal,
         status_kind: isPresenting || room.session_mode === "screenshare" ? "presenting" : "in_call",
@@ -328,6 +335,15 @@ export async function GET(_request: Request, { params }: { params: { id: string 
               : mediaHealth === "playback_blocked"
                 ? "request_user_interaction_for_playback"
                 : "none",
+        media_health_hint: isTerminal
+          ? "terminal_room_confirmed"
+          : mediaHealth === "publish_missing"
+            ? "mic_publish_missing"
+            : mediaHealth === "no_remote_tracks"
+              ? "remote_track_not_attached"
+              : mediaHealth === "playback_blocked"
+                ? "autoplay_blocked"
+                : "ok",
         aggregation_basis: "room_fresh_telemetry",
       },
     });

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { createChatCallRoom, endChatCallRoom, getChatCallSignalSchemaHealth } from "@/lib/chatCalls";
+import { closeChatCallRoomTransactional, createChatCallRoom, getChatCallSignalSchemaHealth } from "@/lib/chatCalls";
 import { canStartCallByPolicy, getChatCallPolicy, logCallEvent } from "@/lib/chatCallGovernance";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
 
@@ -74,6 +74,57 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const endAt = new Date(Date.now() + durationMinutes * 60_000).toISOString();
     const modeLabel = mode === "screenshare" ? "Screen Share" : "Call";
     const title = `${modeLabel} - ${conv.name || "Chat conversation"}`;
+
+    const existingRooms = await query(
+      `
+      SELECT r.id, r.conversation_id, r.title, r.mode, r.status, r.start_at, r.end_at, r.join_url, r.provider, r.created_by_user_id, r.created_at, r.ended_at,
+             COALESCE(active_sessions.count, 0)::int AS active_session_count
+      FROM chat_call_rooms r
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS count
+        FROM chat_call_participants p
+        WHERE p.room_id = r.id
+          AND p.left_at IS NULL
+      ) active_sessions ON TRUE
+      WHERE r.conversation_id = $1
+        AND r.status IN ('active','scheduled')
+      ORDER BY r.id DESC
+      LIMIT 5
+      `,
+      [conversationId],
+    );
+    for (const existing of existingRooms.rows as Array<any>) {
+      const roomAgeMs = Math.max(0, Date.now() - new Date(existing.start_at).getTime());
+      if (Number(existing.active_session_count || 0) > 0 || roomAgeMs < 30_000) {
+        return NextResponse.json({
+          operation_status: "success",
+          user_message: "Existing call is active.",
+          room: existing,
+          room_state: existing,
+          join_link: existing.join_url || null,
+          session_mode: existing.mode,
+          is_active: true,
+          status_kind: existing.mode === "screenshare" ? "presenting" : "in_call",
+          status_priority: existing.mode === "screenshare" ? 1 : 2,
+          provider: "ats_native",
+          schema_ready: true,
+          correlation_id: correlationId,
+          event_accepted: false,
+          idempotent_replay: true,
+        });
+      }
+      await closeChatCallRoomTransactional({
+        roomId: Number(existing.id),
+        conversationId,
+        endedByUserId: null,
+        reason: "timeout",
+        systemMessage: "Call ended due to no active sessions.",
+        messageSenderId: null,
+        eventUserId: null,
+        eventKey: `auto_close_empty:${existing.id}`,
+        correlationId,
+      });
+    }
 
     const room = await createChatCallRoom({
       conversationId,
@@ -175,39 +226,27 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       return NextResponse.json({ error: "Call room does not belong to this conversation." }, { status: 403 });
     }
 
-    const ended = await endChatCallRoom(eventId, access.user_id);
-    if (!ended) {
-      return NextResponse.json(
-        {
-          operation_status: "blocked",
-          user_message: "This call is already ended.",
-          room_closed_reason: "ended",
-        },
-        { status: 409 },
-      );
-    }
-    try {
-      await query(
-        `UPDATE chat_call_participants SET left_at = NOW() WHERE room_id = $1 AND left_at IS NULL`,
-        [eventId],
-      );
-    } catch (error) {
-      console.warn("[chat-calls] failed to close open participants on call end", error);
-    }
-    const endEventAccepted = await logCallEvent({
+    const closed = await closeChatCallRoomTransactional({
       roomId: Number(event.id),
       conversationId,
-      userId: access.user_id,
-      eventType: "end",
+      endedByUserId: access.user_id,
+      reason: "ended",
+      systemMessage: "Call ended.",
+      messageSenderId: access.user_id,
+      eventUserId: access.user_id,
       eventKey: requestKey || `call_end:${event.id}:${access.user_id}`,
-      metadata: { reason: "ended" },
       correlationId,
     });
-    if (endEventAccepted) {
-      await query(
-        `INSERT INTO messages (conversation_id, sender_id, content, is_system) VALUES ($1, $2, $3, TRUE)`,
-        [conversationId, access.user_id, "Call ended."],
-      );
+    if (!closed.closed) {
+      return NextResponse.json({
+        operation_status: "success",
+        user_message: "Call already ended.",
+        room_closed_reason: "ended",
+        room_status: "ended",
+        terminal_confirmed: true,
+        correlation_id: correlationId,
+        idempotent_replay: true,
+      });
     }
     try {
       await query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
@@ -219,9 +258,11 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       operation_status: "success",
       user_message: "Call ended successfully.",
       room_closed_reason: "ended",
+      room_status: "ended",
+      terminal_confirmed: true,
       correlation_id: correlationId,
-      event_accepted: endEventAccepted,
-      idempotent_replay: !endEventAccepted,
+      event_accepted: closed.event_accepted,
+      idempotent_replay: !closed.event_accepted,
     });
   } catch (error) {
     const requestId = crypto.randomUUID();

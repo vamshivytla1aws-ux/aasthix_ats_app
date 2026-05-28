@@ -44,9 +44,17 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
        LIMIT 50`,
       [roomId],
     );
-    const activeParticipants = (participantsRes.rows as Array<{ user_id: number; full_name: string; left_at: string | null }>)
-      .filter((row) => !row.left_at)
-      .map((row) => ({ user_id: Number(row.user_id), full_name: String(row.full_name || "Unknown user") }));
+    const activeParticipantRows = (participantsRes.rows as Array<{ user_id: number; full_name: string; left_at: string | null }>)
+      .filter((row) => !row.left_at);
+    const activeParticipantMap = new Map<number, { user_id: number; full_name: string; session_count: number }>();
+    for (const row of activeParticipantRows) {
+      const userId = Number(row.user_id);
+      const existing = activeParticipantMap.get(userId);
+      if (existing) existing.session_count += 1;
+      else activeParticipantMap.set(userId, { user_id: userId, full_name: String(row.full_name || "Unknown user"), session_count: 1 });
+    }
+    const activeParticipants = Array.from(activeParticipantMap.values());
+    const activeSessionCount = activeParticipantRows.length;
     const eventsRes = await query(
       `SELECT event_type, metadata, created_at, user_id
        FROM chat_call_events
@@ -57,7 +65,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     );
     const telemetryRes = await query(
       `
-      SELECT DISTINCT ON (e.user_id)
+      SELECT DISTINCT ON (COALESCE(e.metadata->>'session_id', e.user_id::text))
         e.user_id,
         COALESCE(u.full_name, 'Unknown user') AS full_name,
         e.created_at,
@@ -67,7 +75,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       WHERE e.room_id = $1
         AND e.event_type = 'media_telemetry'
         AND e.user_id IS NOT NULL
-      ORDER BY e.user_id, e.created_at DESC
+      ORDER BY COALESCE(e.metadata->>'session_id', e.user_id::text), e.created_at DESC
       `,
       [roomId],
     );
@@ -98,7 +106,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
       return ageMs <= 20_000;
     });
     const isTerminalRoom = room.status === "ended" || room.status === "cancelled";
-    const telemetryForHealth = freshTelemetry.length > 0 ? freshTelemetry : latestTelemetry;
+    const telemetryForHealth = freshTelemetry.length > 0 || activeSessionCount > 0 ? freshTelemetry : latestTelemetry;
     const telemetryStates = telemetryForHealth.map((row) => row.metadata || {});
     const requesterTelemetry = telemetryForHealth.find((row) => Number(row.user_id) === Number(access.user_id))?.metadata || {};
     const anyWaitingRemote = telemetryStates.some((m) => String(m.subscribe_state || "") === "waiting_remote");
@@ -282,6 +290,7 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
         room: {
           ...room,
           joined_count: activeParticipants.length,
+          active_session_count: activeSessionCount,
           joined_participants: activeParticipants,
           room_closed_reason: roomClosedReason || null,
           connection_state: roomConnectionState,
@@ -321,6 +330,15 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
                 : mediaHealth === "playback_blocked"
                   ? "request_user_interaction_for_playback"
                   : "none",
+          media_health_hint: isTerminalRoom
+            ? "terminal_room_confirmed"
+            : mediaHealth === "publish_missing"
+              ? "mic_publish_missing"
+              : mediaHealth === "no_remote_tracks"
+                ? "remote_track_not_attached"
+                : mediaHealth === "playback_blocked"
+                  ? "autoplay_blocked"
+                  : "ok",
           aggregation_basis: "room_fresh_telemetry",
         },
         participants: participantsRes.rows,

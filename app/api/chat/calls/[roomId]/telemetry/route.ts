@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { logCallEvent } from "@/lib/chatCallGovernance";
 import { resolveCallCorrelationId } from "@/lib/chat/callCorrelation";
+import { normalizeCallSessionId } from "@/lib/chat/callSessions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +57,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     }
 
     const body = await request.json().catch(() => ({}));
+    const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
     const correlationId = resolveCallCorrelationId({
       correlationHeader: request.headers.get("x-call-correlation-id"),
       idempotencyHeader: request.headers.get("x-idempotency-key"),
@@ -63,6 +65,8 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     const reason = String(body?.reason || "sample").trim().slice(0, 40) || "sample";
     const metadata = {
       reason,
+      session_id: sessionId,
+      livekit_identity_prefix: String(body?.livekit_identity_prefix || "").slice(0, 80) || null,
       call_state: String(body?.call_state || "unknown"),
       connection_state: String(body?.connection_state || "unknown"),
       media_state: String(body?.media_state || "unknown"),
@@ -86,6 +90,9 @@ export async function POST(request: Request, { params }: { params: { roomId: str
           ? body.recovery_attempt
           : null,
       publish_attempt_id: String(body?.publish_attempt_id || "").slice(0, 120) || null,
+      track_attach_count: toFiniteNumber(body?.track_attach_count, 0),
+      remote_participant_count: toFiniteNumber(body?.remote_participant_count, 0),
+      last_livekit_event: String(body?.last_livekit_event || "").slice(0, 80) || null,
       attempt_started_at: String(body?.attempt_started_at || "").slice(0, 80) || null,
       attempt_result: String(body?.attempt_result || "").slice(0, 40) || null,
       call_presence_state: String(body?.call_presence_state || "").slice(0, 40) || null,
@@ -100,13 +107,25 @@ export async function POST(request: Request, { params }: { params: { roomId: str
           : null,
     };
 
+    await query(
+      `
+      UPDATE chat_call_participants
+      SET last_seen_at = NOW()
+      WHERE room_id = $1
+        AND user_id = $2
+        AND session_id = $3
+        AND left_at IS NULL
+      `,
+      [roomId, access.user_id, sessionId],
+    ).catch(() => null);
+
     await logCallEvent({
       roomId,
       conversationId: room.conversation_id,
       userId: access.user_id,
       eventType: "media_telemetry",
       metadata,
-      eventKey: `media_telemetry:${roomId}:${access.user_id}:${Date.now()}`,
+      eventKey: `media_telemetry:${roomId}:${access.user_id}:${sessionId}:${Date.now()}`,
       correlationId,
     });
     if (reason !== "interval") {
@@ -114,6 +133,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         room_id: roomId,
         conversation_id: room.conversation_id,
         user_id: access.user_id,
+        session_id: sessionId,
         reason,
         call_state: metadata.call_state,
         connection_state: metadata.connection_state,
