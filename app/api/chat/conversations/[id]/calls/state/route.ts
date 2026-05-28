@@ -106,7 +106,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     if (room.status === "active" && participants.length === 0) {
       const ageMs = Date.now() - new Date(room.start_at).getTime();
-      if (ageMs >= 20_000) {
+      // Keep the room alive long enough for receiver ring/join under real-world latency.
+      if (ageMs >= 90_000) {
         const closeRes = await query(
           `UPDATE chat_call_rooms
            SET status = 'ended', ended_at = NOW(), updated_at = NOW()

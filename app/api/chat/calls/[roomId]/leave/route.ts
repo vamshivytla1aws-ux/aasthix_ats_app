@@ -41,7 +41,7 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
     const body = await _request.json().catch(() => ({}));
     const sessionId = normalizeCallSessionId(body?.session_id) || `legacy-${access.user_id}`;
     await expireStaleChatCallSessions({ roomId });
-    await query(
+    const leaveRes = await query(
       `
       UPDATE chat_call_participants
       SET left_at = NOW()
@@ -52,6 +52,17 @@ export async function POST(_request: Request, { params }: { params: { roomId: st
       `,
       [roomId, access.user_id, sessionId],
     );
+
+    // If this session was never joined, do not mutate room lifecycle.
+    if (!leaveRes.rowCount) {
+      return NextResponse.json({
+        operation_status: "success",
+        user_message: "Session already left.",
+        session_id: sessionId,
+        correlation_id: correlationId,
+        idempotent_replay: true,
+      });
+    }
 
     const openParticipants = await query(
       `SELECT 1 FROM chat_call_participants p WHERE room_id = $1 AND ${buildFreshChatCallSessionWhereClause("p")} LIMIT 1`,
