@@ -11,9 +11,9 @@ import type { AiEvaluationResult } from "@/lib/aiMatcher/evaluateCandidate";
 const JD_MAX = 1000;
 const RESUME_MAX = 800;
 
-/** Default: cost-efficient mini. Set MATCH_BATCH_OPENAI_MODEL=gpt-5.3-mini when your account supports it. */
+/** Default: full GPT-4o for matching quality. Override with MATCH_BATCH_OPENAI_MODEL only if needed. */
 function batchModel(): string {
-  return process.env.MATCH_BATCH_OPENAI_MODEL || "gpt-4o-mini";
+  return process.env.MATCH_BATCH_OPENAI_MODEL || "gpt-4o";
 }
 
 export type BatchCandidateIn = {
@@ -100,7 +100,7 @@ async function callOpenAiBatch(jdTrim: string, inputs: BatchCandidateIn[]): Prom
       {
         role: "system" as const,
         content:
-          "You are a recruiter. Score each candidate 0-100 for JD fit. Output valid JSON only. No markdown.",
+          "You are a recruiter. Score each candidate 0-100 for JD fit using semantic evidence, especially explicit AI/LLM, agent, LangGraph, RAG, and multi-model gateway work. Treat proven LLM experience as positive experience evidence, not generic backend noise. Output valid JSON only. No markdown.",
       },
       { role: "user" as const, content: userPrompt },
     ],

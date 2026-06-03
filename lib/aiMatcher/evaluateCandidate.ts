@@ -82,21 +82,25 @@ function sleep(ms: number): Promise<void> {
 }
 
 const SYSTEM =
-  "You are a senior recruiter hiring for Business Insights, marketing analytics, and engagement-partner style roles. Output only valid JSON. Score using semantic evidence — not keyword matching.";
+  "You are a senior recruiter hiring for technical, AI, software, and analytics roles. Output only valid JSON. Score using semantic evidence — not keyword matching. Treat explicit LLM, agent, LangGraph, RAG, multi-LLM gateway, prompt engineering, and model-orchestration experience as positive experience evidence when present.";
 
-/** Deterministic +10–15 boost when resume/JD show strong marketing-analytics signals (backs model). */
-function applyMarketingEvidenceBoost(
+/** Deterministic +10-15 boost when resume/JD show strong evidence the model should not underweight. */
+function applyEvidenceBoost(
   score: number,
   categories: AiCategoryScores | undefined,
   resume: string,
   jd: string
 ): number {
   const t = `${resume}\n${jd}`.toLowerCase();
-  const signals =
+  const marketingSignals =
     /campaign\s*analytics|marketing\s*analytics|marketing\s*insights|funnel|customer\s*journey|attribution|\broas\b|\bcac\b|marketing\s*performance|revenue.{0,40}marketing|marketing.{0,40}revenue|growth\s*marketing/.test(
       t
     );
-  if (!signals) return score;
+  const aiSignals =
+    /\b(llm|large language model|langgraph|rag|agent(?:ic)?|multi[-\s]?llm|model\s*orchestration|prompt engineering|vector database|openai|anthropic|gemini|perplexity)\b/.test(
+      t
+    );
+  if (!marketingSignals && !aiSignals) return score;
   const domain = categories?.domain_relevance ?? 0;
   if (domain < 55 && score < 55) return score;
   return Math.min(100, score + 12);
@@ -110,12 +114,13 @@ export async function evaluateCandidate(jd: string, resume: string, candidateNam
   const hit = getMatchCache<AiEvaluationResult>(key);
   if (hit) return hit;
 
-  const prompt = `You are a Senior Recruiter hiring for roles like Business Insights & Engagement Partner (and similar: marketing analytics, commercial insights, growth analytics).
+  const prompt = `You are a Senior Recruiter hiring for technical, AI, software, analytics, and product roles.
 
-IMPORTANT PRIORITY (domain first):
-- Marketing analytics, campaign performance, customer journey, funnel, attribution → VERY HIGH importance for domain_relevance.
-- Generic BI / BA / reporting profiles with little marketing or commercial customer analytics exposure → LOWER scores even if Tableau/SQL are strong.
-- Do NOT over-score generic analysts who only list tools without marketing/campaign/commercial insight story.
+IMPORTANT PRIORITY (evidence first):
+- Follow the JD domain and seniority first, then score the resume based on demonstrated work history and outcomes.
+- Treat explicit LLM, agent, LangGraph, RAG, multi-LLM gateway, prompt engineering, model orchestration, vector database, evaluation, or AI platform experience as real positive evidence when the JD asks for AI/ML/automation/software depth.
+- Do NOT under-score resumes that prove AI system work simply because the title says "backend" or "platform".
+- Do NOT over-score generic tool lists without evidence of delivered work.
 
 SCORING — set each category_scores field 0–100 (integers). Final match_score MUST equal:
 round(0.25*domain_relevance + 0.20*core_skills + 0.15*business_impact + 0.15*stakeholder_management + 0.10*advanced_analytics + 0.10*tools_tech + 0.05*experience)
@@ -125,15 +130,15 @@ WEIGHTS:
 - Core Skills → 20%
 - Business Impact → 15%
 - Stakeholder Mgmt → 15%
-- Advanced Analytics → 10%
-- Tools → 10%
+- Advanced Analytics / AI Depth → 10%
+- Tools / Stack → 10%
 - Experience → 5%
 
 HARD BOOST (apply mentally before finalizing match_score):
-If the resume demonstrates campaign analytics, marketing funnel analysis, and/or revenue impact tied to marketing/growth, increase the FINAL match_score by roughly 10–15 points versus an otherwise similar profile without that evidence (cap at 100).
+If the resume demonstrates explicit LLM, agent, LangGraph, RAG, AI platform, or model-orchestration work that aligns with the JD, increase the FINAL match_score by roughly 10–15 points versus an otherwise similar profile without that evidence (cap at 100).
 
 CALIBRATION — avoid clustering everyone at 65–75:
-- Strong fit with clear marketing/insights evidence → 80–92
+- Strong fit with clear domain evidence → 80–92
 - Moderate / mixed fit → roughly 58–72
 - Weak fit / domain mismatch → below 58
 
@@ -183,7 +188,7 @@ ${resume.slice(0, 16_000)}`;
       try {
         res = await fetchOpenAiChatCompletions(
           {
-            model: process.env.MATCH_OPENAI_MODEL || "gpt-4o-mini",
+            model: process.env.MATCH_OPENAI_MODEL || "gpt-4o",
             temperature: Number(process.env.MATCH_OPENAI_TEMPERATURE ?? 0.18),
             response_format: { type: "json_object" },
             messages: [
@@ -224,7 +229,7 @@ ${resume.slice(0, 16_000)}`;
         if (category_scores && isCompleteCategoryScores(category_scores)) {
           match_score = reconcileOverallPercentage(match_score, category_scores);
         }
-        match_score = applyMarketingEvidenceBoost(match_score, category_scores, resume, jd);
+        match_score = applyEvidenceBoost(match_score, category_scores, resume, jd);
 
         const out: AiEvaluationResult = {
           candidate_name: String(parsed.candidate_name || candidateNameHint || "Unknown").trim() || "Unknown",

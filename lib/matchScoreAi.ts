@@ -146,7 +146,7 @@ export async function scoreCandidatesBatchWithOpenAI(input: {
 
   const prompt = lite
     ? `You are a principal recruiter. Compare each FULL RESUME to the FULL JOB DESCRIPTION using semantic evidence — NOT keyword or skill-tag tallying.
-Treat equivalent experience as a match when the resume proves the work (e.g. campaign performance, funnel, CAC/ROAS, customer journey ≈ marketing analytics when JD asks for it).
+Treat equivalent experience as a match when the resume proves the work. For technical and AI roles, explicit LLM, agent, LangGraph, RAG, multi-LLM gateway, prompt engineering, model-orchestration, evaluation, or AI platform work should be treated as positive evidence, not generic backend noise.
 
 Score match_score 0–100 using: domain & role fit 20%, core role competencies 20%, measurable impact 15%, collaboration & stakeholder influence 15%, advanced methods / depth 10%, tools 10%, experience vs JD 10%.
 
@@ -185,7 +185,7 @@ ${candBlock}`
           {
             role: "system",
             content:
-              "You evaluate candidates for enterprise hiring: compare full resume text to the full job description. Use evidence from work history and outcomes; semantic equivalence allowed; no keyword tallying. JSON only.",
+              "You evaluate candidates for enterprise hiring: compare full resume text to the full job description. Use evidence from work history and outcomes; semantic equivalence allowed; no keyword tallying. For technical and AI roles, treat explicit LLM, agent, LangGraph, RAG, multi-LLM gateway, prompt engineering, model-orchestration, evaluation, or AI platform work as positive evidence when present. JSON only.",
           },
           { role: "user", content: prompt },
         ],

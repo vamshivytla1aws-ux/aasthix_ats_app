@@ -7,7 +7,7 @@ import { aiMatchingConfig } from "@/lib/config/aiMatching";
 import type { BatchCandidateIn } from "@/lib/aiMatcher/batchEvaluate";
 
 function batchModel(): string {
-  return process.env.MATCH_NARRATIVE_MODEL || process.env.MATCH_BATCH_OPENAI_MODEL || "gpt-4o-mini";
+  return process.env.MATCH_NARRATIVE_MODEL || process.env.MATCH_BATCH_OPENAI_MODEL || "gpt-4o";
 }
 
 const JD_MAX = 1_000;
@@ -54,7 +54,7 @@ export async function evaluateBatchNarrative(jdFull: string, candidates: BatchCa
       {
         role: "system" as const,
         content:
-          "You are a senior recruiter. For each candidate, give structured hiring insight. JSON only, no markdown.",
+          "You are a senior recruiter. For each candidate, give structured hiring insight using semantic evidence. Treat explicit AI/LLM, agent, LangGraph, RAG, and multi-model gateway work as real experience evidence, not generic backend noise. JSON only, no markdown.",
       },
       { role: "user" as const, content: userPrompt },
     ],
