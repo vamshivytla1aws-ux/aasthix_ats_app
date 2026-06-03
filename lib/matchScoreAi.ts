@@ -44,16 +44,11 @@ type CandidateSnippet = {
   resumeText?: string | null;
 };
 
-type AiTheme =
-  | "llm"
-  | "agent"
-  | "langgraph"
-  | "rag"
-  | "vector"
-  | "prompt"
-  | "voice"
-  | "realtime"
-  | "rest_api";
+type EvidenceRule = {
+  key: string;
+  label: string;
+  patterns: RegExp[];
+};
 
 function clampScore(n: unknown): number {
   const x = Number(n);
@@ -118,34 +113,117 @@ function scoreFromOverallOrLegacy(r: Record<string, unknown>): number {
   return clampScore(o);
 }
 
-const AI_THEME_RULES: Array<{ theme: AiTheme; pattern: RegExp; label: string }> = [
-  { theme: "llm", pattern: /\b(llm|large language model|openai|anthropic|gemini)\b/i, label: "LLM platforms and model integration" },
-  { theme: "agent", pattern: /\b(agent|agentic|multi-agent|orchestration)\b/i, label: "AI agents and orchestration" },
-  { theme: "langgraph", pattern: /\blanggraph\b/i, label: "LangGraph orchestration" },
-  { theme: "rag", pattern: /\b(rag|retrieval augmented generation|retrieval-augmented generation)\b/i, label: "RAG pipelines" },
-  { theme: "vector", pattern: /\b(vector db|vector database|vectordb|pinecone|weaviate|faiss|milvus|pgvector)\b/i, label: "Vector databases / semantic retrieval" },
-  { theme: "prompt", pattern: /\b(prompt engineering|prompting|prompt optimization)\b/i, label: "Prompt engineering" },
-  { theme: "voice", pattern: /\b(stt|tts|speech to text|text to speech|voice ai|voice bot|voice application)\b/i, label: "Voice / STT / TTS systems" },
-  { theme: "realtime", pattern: /\b(realtime|real-time|streaming audio|low-latency)\b/i, label: "Realtime AI systems" },
-  { theme: "rest_api", pattern: /\b(rest api|restful api|api gateway|microservice api)\b/i, label: "REST APIs for AI services" },
+const COMMON_EVIDENCE_RULES: EvidenceRule[] = [
+  { key: "react", label: "React", patterns: [/\breact(?:\.js|js)?\b/i, /\bnext\.?js\b/i] },
+  { key: "angular", label: "Angular", patterns: [/\bangular\b/i] },
+  { key: "vue", label: "Vue.js", patterns: [/\bvue(?:\.js|js)?\b/i] },
+  { key: "typescript", label: "TypeScript", patterns: [/\btypescript\b/i, /\bts\b/i] },
+  { key: "javascript", label: "JavaScript", patterns: [/\bjavascript\b/i, /\becmascript\b/i] },
+  { key: "node", label: "Node.js", patterns: [/\bnode(?:\.js|js)?\b/i, /\bexpress(?:\.js|js)?\b/i] },
+  { key: "python", label: "Python", patterns: [/\bpython\b/i, /\bfastapi\b/i, /\bdjango\b/i, /\bflask\b/i] },
+  { key: "java", label: "Java", patterns: [/\bjava\b/i, /\bspring boot\b/i, /\bspring\b/i] },
+  { key: "dotnet", label: ".NET / C#", patterns: [/\b\.net\b/i, /\bdotnet\b/i, /\bc#\b/i, /\basp\.?net\b/i] },
+  { key: "golang", label: "Go", patterns: [/\bgo(lang)?\b/i] },
+  { key: "php", label: "PHP", patterns: [/\bphp\b/i, /\blaravel\b/i] },
+  { key: "microservices", label: "Microservices", patterns: [/\bmicroservices?\b/i, /\bservice[-\s]?oriented\b/i] },
+  { key: "rest_api", label: "REST APIs", patterns: [/\brest(?:ful)? api(s)?\b/i, /\bapi gateway\b/i, /\bmicroservice api\b/i] },
+  { key: "graphql", label: "GraphQL", patterns: [/\bgraphql\b/i] },
+  { key: "aws", label: "AWS", patterns: [/\baws\b/i, /\bamazon web services\b/i, /\blambda\b/i, /\bec2\b/i, /\bs3\b/i] },
+  { key: "azure", label: "Azure", patterns: [/\bazure\b/i, /\bazure devops\b/i] },
+  { key: "gcp", label: "GCP", patterns: [/\bgcp\b/i, /\bgoogle cloud\b/i, /\bbigquery\b/i] },
+  { key: "docker", label: "Docker", patterns: [/\bdocker\b/i, /\bcontaineri[sz]ation\b/i] },
+  { key: "kubernetes", label: "Kubernetes", patterns: [/\bkubernetes\b/i, /\bk8s\b/i] },
+  { key: "terraform", label: "Terraform", patterns: [/\bterraform\b/i, /\binfrastructure as code\b/i] },
+  { key: "devops", label: "DevOps", patterns: [/\bdevops\b/i, /\bsre\b/i, /\bsite reliability\b/i] },
+  { key: "ci_cd", label: "CI/CD", patterns: [/\bci\/cd\b/i, /\bcontinuous integration\b/i, /\bcontinuous delivery\b/i, /\bjenkins\b/i, /\bgithub actions\b/i, /\bgitlab ci\b/i] },
+  { key: "sql", label: "SQL", patterns: [/\bsql\b/i, /\bpostgres(?:ql)?\b/i, /\bmysql\b/i, /\bsql server\b/i, /\boracle\b/i] },
+  { key: "data_engineering", label: "Data engineering", patterns: [/\bdata engineering\b/i, /\betl\b/i, /\belt\b/i, /\bdata pipeline(s)?\b/i] },
+  { key: "spark", label: "Apache Spark", patterns: [/\bspark\b/i, /\bpyspark\b/i] },
+  { key: "airflow", label: "Airflow", patterns: [/\bairflow\b/i] },
+  { key: "kafka", label: "Kafka", patterns: [/\bkafka\b/i] },
+  { key: "dbt", label: "dbt", patterns: [/\bdbt\b/i] },
+  { key: "snowflake", label: "Snowflake", patterns: [/\bsnowflake\b/i] },
+  { key: "salesforce", label: "Salesforce", patterns: [/\bsalesforce\b/i, /\bapex\b/i, /\blightning web components?\b/i, /\blwc\b/i, /\bvisualforce\b/i] },
+  { key: "qa", label: "QA / testing", patterns: [/\bqa\b/i, /\bquality assurance\b/i, /\btest automation\b/i, /\bmanual testing\b/i] },
+  { key: "selenium", label: "Selenium", patterns: [/\bselenium\b/i] },
+  { key: "cypress", label: "Cypress", patterns: [/\bcypress\b/i] },
+  { key: "playwright", label: "Playwright", patterns: [/\bplaywright\b/i] },
+  { key: "api_testing", label: "API testing", patterns: [/\bapi testing\b/i, /\bpostman\b/i, /\bsoapui\b/i] },
+  { key: "performance_testing", label: "Performance testing", patterns: [/\bperformance testing\b/i, /\bjmeter\b/i, /\bload testing\b/i] },
+  { key: "llm", label: "LLM platforms and model integration", patterns: [/\b(llm|large language model|openai|anthropic|gemini)\b/i] },
+  { key: "agent", label: "AI agents and orchestration", patterns: [/\b(agent|agentic|multi-agent|orchestration)\b/i] },
+  { key: "langgraph", label: "LangGraph orchestration", patterns: [/\blanggraph\b/i] },
+  { key: "rag", label: "RAG pipelines", patterns: [/\b(rag|retrieval augmented generation|retrieval-augmented generation)\b/i] },
+  { key: "vector", label: "Vector databases / semantic retrieval", patterns: [/\b(vector db|vector database|vectordb|pinecone|weaviate|faiss|milvus|pgvector)\b/i] },
+  { key: "prompt", label: "Prompt engineering", patterns: [/\b(prompt engineering|prompting|prompt optimization)\b/i] },
+  { key: "voice", label: "Voice / STT / TTS systems", patterns: [/\b(stt|tts|speech to text|text to speech|voice ai|voice bot|voice application)\b/i] },
+  { key: "realtime", label: "Realtime systems", patterns: [/\b(realtime|real-time|streaming audio|low-latency)\b/i] },
 ];
 
-function detectAiThemes(text: string): Set<AiTheme> {
-  const out = new Set<AiTheme>();
-  for (const rule of AI_THEME_RULES) {
-    if (rule.pattern.test(text)) out.add(rule.theme);
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildPhrasePattern(phrase: string): RegExp | null {
+  const cleaned = phrase
+    .trim()
+    .replace(/[+/]/g, " ")
+    .replace(/\s+/g, " ");
+  if (cleaned.length < 3) return null;
+  const parts = cleaned
+    .split(" ")
+    .map((part) => escapeRegex(part))
+    .filter(Boolean);
+  if (!parts.length) return null;
+  return new RegExp(`\\b${parts.join("[\\\\s\\\\-_.]*")}\\b`, "i");
+}
+
+function deriveRelevantEvidenceRules(input: {
+  jobTitle: string;
+  jobDescriptionExcerpt: string;
+  mustHave: string[];
+  niceToHave: string[];
+  keywords: string[];
+}): EvidenceRule[] {
+  const jdCorpus = [
+    input.jobTitle,
+    input.jobDescriptionExcerpt,
+    ...input.mustHave,
+    ...input.niceToHave,
+    ...input.keywords,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const rules = COMMON_EVIDENCE_RULES.filter((rule) => rule.patterns.some((pattern) => pattern.test(jdCorpus)));
+  const directHints = [...input.mustHave, ...input.niceToHave, ...input.keywords]
+    .map((hint) => hint.trim())
+    .filter((hint) => hint.length >= 3)
+    .slice(0, 64);
+  for (const hint of directHints) {
+    if (rules.some((rule) => rule.label.toLowerCase() === hint.toLowerCase())) continue;
+    const pattern = buildPhrasePattern(hint);
+    if (!pattern) continue;
+    rules.push({ key: `hint:${hint.toLowerCase()}`, label: hint, patterns: [pattern] });
+  }
+  return rules;
+}
+
+function detectRuleMatches(text: string, rules: EvidenceRule[]): Set<string> {
+  const out = new Set<string>();
+  for (const rule of rules) {
+    if (rule.patterns.some((pattern) => pattern.test(text))) out.add(rule.key);
   }
   return out;
 }
 
-function extractAiEvidenceHighlights(text: string, limit = 6): string[] {
+function extractEvidenceHighlights(text: string, rules: EvidenceRule[], limit = 6): string[] {
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter((line) => line.length >= 12);
   const picked: string[] = [];
   for (const line of lines) {
-    if (!AI_THEME_RULES.some((rule) => rule.pattern.test(line))) continue;
+    if (!rules.some((rule) => rule.patterns.some((pattern) => pattern.test(line)))) continue;
     if (picked.some((existing) => existing.toLowerCase() === line.toLowerCase())) continue;
     picked.push(line.slice(0, 180));
     if (picked.length >= limit) break;
@@ -153,21 +231,14 @@ function extractAiEvidenceHighlights(text: string, limit = 6): string[] {
   return picked;
 }
 
-function aiThemeLabels(themes: Set<AiTheme>): string[] {
-  return AI_THEME_RULES.filter((rule) => themes.has(rule.theme)).map((rule) => rule.label);
+function matchedRuleLabels(keys: Set<string>, rules: EvidenceRule[]): string[] {
+  return rules.filter((rule) => keys.has(rule.key)).map((rule) => rule.label);
 }
 
-function gapMatchesAiTheme(gap: string, themes: Set<AiTheme>): boolean {
+function gapMatchesRule(gap: string, rule: EvidenceRule): boolean {
   const normalized = gap.toLowerCase();
-  if ((normalized.includes("llm") || normalized.includes("large language")) && themes.has("llm")) return true;
-  if (normalized.includes("agent") && themes.has("agent")) return true;
-  if (normalized.includes("langgraph") && themes.has("langgraph")) return true;
-  if ((normalized.includes("rag") || normalized.includes("retrieval")) && themes.has("rag")) return true;
-  if (normalized.includes("vector") && themes.has("vector")) return true;
-  if (normalized.includes("prompt") && themes.has("prompt")) return true;
-  if ((normalized.includes("voice") || normalized.includes("stt") || normalized.includes("tts")) && themes.has("voice")) return true;
-  if ((normalized.includes("real-time") || normalized.includes("realtime")) && themes.has("realtime")) return true;
-  if ((normalized.includes("rest") || normalized.includes("api")) && themes.has("rest_api")) return true;
+  if (normalized.includes(rule.label.toLowerCase())) return true;
+  if (rule.patterns.some((pattern) => pattern.test(gap))) return true;
   return false;
 }
 
@@ -205,7 +276,7 @@ export async function scoreCandidatesBatchWithOpenAI(input: {
     })
     .join("\n\n---\n\n");
   const candidateById = new Map(input.candidates.map((candidate) => [candidate.id, candidate]));
-  const jdAiThemes = detectAiThemes(input.jobDescriptionExcerpt);
+  const relevantEvidenceRules = deriveRelevantEvidenceRules(input);
 
   /** Default: enterprise full rubric (JD + resume). Set MATCH_AI_LITE=1 for smaller JSON / faster batches. */
   const lite = process.env.MATCH_AI_LITE === "1";
@@ -215,7 +286,7 @@ export async function scoreCandidatesBatchWithOpenAI(input: {
 
   const prompt = lite
     ? `You are a principal recruiter. Compare each FULL RESUME to the FULL JOB DESCRIPTION using semantic evidence — NOT keyword or skill-tag tallying.
-Treat equivalent experience as a match when the resume proves the work. For technical and AI roles, explicit LLM, agent, LangGraph, RAG, multi-LLM gateway, prompt engineering, model-orchestration, evaluation, or AI platform work should be treated as positive evidence, not generic backend noise.
+Treat equivalent experience as a match when the resume proves the work. Across frontend, backend, cloud, DevOps, data, QA, Salesforce, APIs, and AI roles, explicit proven experience should be treated as positive evidence, not generic noise.
 
 Score match_score 0–100 using: domain & role fit 20%, core role competencies 20%, measurable impact 15%, collaboration & stakeholder influence 15%, advanced methods / depth 10%, tools 10%, experience vs JD 10%.
 
@@ -254,7 +325,7 @@ ${candBlock}`
           {
             role: "system",
             content:
-              "You evaluate candidates for enterprise hiring: compare full resume text to the full job description. Use evidence from work history and outcomes; semantic equivalence allowed; no keyword tallying. For technical and AI roles, treat explicit LLM, agent, LangGraph, RAG, multi-LLM gateway, prompt engineering, model-orchestration, evaluation, or AI platform work as positive evidence when present. JSON only.",
+              "You evaluate candidates for enterprise hiring: compare full resume text to the full job description. Use evidence from work history and outcomes; semantic equivalence allowed; no keyword tallying. Treat explicit proven experience across engineering, frontend, backend, cloud, DevOps, data, QA, Salesforce, APIs, and AI as positive evidence when present. JSON only.",
           },
           { role: "user", content: prompt },
         ],
@@ -286,8 +357,8 @@ ${candBlock}`
       if (!Number.isFinite(id)) continue;
       const candidate = candidateById.get(id);
       const resumeText = String(candidate?.resumeText || candidate?.skills || "");
-      const resumeAiThemes = detectAiThemes(resumeText);
-      const aiEvidenceHighlights = extractAiEvidenceHighlights(resumeText, 4);
+      const resumeEvidenceKeys = detectRuleMatches(resumeText, relevantEvidenceRules);
+      const evidenceHighlights = extractEvidenceHighlights(resumeText, relevantEvidenceRules, 4);
       const strengths = strList(r.strengths).slice(0, 8);
       const gaps = strList(r.gaps).slice(0, 8);
       let matched = strList(r.matched_skills);
@@ -340,33 +411,33 @@ ${candBlock}`
       const modelOverall = scoreFromOverallOrLegacy(r);
       let overallScore = reconcileOverallPercentage(modelOverall, category_scores);
 
-      if (jdAiThemes.size > 0 && resumeAiThemes.size > 0) {
-        const correctedMissing = missing.filter((gap) => !gapMatchesAiTheme(gap, resumeAiThemes));
+      if (relevantEvidenceRules.length > 0 && resumeEvidenceKeys.size > 0) {
+        const provenRules = relevantEvidenceRules.filter((rule) => resumeEvidenceKeys.has(rule.key));
+        const correctedMissing = missing.filter((gap) => !provenRules.some((rule) => gapMatchesRule(gap, rule)));
         const removedFalseGaps = missing.length - correctedMissing.length;
         if (removedFalseGaps > 0) {
           missing = correctedMissing;
-          const correctedGaps = gaps.filter((gap) => !gapMatchesAiTheme(gap, resumeAiThemes));
+          const correctedGaps = gaps.filter((gap) => !provenRules.some((rule) => gapMatchesRule(gap, rule)));
           if (correctedGaps.length !== gaps.length) {
             gaps.length = 0;
             gaps.push(...correctedGaps);
           }
         }
 
-        const alignedThemes = [...resumeAiThemes].filter((theme) => jdAiThemes.has(theme));
-        if (alignedThemes.length > 0) {
-          const alignedLabels = aiThemeLabels(new Set(alignedThemes));
+        if (provenRules.length > 0) {
+          const alignedLabels = matchedRuleLabels(new Set(provenRules.map((rule) => rule.key)), relevantEvidenceRules);
           for (const label of alignedLabels) {
             if (!matched.some((item) => item.toLowerCase() === label.toLowerCase())) {
               matched.push(label);
             }
           }
-          for (const evidence of aiEvidenceHighlights) {
+          for (const evidence of evidenceHighlights) {
             if (!matched.some((item) => item.toLowerCase() === evidence.toLowerCase())) {
               matched.push(evidence);
             }
           }
-          const aiBonus = Math.min(18, alignedThemes.length * 4 + (removedFalseGaps > 0 ? 4 : 0));
-          overallScore = Math.min(100, overallScore + aiBonus);
+          const evidenceBonus = Math.min(20, provenRules.length * 3 + (removedFalseGaps > 0 ? 4 : 0));
+          overallScore = Math.min(100, overallScore + evidenceBonus);
         }
       }
 
@@ -380,7 +451,7 @@ ${candBlock}`
         else if (overallScore >= 65) recruiter_decision = "Hold";
         else recruiter_decision = "Reject";
       }
-      const surfacedStrengths = [...strengths, ...aiEvidenceHighlights]
+      const surfacedStrengths = [...strengths, ...evidenceHighlights]
         .filter((value, index, array) => array.findIndex((item) => item.toLowerCase() === value.toLowerCase()) === index)
         .slice(0, 8);
 
