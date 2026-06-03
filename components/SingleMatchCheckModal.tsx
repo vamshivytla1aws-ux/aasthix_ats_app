@@ -744,6 +744,26 @@ export default function SingleMatchCheckModal({
               loading={modalHistoryLoading}
               compact
               migrationRequired={modalHistoryMigration}
+              onRefreshRequested={loadModalHistory}
+              onRecomputeComplete={(run, response) => {
+                setSelectedId(run.candidate_id);
+                setSelectedRecord((current) =>
+                  current?.id === run.candidate_id
+                    ? current
+                    : {
+                        id: run.candidate_id,
+                        full_name: run.candidate_full_name,
+                        email: null,
+                        location: null,
+                      }
+                );
+                setUseAI(run.use_ai);
+                setLastUseAI(run.use_ai);
+                setRunError(null);
+                setLoadedFromHistoryAt(null);
+                setResult(response.result);
+                void onHistorySaved?.();
+              }}
             />
           </div>
         </div>

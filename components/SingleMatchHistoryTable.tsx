@@ -1,7 +1,12 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import type { SingleMatchCheckResultPayload, SingleMatchHistoryRun } from "@/lib/singleMatch/types";
+import { apiFetchJson, ApiError } from "@/lib/apiClient";
+import type {
+  SingleMatchCheckApiResponse,
+  SingleMatchCheckResultPayload,
+  SingleMatchHistoryRun,
+} from "@/lib/singleMatch/types";
 import { SingleMatchResultDetails } from "@/components/SingleMatchResultDetails";
 import { Loader2 } from "lucide-react";
 
@@ -81,6 +86,8 @@ export function SingleMatchHistoryTable({
   migrationRequired,
   onSelectRun,
   selectedRunId,
+  onRecomputeComplete,
+  onRefreshRequested,
 }: {
   runs: SingleMatchHistoryRun[];
   loading?: boolean;
@@ -88,8 +95,12 @@ export function SingleMatchHistoryTable({
   migrationRequired?: boolean;
   onSelectRun?: (run: SingleMatchHistoryRun) => void;
   selectedRunId?: number;
+  onRecomputeComplete?: (run: SingleMatchHistoryRun, response: SingleMatchCheckApiResponse) => void | Promise<void>;
+  onRefreshRequested?: () => void | Promise<void>;
 }) {
   const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
+  const [recomputeRunId, setRecomputeRunId] = useState<number | null>(null);
+  const [tableError, setTableError] = useState<string | null>(null);
   const activeRunId = selectedRunId ?? expandedRunId;
 
   const activeRun = useMemo(
@@ -103,6 +114,27 @@ export function SingleMatchHistoryTable({
       return;
     }
     setExpandedRunId((current) => (current === run.id ? null : run.id));
+  };
+
+  const handleRecompute = async (run: SingleMatchHistoryRun, event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    setTableError(null);
+    setRecomputeRunId(run.id);
+    try {
+      const response = await apiFetchJson<SingleMatchCheckApiResponse>(`/api/jobs/${run.job_id}/single-match-check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ candidateId: run.candidate_id, useAI: run.use_ai }),
+      });
+      await onRefreshRequested?.();
+      await onRecomputeComplete?.(run, response);
+    } catch (error: unknown) {
+      const message =
+        error instanceof ApiError ? error.message : error instanceof Error ? error.message : "Failed to recompute match";
+      setTableError(message);
+    } finally {
+      setRecomputeRunId(null);
+    }
   };
 
   if (migrationRequired) {
@@ -134,6 +166,9 @@ export function SingleMatchHistoryTable({
 
   return (
     <div className="space-y-3">
+      {tableError ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">{tableError}</div>
+      ) : null}
       <div className={`${compact ? "max-h-52" : "max-h-[min(50vh,420px)]"} overflow-auto rounded-xl border border-slate-200`}>
         <table className={`${compact ? "w-full text-left text-xs" : "min-w-[920px] w-full text-left text-sm"}`}>
           <thead className={`${compact ? "text-[10px]" : "text-xs"} sticky top-0 z-10 bg-slate-50 font-semibold uppercase text-slate-500`}>
@@ -153,14 +188,10 @@ export function SingleMatchHistoryTable({
                 </>
               ) : null}
               <th className={`${compact ? "px-2 py-2" : "px-3 py-2"}`}>Decision</th>
-              {!compact ? (
-                <>
-                  <th className="px-3 py-2">Matched</th>
-                  <th className="px-3 py-2">Gaps</th>
-                  <th className="min-w-[180px] px-3 py-2">Summary</th>
-                  <th className="px-3 py-2">Action</th>
-                </>
-              ) : null}
+              {!compact ? <th className="px-3 py-2">Matched</th> : null}
+              {!compact ? <th className="px-3 py-2">Gaps</th> : null}
+              {!compact ? <th className="min-w-[180px] px-3 py-2">Summary</th> : null}
+              <th className={`${compact ? "px-2 py-2" : "px-3 py-2"}`}>Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -213,9 +244,23 @@ export function SingleMatchHistoryTable({
                         {(r.summary || r.reasoning || "—").slice(0, 160)}
                         {(r.summary || r.reasoning || "").length > 160 ? "…" : ""}
                       </td>
-                      <td className="px-3 py-2 text-xs font-semibold text-indigo-700">{selected ? "Open" : "View"}</td>
                     </>
                   ) : null}
+                  <td className={`${compact ? "px-2 py-1.5" : "px-3 py-2"} whitespace-nowrap`}>
+                    <div className="flex items-center gap-2">
+                      {!compact ? (
+                        <span className="text-xs font-semibold text-indigo-700">{selected ? "Open" : "View"}</span>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={(event) => void handleRecompute(r, event)}
+                        disabled={recomputeRunId === r.id}
+                        className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {recomputeRunId === r.id ? "Recomputing..." : "Recompute"}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
