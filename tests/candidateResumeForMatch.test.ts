@@ -11,16 +11,21 @@ vi.mock("@/lib/resumeParser", () => ({
 import { resolveCandidateResumeForMatchDetailed } from "@/lib/candidateResumeForMatch";
 
 const uploadsDir = path.join(process.cwd(), "public", "uploads");
+const uploadsResumeDir = path.join(uploadsDir, "resumes");
 const sampleResumePath = path.join(uploadsDir, "vitest-resume.pdf");
+const sampleResumeApiPath = path.join(uploadsResumeDir, "vitest-resume.pdf");
 
 describe("resolveCandidateResumeForMatchDetailed", () => {
   beforeEach(async () => {
     await mkdir(uploadsDir, { recursive: true });
+    await mkdir(uploadsResumeDir, { recursive: true });
     await writeFile(sampleResumePath, Buffer.from("fake pdf bytes"));
+    await writeFile(sampleResumeApiPath, Buffer.from("fake pdf bytes"));
   });
 
   afterEach(async () => {
     await rm(sampleResumePath, { force: true });
+    await rm(sampleResumeApiPath, { force: true });
   });
 
   it("prefers uploaded resume file in single-candidate scoring mode", async () => {
@@ -31,6 +36,26 @@ describe("resolveCandidateResumeForMatchDetailed", () => {
         skills: "Python, AWS",
         location: "Bangalore",
         resume_url: "/uploads/vitest-resume.pdf",
+        resume_text: "Short stale stored text only.",
+        experience_summary: "Summary fallback",
+      },
+      new Map(),
+      { preferUploadedFile: true }
+    );
+
+    expect(result.source).toBe("uploaded_resume_file");
+    expect(result.charCount).toBeGreaterThan(100);
+    expect(result.text).toContain("LangGraph");
+  });
+
+  it("can resolve uploaded resumes stored through the authenticated /api/resume path", async () => {
+    const result = await resolveCandidateResumeForMatchDetailed(
+      {
+        id: 11,
+        full_name: "Harshit",
+        skills: "Python, AWS",
+        location: "Delhi",
+        resume_url: "/api/resume/vitest-resume.pdf",
         resume_text: "Short stale stored text only.",
         experience_summary: "Summary fallback",
       },

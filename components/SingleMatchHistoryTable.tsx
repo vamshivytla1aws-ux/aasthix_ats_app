@@ -1,6 +1,8 @@
 "use client";
 
-import type { SingleMatchHistoryRun } from "@/lib/singleMatch/types";
+import React, { useMemo, useState } from "react";
+import type { SingleMatchCheckResultPayload, SingleMatchHistoryRun } from "@/lib/singleMatch/types";
+import { SingleMatchResultDetails } from "@/components/SingleMatchResultDetails";
 import { Loader2 } from "lucide-react";
 
 function decisionBadgeClass(d: string | null | undefined): string {
@@ -33,17 +35,76 @@ function modeLabel(useAi: boolean, row: SingleMatchHistoryRun): string {
   return "No-AI";
 }
 
+function toPayload(run: SingleMatchHistoryRun): SingleMatchCheckResultPayload {
+  return {
+    match_score: run.match_score,
+    match_score_no_ai: run.match_score_no_ai,
+    ai_match_score: run.ai_match_score,
+    decision: run.decision,
+    decision_no_ai: run.decision_no_ai,
+    ai_decision: run.ai_decision,
+    matched_skills: run.matched_skills,
+    missing_required_skills: run.missing_required_skills,
+    reasoning: run.reasoning,
+    summary: run.summary,
+    resume_source: run.resume_source,
+    resume_chars_scored: run.resume_chars_scored ?? null,
+    jd_chars_scored: run.jd_chars_scored ?? null,
+    ai_evidence_highlights: run.ai_evidence_highlights ?? [],
+    requirement_breakdown: run.requirement_breakdown ?? [],
+    confidence_score: run.confidence_score ?? null,
+    confidence_reasons: run.confidence_reasons ?? [],
+    resume_quality_flags: run.resume_quality_flags ?? [],
+    decision_drivers: run.decision_drivers ?? [],
+    risk_flags: run.risk_flags ?? [],
+    interview_focus_areas: run.interview_focus_areas ?? [],
+    follow_up_questions: run.follow_up_questions ?? [],
+    recommended_next_step: run.recommended_next_step ?? null,
+    evidence_quality: run.evidence_quality ?? null,
+    fit_level: run.fit_level ?? null,
+    score_breakdown: run.score_breakdown ?? null,
+    partial_matches: run.partial_matches ?? [],
+    missing_nice_to_have_requirements: run.missing_nice_to_have_requirements ?? [],
+    critical_unknowns: run.critical_unknowns ?? [],
+    red_flags: run.red_flags ?? [],
+    recruiter_summary: run.recruiter_summary ?? null,
+    candidate_feedback: run.candidate_feedback ?? null,
+    debug_requirements: run.debug_requirements ?? [],
+    developer_debug: run.developer_debug ?? undefined,
+  };
+}
+
 export function SingleMatchHistoryTable({
   runs,
   loading,
   compact,
   migrationRequired,
+  onSelectRun,
+  selectedRunId,
 }: {
   runs: SingleMatchHistoryRun[];
   loading?: boolean;
   compact?: boolean;
   migrationRequired?: boolean;
+  onSelectRun?: (run: SingleMatchHistoryRun) => void;
+  selectedRunId?: number;
 }) {
+  const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
+  const activeRunId = selectedRunId ?? expandedRunId;
+
+  const activeRun = useMemo(
+    () => runs.find((run) => run.id === activeRunId) ?? null,
+    [runs, activeRunId]
+  );
+
+  const handleSelect = (run: SingleMatchHistoryRun) => {
+    if (onSelectRun) {
+      onSelectRun(run);
+      return;
+    }
+    setExpandedRunId((current) => (current === run.id ? null : run.id));
+  };
+
   if (migrationRequired) {
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -71,106 +132,104 @@ export function SingleMatchHistoryTable({
     );
   }
 
-  if (compact) {
-    return (
-      <div className="max-h-52 overflow-auto rounded-lg border border-slate-200">
-        <table className="w-full text-left text-xs">
-          <thead className="sticky top-0 bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
+  return (
+    <div className="space-y-3">
+      <div className={`${compact ? "max-h-52" : "max-h-[min(50vh,420px)]"} overflow-auto rounded-xl border border-slate-200`}>
+        <table className={`${compact ? "w-full text-left text-xs" : "min-w-[920px] w-full text-left text-sm"}`}>
+          <thead className={`${compact ? "text-[10px]" : "text-xs"} sticky top-0 z-10 bg-slate-50 font-semibold uppercase text-slate-500`}>
             <tr>
-              <th className="px-2 py-2">When</th>
-              <th className="px-2 py-2">Candidate</th>
-              <th className="px-2 py-2">Mode</th>
-              <th className="px-2 py-2">Score</th>
-              <th className="px-2 py-2">Decision</th>
+              <th className={`${compact ? "px-2 py-2" : "whitespace-nowrap px-3 py-2"}`}>When</th>
+              <th className={`${compact ? "px-2 py-2" : "px-3 py-2"}`}>Candidate</th>
+              <th className={`${compact ? "px-2 py-2" : "px-3 py-2"}`}>Mode</th>
+              <th className={`${compact ? "px-2 py-2" : "px-3 py-2"}`}>Overall</th>
+              {!compact ? (
+                <>
+                  <th className="px-3 py-2">
+                    No-AI <span className="block font-normal normal-case text-violet-600">%</span>
+                  </th>
+                  <th className="px-3 py-2">
+                    AI <span className="block font-normal normal-case text-indigo-600">%</span>
+                  </th>
+                </>
+              ) : null}
+              <th className={`${compact ? "px-2 py-2" : "px-3 py-2"}`}>Decision</th>
+              {!compact ? (
+                <>
+                  <th className="px-3 py-2">Matched</th>
+                  <th className="px-3 py-2">Gaps</th>
+                  <th className="min-w-[180px] px-3 py-2">Summary</th>
+                  <th className="px-3 py-2">Action</th>
+                </>
+              ) : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {runs.map((r) => (
-              <tr key={r.id} className="bg-white">
-                <td className="whitespace-nowrap px-2 py-1.5 text-slate-600">{formatWhen(r.created_at)}</td>
-                <td className="px-2 py-1.5 font-medium text-slate-900">{r.candidate_full_name}</td>
-                <td className="px-2 py-1.5 text-slate-600">{modeLabel(r.use_ai, r)}</td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-slate-800">{r.match_score}%</td>
-                <td className="px-2 py-1.5">
-                  {r.decision ? (
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${decisionBadgeClass(r.decision)}`}>
-                      {r.decision}
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-              </tr>
-            ))}
+            {runs.map((r) => {
+              const selected = activeRunId === r.id;
+              return (
+                <tr
+                  key={r.id}
+                  className={`align-top ${selected ? "bg-indigo-50/60" : "bg-white"} ${onSelectRun ? "cursor-pointer" : ""}`}
+                  onClick={() => handleSelect(r)}
+                >
+                  <td className={`${compact ? "whitespace-nowrap px-2 py-1.5" : "whitespace-nowrap px-3 py-2"} text-slate-600`}>
+                    {formatWhen(r.created_at)}
+                  </td>
+                  <td className={`${compact ? "px-2 py-1.5" : "px-3 py-2"} font-medium text-slate-900`}>
+                    {r.candidate_full_name}
+                  </td>
+                  <td className={`${compact ? "px-2 py-1.5" : "px-3 py-2"} text-slate-700`}>{modeLabel(r.use_ai, r)}</td>
+                  <td className={`${compact ? "whitespace-nowrap px-2 py-1.5" : "px-3 py-2"} font-semibold text-slate-900`}>
+                    {r.match_score}%
+                  </td>
+                  {!compact ? (
+                    <>
+                      <td className="px-3 py-2 text-violet-800">{r.match_score_no_ai != null ? `${r.match_score_no_ai}%` : "—"}</td>
+                      <td className="px-3 py-2 text-indigo-800">{r.ai_match_score != null ? `${Math.round(r.ai_match_score)}%` : "—"}</td>
+                    </>
+                  ) : null}
+                  <td className={`${compact ? "px-2 py-1.5" : "px-3 py-2"}`}>
+                    {r.decision ? (
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${decisionBadgeClass(r.decision)}`}>
+                        {r.decision}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  {!compact ? (
+                    <>
+                      <td className="max-w-[140px] px-3 py-2 text-xs text-slate-600" title={r.matched_skills.join(", ")}>
+                        {r.matched_skills.length
+                          ? `${r.matched_skills.length} · ${r.matched_skills.slice(0, 3).join(", ")}${r.matched_skills.length > 3 ? "…" : ""}`
+                          : "—"}
+                      </td>
+                      <td className="max-w-[140px] px-3 py-2 text-xs text-slate-600" title={r.missing_required_skills.join(", ")}>
+                        {r.missing_required_skills.length
+                          ? `${r.missing_required_skills.length} · ${r.missing_required_skills.slice(0, 3).join(", ")}${r.missing_required_skills.length > 3 ? "…" : ""}`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-600">
+                        {(r.summary || r.reasoning || "—").slice(0, 160)}
+                        {(r.summary || r.reasoning || "").length > 160 ? "…" : ""}
+                      </td>
+                      <td className="px-3 py-2 text-xs font-semibold text-indigo-700">{selected ? "Open" : "View"}</td>
+                    </>
+                  ) : null}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
-    );
-  }
 
-  return (
-    <div className="max-h-[min(50vh,420px)] overflow-auto rounded-xl border border-slate-200">
-      <table className="min-w-[920px] w-full text-left text-sm">
-        <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
-          <tr>
-            <th className="whitespace-nowrap px-3 py-2">When</th>
-            <th className="px-3 py-2">Candidate</th>
-            <th className="px-3 py-2">Mode</th>
-            <th className="px-3 py-2">Overall</th>
-            <th className="px-3 py-2">
-              No-AI <span className="block font-normal normal-case text-violet-600">%</span>
-            </th>
-            <th className="px-3 py-2">
-              AI <span className="block font-normal normal-case text-indigo-600">%</span>
-            </th>
-            <th className="px-3 py-2">Decision</th>
-            <th className="px-3 py-2">
-              No-AI <span className="block font-normal normal-case text-slate-500">decision</span>
-            </th>
-            <th className="px-3 py-2">
-              AI <span className="block font-normal normal-case text-indigo-600">decision</span>
-            </th>
-            <th className="px-3 py-2">Matched</th>
-            <th className="px-3 py-2">Gaps</th>
-            <th className="min-w-[180px] px-3 py-2">Summary</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {runs.map((r) => (
-            <tr key={r.id} className="bg-white align-top">
-              <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-600">{formatWhen(r.created_at)}</td>
-              <td className="px-3 py-2 text-sm font-medium text-slate-900">{r.candidate_full_name}</td>
-              <td className="px-3 py-2 text-xs text-slate-700">{modeLabel(r.use_ai, r)}</td>
-              <td className="px-3 py-2 font-semibold text-slate-900">{r.match_score}%</td>
-              <td className="px-3 py-2 text-violet-800">{r.match_score_no_ai != null ? `${r.match_score_no_ai}%` : "—"}</td>
-              <td className="px-3 py-2 text-indigo-800">{r.ai_match_score != null ? `${Math.round(r.ai_match_score)}%` : "—"}</td>
-              <td className="px-3 py-2">
-                {r.decision ? (
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${decisionBadgeClass(r.decision)}`}>
-                    {r.decision}
-                  </span>
-                ) : (
-                  "—"
-                )}
-              </td>
-              <td className="px-3 py-2 text-xs text-slate-700">{r.decision_no_ai || "—"}</td>
-              <td className="px-3 py-2 text-xs text-indigo-900">{r.ai_decision || "—"}</td>
-              <td className="max-w-[140px] px-3 py-2 text-xs text-slate-600" title={r.matched_skills.join(", ")}>
-                {r.matched_skills.length ? `${r.matched_skills.length} · ${r.matched_skills.slice(0, 3).join(", ")}${r.matched_skills.length > 3 ? "…" : ""}` : "—"}
-              </td>
-              <td className="max-w-[140px] px-3 py-2 text-xs text-slate-600" title={r.missing_required_skills.join(", ")}>
-                {r.missing_required_skills.length
-                  ? `${r.missing_required_skills.length} · ${r.missing_required_skills.slice(0, 3).join(", ")}${r.missing_required_skills.length > 3 ? "…" : ""}`
-                  : "—"}
-              </td>
-              <td className="px-3 py-2 text-xs text-slate-600">
-                {(r.summary || r.reasoning || "—").slice(0, 160)}
-                {(r.summary || r.reasoning || "").length > 160 ? "…" : ""}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {activeRun ? (
+        <SingleMatchResultDetails
+          result={toPayload(activeRun)}
+          modeLabel={modeLabel(activeRun.use_ai, activeRun)}
+          loadedFromHistoryAt={activeRun.created_at}
+        />
+      ) : null}
     </div>
   );
 }

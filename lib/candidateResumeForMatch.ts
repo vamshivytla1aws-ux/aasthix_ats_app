@@ -43,6 +43,17 @@ async function readCached(
   return p;
 }
 
+function localResumePathFromUrl(url: string | null | undefined): string | null {
+  const raw = String(url || "").trim().replace(/\\/g, "/");
+  if (!raw) return null;
+  if (raw.startsWith("/uploads/")) return raw;
+  if (raw.startsWith("uploads/")) return `/${raw}`;
+  if (raw.startsWith("/public/uploads/")) return raw.replace(/^\/public/i, "");
+  const apiResume = raw.match(/^\/api\/resume\/(.+)$/i);
+  if (apiResume?.[1]) return `/uploads/resumes/${apiResume[1].replace(/^\/+/, "")}`;
+  return null;
+}
+
 /**
  * Resolve the best available resume source for match scoring.
  * In single-candidate checks we can prefer the uploaded resume file; otherwise we
@@ -62,8 +73,8 @@ export async function resolveCandidateResumeForMatchDetailed(
   opts?: { preferUploadedFile?: boolean }
 ): Promise<ResolvedCandidateResumeForMatch> {
   const stored = (row.resume_text || "").trim();
-  const url = row.resume_url?.trim();
-  const shouldTryFile = Boolean(url && url.startsWith("/uploads/"));
+  const url = localResumePathFromUrl(row.resume_url);
+  const shouldTryFile = Boolean(url);
 
   if (opts?.preferUploadedFile && shouldTryFile) {
     const fromFile = (await readCached(url!, cache)).trim();
