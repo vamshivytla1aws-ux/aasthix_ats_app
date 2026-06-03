@@ -50,7 +50,7 @@ type JobStats = {
 };
 
 function AiCandidateHistorySummaryCard({ jobId, onReviewQuestions }: { jobId: number; onReviewQuestions: () => void }) {
-  const { data, isLoading } = useSWR<{ runs: any[]; migration_required?: boolean }>(`/api/jobs/${jobId}/single-match-check/history`);
+  const { data, isLoading, mutate } = useSWR<{ runs: any[]; migration_required?: boolean }>(`/api/jobs/${jobId}/single-match-check/history`);
   const rows = data?.runs ?? [];
 
   if (isLoading) {
@@ -82,7 +82,17 @@ function AiCandidateHistorySummaryCard({ jobId, onReviewQuestions }: { jobId: nu
         </button>
       </div>
       <div className="mt-3">
-        <SingleMatchHistoryTable runs={rows as any[]} loading={isLoading} migrationRequired={Boolean(data?.migration_required)} />
+        <SingleMatchHistoryTable
+          runs={rows as any[]}
+          loading={isLoading}
+          migrationRequired={Boolean(data?.migration_required)}
+          onRefreshRequested={async () => {
+            await mutate();
+          }}
+          onRecomputeComplete={async () => {
+            await mutate();
+          }}
+        />
       </div>
     </div>
   );

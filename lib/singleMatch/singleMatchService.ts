@@ -7,6 +7,7 @@
  */
 import { query } from "@/lib/db";
 import { resolveCandidateResumeForMatchDetailed } from "@/lib/candidateResumeForMatch";
+import { refreshResumeEmbeddingForCandidate } from "@/lib/candidates/refreshResumeEmbedding";
 import { extractSkillsRuleBased } from "@/lib/jdSkillExtraction";
 import { scoreCandidatesBatchWithOpenAI } from "@/lib/matchScoreAi";
 import { runLocalNoAiMatcher, validateLocalResults } from "@/lib/noAiMatch/localMatcher";
@@ -25,7 +26,10 @@ type JobRow = {
 
 type CandidateDbRow = {
   id: number;
+  email: string | null;
   skills: string | null;
+  skillset: string[] | null;
+  created_by_user_id: number | null;
   resume_url: string | null;
   resume_text: string | null;
   experience_summary: string | null;
@@ -67,9 +71,18 @@ function buildSkillHintsForAi(jobRow: JobRow, jd: string): {
 
 function withResumeSourceWarning(
   text: string | null | undefined,
-  source: "stored_resume_text" | "uploaded_resume_file" | "experience_summary_or_skills" | "none"
+  source: "stored_resume_text" | "uploaded_resume_file" | "experience_summary_or_skills" | "none",
+  recovery?: {
+    attempted?: boolean;
+    succeeded?: boolean;
+    reason?: string | null;
+  } | null
 ): string | null {
   const base = (text || "").trim();
+  if (recovery?.attempted && !recovery.succeeded && source !== "uploaded_resume_file") {
+    const warning = `Resume recovery note: scored from fallback profile text; percentage and gaps are not trustworthy until full resume recovery succeeds.${recovery.reason ? ` ${recovery.reason}` : ""}`;
+    return base ? `${base}\n\n${warning}` : warning;
+  }
   if (source === "experience_summary_or_skills") {
     const warning =
       "Confidence note: this score used fallback experience summary / skills text instead of a parsed uploaded resume, so gaps may reflect incomplete source material.";
@@ -129,7 +142,10 @@ export async function runSingleMatchCheck(opts: {
     `
     SELECT
       c.id,
+      c.email,
       c.skills,
+      c.skillset,
+      c.created_by_user_id,
       c.resume_url,
       c.resume_text,
       c.experience_summary,
@@ -151,8 +167,11 @@ export async function runSingleMatchCheck(opts: {
     {
       id: candRow.id,
       full_name: candRow.full_name,
+      email: candRow.email,
       skills: candRow.skills,
+      skillset: candRow.skillset,
       location: candRow.location,
+      created_by_user_id: candRow.created_by_user_id,
       resume_url: candRow.resume_url,
       resume_text: candRow.resume_text,
       experience_summary: candRow.experience_summary,
@@ -161,6 +180,33 @@ export async function runSingleMatchCheck(opts: {
     { preferUploadedFile: true }
   );
   const resume = resolvedResume.text;
+  const recovery = resolvedResume.recovery ?? null;
+
+  if (
+    recovery?.succeeded &&
+    resolvedResume.source === "uploaded_resume_file" &&
+    candRow.created_by_user_id != null &&
+    (resolvedResume.resolvedResumeUrl && resolvedResume.resolvedResumeUrl !== candRow.resume_url ||
+      !candRow.resume_text ||
+      candRow.resume_text.trim().length < 100)
+  ) {
+    try {
+      await query(
+        `
+        UPDATE candidates
+        SET
+          resume_url = COALESCE($2, resume_url),
+          resume_text = $3,
+          updated_at = NOW()
+        WHERE id = $1
+        `,
+        [candidateId, resolvedResume.resolvedResumeUrl ?? candRow.resume_url, resume.slice(0, 500_000)]
+      );
+      await refreshResumeEmbeddingForCandidate(candidateId, candRow.created_by_user_id);
+    } catch (error) {
+      console.warn("singleMatchCheck: failed to persist recovered resume source", error);
+    }
+  }
 
   if (useAI) {
     if (!process.env.OPENAI_API_KEY) {
@@ -219,7 +265,7 @@ export async function runSingleMatchCheck(opts: {
       ai_decision: advanced.ai_decision,
       matched_skills: advanced.matched_skills,
       missing_required_skills: advanced.missing_required_skills,
-      reasoning: withResumeSourceWarning(advanced.reasoning, resolvedResume.source),
+      reasoning: withResumeSourceWarning(advanced.reasoning, resolvedResume.source, recovery),
       summary: advanced.summary,
       resume_source: advanced.resume_source,
       resume_chars_scored: advanced.resume_chars_scored,
@@ -243,6 +289,11 @@ export async function runSingleMatchCheck(opts: {
       red_flags: advanced.red_flags,
       recruiter_summary: advanced.recruiter_summary,
       candidate_feedback: advanced.candidate_feedback,
+      resume_recovery_attempted: recovery?.attempted ?? false,
+      resume_recovery_succeeded: recovery?.succeeded ?? false,
+      resume_recovery_reason: recovery?.reason ?? null,
+      resume_source_before_recovery: recovery?.sourceBefore ?? resolvedResume.source,
+      resume_source_after_recovery: recovery?.sourceAfter ?? resolvedResume.source,
       debug_requirements: advanced.debug_requirements,
       developer_debug: advanced.developer_debug,
     };

@@ -92,6 +92,11 @@ export type SingleMatchCheckResultPayload = {
   red_flags?: string[];
   recruiter_summary?: string | null;
   candidate_feedback?: string | null;
+  resume_recovery_attempted?: boolean;
+  resume_recovery_succeeded?: boolean;
+  resume_recovery_reason?: string | null;
+  resume_source_before_recovery?: "stored_resume_text" | "uploaded_resume_file" | "experience_summary_or_skills" | "none" | null;
+  resume_source_after_recovery?: "stored_resume_text" | "uploaded_resume_file" | "experience_summary_or_skills" | "none" | null;
   debug_requirements?: Array<{
     requirement: string;
     category: string;
@@ -168,6 +173,11 @@ export type SingleMatchHistoryRun = {
   red_flags?: string[];
   recruiter_summary?: string | null;
   candidate_feedback?: string | null;
+  resume_recovery_attempted?: boolean;
+  resume_recovery_succeeded?: boolean;
+  resume_recovery_reason?: string | null;
+  resume_source_before_recovery?: SingleMatchCheckResultPayload["resume_source"] | null;
+  resume_source_after_recovery?: SingleMatchCheckResultPayload["resume_source"] | null;
   debug_requirements?: SingleMatchCheckResultPayload["debug_requirements"];
   developer_debug?: SingleMatchCheckResultPayload["developer_debug"];
   created_at: string;

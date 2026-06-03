@@ -53,6 +53,11 @@ function buildAdvancedInsightsJson(result: SingleMatchCheckResultPayload): Recor
     red_flags: result.red_flags ?? [],
     recruiter_summary: result.recruiter_summary ?? null,
     candidate_feedback: result.candidate_feedback ?? null,
+    resume_recovery_attempted: result.resume_recovery_attempted ?? false,
+    resume_recovery_succeeded: result.resume_recovery_succeeded ?? false,
+    resume_recovery_reason: result.resume_recovery_reason ?? null,
+    resume_source_before_recovery: result.resume_source_before_recovery ?? null,
+    resume_source_after_recovery: result.resume_source_after_recovery ?? null,
     debug_requirements: result.debug_requirements ?? [],
     developer_debug: result.developer_debug ?? null,
   };
@@ -133,6 +138,17 @@ function mapHistoryRuns(rows: DbRow[]): SingleMatchHistoryRun[] {
       red_flags: parseStringArray(advanced.red_flags),
       recruiter_summary: typeof advanced.recruiter_summary === "string" ? advanced.recruiter_summary : undefined,
       candidate_feedback: typeof advanced.candidate_feedback === "string" ? advanced.candidate_feedback : undefined,
+      resume_recovery_attempted: advanced.resume_recovery_attempted != null ? Boolean(advanced.resume_recovery_attempted) : undefined,
+      resume_recovery_succeeded: advanced.resume_recovery_succeeded != null ? Boolean(advanced.resume_recovery_succeeded) : undefined,
+      resume_recovery_reason: typeof advanced.resume_recovery_reason === "string" ? advanced.resume_recovery_reason : undefined,
+      resume_source_before_recovery:
+        typeof advanced.resume_source_before_recovery === "string"
+          ? (advanced.resume_source_before_recovery as SingleMatchHistoryRun["resume_source"])
+          : undefined,
+      resume_source_after_recovery:
+        typeof advanced.resume_source_after_recovery === "string"
+          ? (advanced.resume_source_after_recovery as SingleMatchHistoryRun["resume_source"])
+          : undefined,
       debug_requirements: Array.isArray(advanced.debug_requirements)
         ? (advanced.debug_requirements as SingleMatchHistoryRun["debug_requirements"])
         : undefined,

@@ -766,6 +766,10 @@ function selectAiShortlisted() {
                 runs={singleMatchHistory}
                 loading={loading}
                 migrationRequired={singleMatchHistoryMigration}
+                onRefreshRequested={loadSingleMatchHistoryOnly}
+                onRecomputeComplete={async () => {
+                  await loadSingleMatchHistoryOnly();
+                }}
               />
             </div>
 

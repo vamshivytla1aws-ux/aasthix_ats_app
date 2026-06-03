@@ -2,15 +2,17 @@
 
 import type { SingleMatchCheckResultPayload } from "@/lib/singleMatch/types";
 
-function decisionBadgeClass(d: string | null | undefined): string {
-  const s = (d || "").toLowerCase();
-  if (s.includes("reject")) return "bg-rose-100 text-rose-900 border border-rose-200";
-  if (s.includes("hold")) return "bg-amber-100 text-amber-900 border border-amber-200";
-  if (s.includes("proceed") || s.includes("interview")) return "bg-emerald-100 text-emerald-900 border border-emerald-200";
+function decisionBadgeClass(decision: string | null | undefined): string {
+  const normalized = (decision || "").toLowerCase();
+  if (normalized.includes("reject")) return "bg-rose-100 text-rose-900 border border-rose-200";
+  if (normalized.includes("hold")) return "bg-amber-100 text-amber-900 border border-amber-200";
+  if (normalized.includes("proceed") || normalized.includes("interview")) {
+    return "bg-emerald-100 text-emerald-900 border border-emerald-200";
+  }
   return "bg-slate-100 text-slate-700 border border-slate-200";
 }
 
-function resumeSourceLabel(source: SingleMatchCheckResultPayload["resume_source"]): string {
+function resumeSourceLabel(source: SingleMatchCheckResultPayload["resume_source"] | null | undefined): string {
   switch (source) {
     case "uploaded_resume_file":
       return "uploaded resume file";
@@ -63,31 +65,54 @@ type Props = {
 };
 
 export function SingleMatchResultDetails({ result, modeLabel, loadedFromHistoryAt, className = "" }: Props) {
-  const resumeSourceWarning =
-    result?.resume_source === "experience_summary_or_skills"
+  const recoveryWarning =
+    result.resume_recovery_attempted && !result.resume_recovery_succeeded
       ? {
-          tone: "warning" as const,
-          title: "Scoring is using fallback profile text",
-          body:
-            "This result is based on summary / skills fallback text instead of a parsed uploaded resume. We should treat missing skills and the percentage as low-confidence until a full resume is linked and parsed.",
+          tone: "danger" as const,
+          title: "Full resume recovery did not succeed",
+          body: `Scored from fallback profile text; percentage and gaps are not trustworthy until full resume recovery succeeds.${
+            result.resume_recovery_reason ? ` ${result.resume_recovery_reason}` : ""
+          }`,
         }
-      : result?.resume_source === "none"
+      : null;
+
+  const recoverySuccess =
+    result.resume_recovery_attempted && result.resume_recovery_succeeded
+      ? {
+          title: "Recovered full resume source before scoring",
+          body: `Recovered ${resumeSourceLabel(result.resume_source_after_recovery)} for this run.${
+            result.resume_recovery_reason ? ` ${result.resume_recovery_reason}` : ""
+          }`,
+        }
+      : null;
+
+  const resumeSourceWarning =
+    recoveryWarning
+      ? null
+      : result?.resume_source === "experience_summary_or_skills"
         ? {
-            tone: "danger" as const,
-            title: "No full resume was available for scoring",
+            tone: "warning" as const,
+            title: "Scoring is using fallback profile text",
             body:
-              "This pure-AI result is running without usable resume text. Upload a PDF/DOCX resume or save resume text before trusting the score or gaps.",
+              "This result is based on summary / skills fallback text instead of a parsed uploaded resume. We should treat missing skills and the percentage as low-confidence until a full resume is linked and parsed.",
           }
-        : result?.resume_source === "stored_resume_text" &&
-            typeof result.resume_chars_scored === "number" &&
-            result.resume_chars_scored < 800
+        : result?.resume_source === "none"
           ? {
-              tone: "warning" as const,
-              title: "Stored resume text looks short",
+              tone: "danger" as const,
+              title: "No full resume was available for scoring",
               body:
-                "The match used stored resume text, but the scored text is quite short. If the uploaded resume has more detail, relink or reparse it so the full JD can be validated against the full resume.",
+                "This pure-AI result is running without usable resume text. Upload a PDF/DOCX resume or save resume text before trusting the score or gaps.",
             }
-          : null;
+          : result?.resume_source === "stored_resume_text" &&
+              typeof result.resume_chars_scored === "number" &&
+              result.resume_chars_scored < 800
+            ? {
+                tone: "warning" as const,
+                title: "Stored resume text looks short",
+                body:
+                  "The match used stored resume text, but the scored text is quite short. If the uploaded resume has more detail, relink or reparse it so the full JD can be validated against the full resume.",
+              }
+            : null;
 
   return (
     <div className={`rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-sm ${className}`}>
@@ -161,6 +186,18 @@ export function SingleMatchResultDetails({ result, modeLabel, loadedFromHistoryA
       </div>
 
       {result.summary ? <p className="mb-2 text-xs text-slate-600">{result.summary}</p> : null}
+      {recoverySuccess ? (
+        <div className="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900">
+          <div className="font-semibold">{recoverySuccess.title}</div>
+          <div className="mt-0.5">{recoverySuccess.body}</div>
+        </div>
+      ) : null}
+      {recoveryWarning ? (
+        <div className="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900">
+          <div className="font-semibold">{recoveryWarning.title}</div>
+          <div className="mt-0.5">{recoveryWarning.body}</div>
+        </div>
+      ) : null}
       {resumeSourceWarning ? (
         <div
           className={`mb-2 rounded-lg border px-2 py-1.5 text-xs ${
@@ -189,6 +226,15 @@ export function SingleMatchResultDetails({ result, modeLabel, loadedFromHistoryA
           {result.resume_source ? `resume source ${resumeSourceLabel(result.resume_source)}` : "resume source unknown"}
           {result.resume_chars_scored != null ? ` · resume chars ${result.resume_chars_scored}` : ""}
           {result.jd_chars_scored != null ? ` · JD chars ${result.jd_chars_scored}` : ""}
+          {result.resume_recovery_attempted ? ` · recovery ${result.resume_recovery_succeeded ? "succeeded" : "failed"}` : ""}
+        </div>
+      ) : null}
+
+      {result.resume_recovery_attempted ? (
+        <div className="mb-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-700">
+          <span className="font-semibold text-slate-900">Resume recovery:</span>{" "}
+          before {resumeSourceLabel(result.resume_source_before_recovery)} · after {resumeSourceLabel(result.resume_source_after_recovery)}
+          {result.resume_recovery_reason ? ` · ${result.resume_recovery_reason}` : ""}
         </div>
       ) : null}
 
@@ -369,7 +415,7 @@ export function SingleMatchResultDetails({ result, modeLabel, loadedFromHistoryA
           <div className="font-semibold text-emerald-800">Matched required</div>
           <ul className="mt-0.5 list-inside list-disc text-slate-700">
             {result.matched_skills.length ? (
-              result.matched_skills.slice(0, 24).map((s) => <li key={s}>{s}</li>)
+              result.matched_skills.slice(0, 24).map((skill) => <li key={skill}>{skill}</li>)
             ) : (
               <li className="list-none text-slate-500">None listed</li>
             )}
@@ -382,7 +428,7 @@ export function SingleMatchResultDetails({ result, modeLabel, loadedFromHistoryA
           <div className="font-semibold text-amber-900">Missing required</div>
           <ul className="mt-0.5 list-inside list-disc text-slate-700">
             {result.missing_required_skills.length ? (
-              result.missing_required_skills.slice(0, 24).map((s) => <li key={s}>{s}</li>)
+              result.missing_required_skills.slice(0, 24).map((skill) => <li key={skill}>{skill}</li>)
             ) : (
               <li className="list-none text-slate-500">None listed</li>
             )}

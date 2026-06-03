@@ -74,6 +74,11 @@ function toPayload(run: SingleMatchHistoryRun): SingleMatchCheckResultPayload {
     red_flags: run.red_flags ?? [],
     recruiter_summary: run.recruiter_summary ?? null,
     candidate_feedback: run.candidate_feedback ?? null,
+    resume_recovery_attempted: run.resume_recovery_attempted ?? false,
+    resume_recovery_succeeded: run.resume_recovery_succeeded ?? false,
+    resume_recovery_reason: run.resume_recovery_reason ?? null,
+    resume_source_before_recovery: run.resume_source_before_recovery ?? null,
+    resume_source_after_recovery: run.resume_source_after_recovery ?? null,
     debug_requirements: run.debug_requirements ?? [],
     developer_debug: run.developer_debug ?? undefined,
   };
