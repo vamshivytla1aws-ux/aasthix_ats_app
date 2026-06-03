@@ -121,6 +121,11 @@ export function SingleMatchHistoryTable({
     setExpandedRunId((current) => (current === run.id ? null : run.id));
   };
 
+  const handleOpen = (run: SingleMatchHistoryRun, event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    handleSelect(run);
+  };
+
   const handleRecompute = async (run: SingleMatchHistoryRun, event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     setTableError(null);
@@ -205,7 +210,7 @@ export function SingleMatchHistoryTable({
               return (
                 <tr
                   key={r.id}
-                  className={`align-top ${selected ? "bg-indigo-50/60" : "bg-white"} ${onSelectRun ? "cursor-pointer" : ""}`}
+                  className={`align-top ${selected ? "bg-indigo-50/60" : "bg-white"} cursor-pointer`}
                   onClick={() => handleSelect(r)}
                 >
                   <td className={`${compact ? "whitespace-nowrap px-2 py-1.5" : "whitespace-nowrap px-3 py-2"} text-slate-600`}>
@@ -253,9 +258,13 @@ export function SingleMatchHistoryTable({
                   ) : null}
                   <td className={`${compact ? "px-2 py-1.5" : "px-3 py-2"} whitespace-nowrap`}>
                     <div className="flex items-center gap-2">
-                      {!compact ? (
-                        <span className="text-xs font-semibold text-indigo-700">{selected ? "Open" : "View"}</span>
-                      ) : null}
+                      <button
+                        type="button"
+                        onClick={(event) => handleOpen(r, event)}
+                        className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 hover:text-indigo-800"
+                      >
+                        {selected ? "Open" : "View"}
+                      </button>
                       <button
                         type="button"
                         onClick={(event) => void handleRecompute(r, event)}
