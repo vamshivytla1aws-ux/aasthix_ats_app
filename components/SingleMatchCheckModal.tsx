@@ -165,6 +165,10 @@ export default function SingleMatchCheckModal({
       missing_required_skills: latestRun.missing_required_skills,
       reasoning: latestRun.reasoning,
       summary: latestRun.summary,
+      resume_source: undefined,
+      resume_chars_scored: null,
+      jd_chars_scored: null,
+      ai_evidence_highlights: [],
     });
     setLastUseAI(Boolean(latestRun.use_ai));
     setRunError(null);
@@ -386,6 +390,24 @@ export default function SingleMatchCheckModal({
               {result.summary ? <p className="mb-2 text-xs text-slate-600">{result.summary}</p> : null}
               {result.reasoning ? (
                 <p className="mb-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">{result.reasoning}</p>
+              ) : null}
+              {result.resume_source || result.resume_chars_scored != null || result.jd_chars_scored != null ? (
+                <div className="mb-2 rounded-lg border border-indigo-100 bg-indigo-50 px-2 py-1.5 text-[11px] text-slate-700">
+                  <span className="font-semibold text-indigo-900">Scored text:</span>{" "}
+                  {result.resume_source ? `resume source ${result.resume_source.replace(/_/g, " ")}` : "resume source unknown"}
+                  {result.resume_chars_scored != null ? ` · resume chars ${result.resume_chars_scored}` : ""}
+                  {result.jd_chars_scored != null ? ` · JD chars ${result.jd_chars_scored}` : ""}
+                </div>
+              ) : null}
+              {result.ai_evidence_highlights?.length ? (
+                <div className="mb-2 rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-[11px] text-slate-700">
+                  <div className="font-semibold text-emerald-900">AI evidence found in resume</div>
+                  <ul className="mt-1 list-inside list-disc">
+                    {result.ai_evidence_highlights.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
               <div className="grid gap-2 text-xs sm:grid-cols-2">
                 <div>

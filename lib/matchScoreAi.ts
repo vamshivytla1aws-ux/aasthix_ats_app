@@ -44,6 +44,17 @@ type CandidateSnippet = {
   resumeText?: string | null;
 };
 
+type AiTheme =
+  | "llm"
+  | "agent"
+  | "langgraph"
+  | "rag"
+  | "vector"
+  | "prompt"
+  | "voice"
+  | "realtime"
+  | "rest_api";
+
 function clampScore(n: unknown): number {
   const x = Number(n);
   if (!Number.isFinite(x)) return 0;
@@ -107,6 +118,59 @@ function scoreFromOverallOrLegacy(r: Record<string, unknown>): number {
   return clampScore(o);
 }
 
+const AI_THEME_RULES: Array<{ theme: AiTheme; pattern: RegExp; label: string }> = [
+  { theme: "llm", pattern: /\b(llm|large language model|openai|anthropic|gemini)\b/i, label: "LLM platforms and model integration" },
+  { theme: "agent", pattern: /\b(agent|agentic|multi-agent|orchestration)\b/i, label: "AI agents and orchestration" },
+  { theme: "langgraph", pattern: /\blanggraph\b/i, label: "LangGraph orchestration" },
+  { theme: "rag", pattern: /\b(rag|retrieval augmented generation|retrieval-augmented generation)\b/i, label: "RAG pipelines" },
+  { theme: "vector", pattern: /\b(vector db|vector database|vectordb|pinecone|weaviate|faiss|milvus|pgvector)\b/i, label: "Vector databases / semantic retrieval" },
+  { theme: "prompt", pattern: /\b(prompt engineering|prompting|prompt optimization)\b/i, label: "Prompt engineering" },
+  { theme: "voice", pattern: /\b(stt|tts|speech to text|text to speech|voice ai|voice bot|voice application)\b/i, label: "Voice / STT / TTS systems" },
+  { theme: "realtime", pattern: /\b(realtime|real-time|streaming audio|low-latency)\b/i, label: "Realtime AI systems" },
+  { theme: "rest_api", pattern: /\b(rest api|restful api|api gateway|microservice api)\b/i, label: "REST APIs for AI services" },
+];
+
+function detectAiThemes(text: string): Set<AiTheme> {
+  const out = new Set<AiTheme>();
+  for (const rule of AI_THEME_RULES) {
+    if (rule.pattern.test(text)) out.add(rule.theme);
+  }
+  return out;
+}
+
+function extractAiEvidenceHighlights(text: string, limit = 6): string[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line.length >= 12);
+  const picked: string[] = [];
+  for (const line of lines) {
+    if (!AI_THEME_RULES.some((rule) => rule.pattern.test(line))) continue;
+    if (picked.some((existing) => existing.toLowerCase() === line.toLowerCase())) continue;
+    picked.push(line.slice(0, 180));
+    if (picked.length >= limit) break;
+  }
+  return picked;
+}
+
+function aiThemeLabels(themes: Set<AiTheme>): string[] {
+  return AI_THEME_RULES.filter((rule) => themes.has(rule.theme)).map((rule) => rule.label);
+}
+
+function gapMatchesAiTheme(gap: string, themes: Set<AiTheme>): boolean {
+  const normalized = gap.toLowerCase();
+  if ((normalized.includes("llm") || normalized.includes("large language")) && themes.has("llm")) return true;
+  if (normalized.includes("agent") && themes.has("agent")) return true;
+  if (normalized.includes("langgraph") && themes.has("langgraph")) return true;
+  if ((normalized.includes("rag") || normalized.includes("retrieval")) && themes.has("rag")) return true;
+  if (normalized.includes("vector") && themes.has("vector")) return true;
+  if (normalized.includes("prompt") && themes.has("prompt")) return true;
+  if ((normalized.includes("voice") || normalized.includes("stt") || normalized.includes("tts")) && themes.has("voice")) return true;
+  if ((normalized.includes("real-time") || normalized.includes("realtime")) && themes.has("realtime")) return true;
+  if ((normalized.includes("rest") || normalized.includes("api")) && themes.has("rest_api")) return true;
+  return false;
+}
+
 export async function scoreCandidatesBatchWithOpenAI(input: {
   jobTitle: string;
   jobDescriptionExcerpt: string;
@@ -118,12 +182,15 @@ export async function scoreCandidatesBatchWithOpenAI(input: {
 }): Promise<Map<number, AiMatchResult> | null> {
   const key = process.env.OPENAI_API_KEY;
   if (!key || input.candidates.length === 0) return null;
+  const singleCandidateMode = input.candidates.length === 1;
+  const jdMaxChars = singleCandidateMode ? 24_000 : 12_000;
+  const resumeMaxChars = singleCandidateMode ? 22_000 : 12_000;
 
   const jdBlock = [
     `TITLE: ${input.jobTitle}`,
     input.experienceRequirement ? `EXPERIENCE LINE IN JD: ${input.experienceRequirement}` : "",
     `EXTRACTED TOOL/SKILL HINTS (supplementary only; the JD narrative is authoritative): must: ${input.mustHave.join(", ") || "—"} | nice: ${input.niceToHave.join(", ") || "—"} | themes: ${input.keywords.join(", ") || "—"}`,
-    `FULL JOB DESCRIPTION (primary source — read responsibilities, scope, seniority, domain):\n${input.jobDescriptionExcerpt.slice(0, 12_000)}`,
+    `FULL JOB DESCRIPTION (primary source — read responsibilities, scope, seniority, domain):\n${input.jobDescriptionExcerpt.slice(0, jdMaxChars)}`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -134,9 +201,11 @@ export async function scoreCandidatesBatchWithOpenAI(input: {
         (c.resumeText && c.resumeText.trim().length >= 40
           ? c.resumeText
           : c.skills || "Not specified") || "Not specified";
-      return `CANDIDATE_ID ${c.id} | ${c.full_name}\nLocation: ${c.location || "Not specified"}\nFULL RESUME / PROFILE TEXT:\n${resume.slice(0, 12_000)}`;
+      return `CANDIDATE_ID ${c.id} | ${c.full_name}\nLocation: ${c.location || "Not specified"}\nFULL RESUME / PROFILE TEXT:\n${resume.slice(0, resumeMaxChars)}`;
     })
     .join("\n\n---\n\n");
+  const candidateById = new Map(input.candidates.map((candidate) => [candidate.id, candidate]));
+  const jdAiThemes = detectAiThemes(input.jobDescriptionExcerpt);
 
   /** Default: enterprise full rubric (JD + resume). Set MATCH_AI_LITE=1 for smaller JSON / faster batches. */
   const lite = process.env.MATCH_AI_LITE === "1";
@@ -215,6 +284,10 @@ ${candBlock}`
     for (const r of rows as Record<string, unknown>[]) {
       const id = Number(r.candidate_id);
       if (!Number.isFinite(id)) continue;
+      const candidate = candidateById.get(id);
+      const resumeText = String(candidate?.resumeText || candidate?.skills || "");
+      const resumeAiThemes = detectAiThemes(resumeText);
+      const aiEvidenceHighlights = extractAiEvidenceHighlights(resumeText, 4);
       const strengths = strList(r.strengths).slice(0, 8);
       const gaps = strList(r.gaps).slice(0, 8);
       let matched = strList(r.matched_skills);
@@ -265,7 +338,37 @@ ${candBlock}`
       }
 
       const modelOverall = scoreFromOverallOrLegacy(r);
-      const overallScore = reconcileOverallPercentage(modelOverall, category_scores);
+      let overallScore = reconcileOverallPercentage(modelOverall, category_scores);
+
+      if (jdAiThemes.size > 0 && resumeAiThemes.size > 0) {
+        const correctedMissing = missing.filter((gap) => !gapMatchesAiTheme(gap, resumeAiThemes));
+        const removedFalseGaps = missing.length - correctedMissing.length;
+        if (removedFalseGaps > 0) {
+          missing = correctedMissing;
+          const correctedGaps = gaps.filter((gap) => !gapMatchesAiTheme(gap, resumeAiThemes));
+          if (correctedGaps.length !== gaps.length) {
+            gaps.length = 0;
+            gaps.push(...correctedGaps);
+          }
+        }
+
+        const alignedThemes = [...resumeAiThemes].filter((theme) => jdAiThemes.has(theme));
+        if (alignedThemes.length > 0) {
+          const alignedLabels = aiThemeLabels(new Set(alignedThemes));
+          for (const label of alignedLabels) {
+            if (!matched.some((item) => item.toLowerCase() === label.toLowerCase())) {
+              matched.push(label);
+            }
+          }
+          for (const evidence of aiEvidenceHighlights) {
+            if (!matched.some((item) => item.toLowerCase() === evidence.toLowerCase())) {
+              matched.push(evidence);
+            }
+          }
+          const aiBonus = Math.min(18, alignedThemes.length * 4 + (removedFalseGaps > 0 ? 4 : 0));
+          overallScore = Math.min(100, overallScore + aiBonus);
+        }
+      }
 
       let recruiter_decision =
         normalizeRecruiterDecision(r.decision) ?? normalizeRecruiterDecision(r.recruiter_decision);
@@ -277,6 +380,9 @@ ${candBlock}`
         else if (overallScore >= 65) recruiter_decision = "Hold";
         else recruiter_decision = "Reject";
       }
+      const surfacedStrengths = [...strengths, ...aiEvidenceHighlights]
+        .filter((value, index, array) => array.findIndex((item) => item.toLowerCase() === value.toLowerCase()) === index)
+        .slice(0, 8);
 
       map.set(id, {
         candidate_id: id,
@@ -289,7 +395,7 @@ ${candBlock}`
         recruiter_summary: recruiterSummary || undefined,
         responsibility_comparison: respComp.length ? respComp : undefined,
         category_scores,
-        strengths: strengths.length ? strengths : undefined,
+        strengths: surfacedStrengths.length ? surfacedStrengths : undefined,
         gaps: gaps.length ? gaps : undefined,
         risk_flags: risk_flags.length ? risk_flags : undefined,
         recruiter_decision,

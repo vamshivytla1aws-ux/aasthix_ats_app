@@ -5,7 +5,7 @@
  * - useAI=false: rule-based local matcher only.
  */
 import { query } from "@/lib/db";
-import { resolveCandidateResumeTextForMatch } from "@/lib/candidateResumeForMatch";
+import { resolveCandidateResumeForMatchDetailed } from "@/lib/candidateResumeForMatch";
 import { extractSkillsRuleBased } from "@/lib/jdSkillExtraction";
 import { scoreCandidatesBatchWithOpenAI } from "@/lib/matchScoreAi";
 import { runLocalNoAiMatcher, validateLocalResults } from "@/lib/noAiMatch/localMatcher";
@@ -24,6 +24,7 @@ type JobRow = {
 type CandidateDbRow = {
   id: number;
   skills: string | null;
+  resume_url: string | null;
   resume_text: string | null;
   experience_summary: string | null;
   location: string | null;
@@ -115,6 +116,7 @@ export async function runSingleMatchCheck(opts: {
     SELECT
       c.id,
       c.skills,
+      c.resume_url,
       c.resume_text,
       c.experience_summary,
       c.location,
@@ -131,17 +133,20 @@ export async function runSingleMatchCheck(opts: {
   }
 
   const resumeCache = new Map<string, Promise<string>>();
-  const resume = await resolveCandidateResumeTextForMatch(
+  const resolvedResume = await resolveCandidateResumeForMatchDetailed(
     {
       id: candRow.id,
       full_name: candRow.full_name,
       skills: candRow.skills,
       location: candRow.location,
+      resume_url: candRow.resume_url,
       resume_text: candRow.resume_text,
       experience_summary: candRow.experience_summary,
     },
-    resumeCache
+    resumeCache,
+    { preferUploadedFile: true }
   );
+  const resume = resolvedResume.text;
 
   if (useAI) {
     if (!process.env.OPENAI_API_KEY) {
@@ -195,6 +200,10 @@ export async function runSingleMatchCheck(opts: {
       missing_required_skills: missing,
       reasoning: ai.reasoning?.trim() || null,
       summary: ai.recruiter_summary?.trim() || summaryParts.join(" · "),
+      resume_source: resolvedResume.source,
+      resume_chars_scored: resolvedResume.charCount,
+      jd_chars_scored: jd.length,
+      ai_evidence_highlights: ai.strengths?.slice(0, 6) ?? [],
     };
     return { result };
   }

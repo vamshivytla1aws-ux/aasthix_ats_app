@@ -9,6 +9,10 @@ export type SingleMatchCheckResultPayload = {
   missing_required_skills: string[];
   reasoning: string | null;
   summary: string | null;
+  resume_source?: "stored_resume_text" | "uploaded_resume_file" | "experience_summary_or_skills" | "none";
+  resume_chars_scored?: number | null;
+  jd_chars_scored?: number | null;
+  ai_evidence_highlights?: string[];
 };
 
 export type SingleMatchCheckApiResponse = {

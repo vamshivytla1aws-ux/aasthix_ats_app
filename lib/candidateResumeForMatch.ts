@@ -13,6 +13,12 @@ export type CandidateRowForMatch = {
   skillset?: string[] | null;
 };
 
+export type ResolvedCandidateResumeForMatch = {
+  text: string;
+  source: "stored_resume_text" | "uploaded_resume_file" | "experience_summary_or_skills" | "none";
+  charCount: number;
+};
+
 const MAX_CHARS = 14_000;
 
 async function readCached(
@@ -45,13 +51,47 @@ export async function resolveCandidateResumeTextForMatch(
   row: CandidateRowForMatch,
   cache: Map<string, Promise<string>> = new Map()
 ): Promise<string> {
-  const stored = (row.resume_text || "").trim();
-  if (stored.length >= 100) return stored.slice(0, MAX_CHARS);
+  const resolved = await resolveCandidateResumeForMatchDetailed(row, cache);
+  return resolved.text;
+}
 
+export async function resolveCandidateResumeForMatchDetailed(
+  row: CandidateRowForMatch,
+  cache: Map<string, Promise<string>> = new Map(),
+  opts?: { preferUploadedFile?: boolean }
+): Promise<ResolvedCandidateResumeForMatch> {
+  const stored = (row.resume_text || "").trim();
   const url = row.resume_url?.trim();
-  if (url && url.startsWith("/uploads/")) {
-    const fromFile = (await readCached(url, cache)).trim();
-    if (fromFile.length >= 100) return fromFile.slice(0, MAX_CHARS);
+  const shouldTryFile = Boolean(url && url.startsWith("/uploads/"));
+
+  if (opts?.preferUploadedFile && shouldTryFile) {
+    const fromFile = (await readCached(url!, cache)).trim();
+    if (fromFile.length >= 100) {
+      return {
+        text: fromFile.slice(0, MAX_CHARS),
+        source: "uploaded_resume_file",
+        charCount: fromFile.length,
+      };
+    }
+  }
+
+  if (stored.length >= 100) {
+    return {
+      text: stored.slice(0, MAX_CHARS),
+      source: "stored_resume_text",
+      charCount: stored.length,
+    };
+  }
+
+  if (shouldTryFile) {
+    const fromFile = (await readCached(url!, cache)).trim();
+    if (fromFile.length >= 100) {
+      return {
+        text: fromFile.slice(0, MAX_CHARS),
+        source: "uploaded_resume_file",
+        charCount: fromFile.length,
+      };
+    }
   }
 
   const parts: string[] = [];
@@ -65,7 +105,13 @@ export async function resolveCandidateResumeTextForMatch(
     parts.push(`SKILLS / PROFILE:\n${row.skills.trim()}`);
   }
   if (parts.length === 0) {
-    return `(No resume text on file for ${row.full_name}. Add a PDF/DOCX resume, paste an experience summary, or add skills.)`;
+    const fallback = `(No resume text on file for ${row.full_name}. Add a PDF/DOCX resume, paste an experience summary, or add skills.)`;
+    return { text: fallback, source: "none", charCount: fallback.length };
   }
-  return parts.join("\n\n").slice(0, MAX_CHARS);
+  const joined = parts.join("\n\n");
+  return {
+    text: joined.slice(0, MAX_CHARS),
+    source: "experience_summary_or_skills",
+    charCount: joined.length,
+  };
 }
