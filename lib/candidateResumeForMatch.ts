@@ -60,7 +60,19 @@ async function readCached(
 }
 
 function localResumePathFromUrl(url: string | null | undefined): string | null {
-  const raw = String(url || "").trim().replace(/\\/g, "/");
+  let raw = String(url || "").trim().replace(/\\/g, "/");
+  if (!raw) return null;
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      raw = `${parsed.pathname || ""}${parsed.search || ""}`;
+    } catch {
+      return null;
+    }
+  }
+
+  raw = raw.split("?")[0]?.split("#")[0] || "";
   if (!raw) return null;
   if (raw.startsWith("/uploads/")) return raw;
   if (raw.startsWith("uploads/")) return `/${raw}`;

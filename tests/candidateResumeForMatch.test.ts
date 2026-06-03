@@ -73,6 +73,46 @@ describe("resolveCandidateResumeForMatchDetailed", () => {
     expect(result.text).toContain("LangGraph");
   });
 
+  it("can resolve uploaded resumes when resume_url is stored as a full hosted /api/resume URL", async () => {
+    const result = await resolveCandidateResumeForMatchDetailed(
+      {
+        id: 12,
+        full_name: "Harshit",
+        skills: "Python, AWS",
+        location: "Delhi",
+        resume_url: "https://ats.example.com/api/resume/vitest-resume.pdf?download=1",
+        resume_text: "Short stale stored text only.",
+        experience_summary: "Summary fallback",
+      },
+      new Map(),
+      { preferUploadedFile: true }
+    );
+
+    expect(result.source).toBe("uploaded_resume_file");
+    expect(result.charCount).toBeGreaterThan(100);
+    expect(result.text).toContain("LangGraph");
+  });
+
+  it("can resolve uploaded resumes when resume_url is stored as a full hosted /uploads path", async () => {
+    const result = await resolveCandidateResumeForMatchDetailed(
+      {
+        id: 13,
+        full_name: "Harshit",
+        skills: "Python, AWS",
+        location: "Delhi",
+        resume_url: "https://ats.example.com/uploads/resumes/vitest-resume.pdf",
+        resume_text: "Short stale stored text only.",
+        experience_summary: "Summary fallback",
+      },
+      new Map(),
+      { preferUploadedFile: true }
+    );
+
+    expect(result.source).toBe("uploaded_resume_file");
+    expect(result.charCount).toBeGreaterThan(100);
+    expect(result.text).toContain("LangGraph");
+  });
+
   it("falls back to stored resume text when no uploaded file is available", async () => {
     const result = await resolveCandidateResumeForMatchDetailed({
       id: 2,
