@@ -154,7 +154,7 @@ const COMMON_EVIDENCE_RULES: EvidenceRule[] = [
   { key: "agent", label: "AI agents and orchestration", patterns: [/\b(agent|agentic|multi-agent|orchestration)\b/i] },
   { key: "langgraph", label: "LangGraph orchestration", patterns: [/\blanggraph\b/i] },
   { key: "rag", label: "RAG pipelines", patterns: [/\b(rag|retrieval augmented generation|retrieval-augmented generation)\b/i] },
-  { key: "vector", label: "Vector databases / semantic retrieval", patterns: [/\b(vector db|vector database|vectordb|pinecone|weaviate|faiss|milvus|pgvector)\b/i] },
+  { key: "vector", label: "Vector databases / semantic retrieval", patterns: [/\b(vector dbs?|vector databases?|vectordb|pinecone|weaviate|faiss|milvus|pgvector)\b/i] },
   { key: "prompt", label: "Prompt engineering", patterns: [/\b(prompt engineering|prompting|prompt optimization)\b/i] },
   { key: "voice", label: "Voice / STT / TTS systems", patterns: [/\b(stt|tts|speech to text|text to speech|voice ai|voice bot|voice application)\b/i] },
   { key: "realtime", label: "Realtime systems", patterns: [/\b(realtime|real-time|streaming audio|low-latency)\b/i] },

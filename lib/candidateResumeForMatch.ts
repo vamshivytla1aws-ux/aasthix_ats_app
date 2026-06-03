@@ -44,8 +44,9 @@ async function readCached(
 }
 
 /**
- * Prefer stored resume_text; else parse local uploaded file; else structured profile fields.
- * Used by job match rescoring so the model sees real resume content, not skill tags alone.
+ * Resolve the best available resume source for match scoring.
+ * In single-candidate checks we can prefer the uploaded resume file; otherwise we
+ * fall back through stored resume text and then structured profile fields.
  */
 export async function resolveCandidateResumeTextForMatch(
   row: CandidateRowForMatch,

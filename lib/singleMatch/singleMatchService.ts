@@ -1,7 +1,8 @@
 /**
- * One job × one candidate evaluation. Does not read or write candidate_job_matches.
+ * One job x one candidate evaluation. Does not read or write candidate_job_matches.
  *
- * - useAI=true: **pure OpenAI** full JD ↔ resume scoring (`scoreCandidatesBatchWithOpenAI`), no Python matcher.
+ * - useAI=true: pure OpenAI full JD <-> resume scoring, enriched with recruiter-facing
+ *   requirement breakdown, confidence, and follow-up guidance.
  * - useAI=false: rule-based local matcher only.
  */
 import { query } from "@/lib/db";
@@ -9,6 +10,7 @@ import { resolveCandidateResumeForMatchDetailed } from "@/lib/candidateResumeFor
 import { extractSkillsRuleBased } from "@/lib/jdSkillExtraction";
 import { scoreCandidatesBatchWithOpenAI } from "@/lib/matchScoreAi";
 import { runLocalNoAiMatcher, validateLocalResults } from "@/lib/noAiMatch/localMatcher";
+import { buildAdvancedPureAiInsights } from "@/lib/singleMatch/advancedPureAi";
 import type { SingleMatchCheckResultPayload } from "@/lib/singleMatch/types";
 
 type JobRow = {
@@ -63,10 +65,22 @@ function buildSkillHintsForAi(jobRow: JobRow, jd: string): {
   };
 }
 
-function shortRecruiterDecision(d: "Proceed to Interview" | "Hold" | "Reject" | undefined): string | null {
-  if (!d) return null;
-  if (d === "Proceed to Interview") return "Proceed";
-  return d;
+function withResumeSourceWarning(
+  text: string | null | undefined,
+  source: "stored_resume_text" | "uploaded_resume_file" | "experience_summary_or_skills" | "none"
+): string | null {
+  const base = (text || "").trim();
+  if (source === "experience_summary_or_skills") {
+    const warning =
+      "Confidence note: this score used fallback experience summary / skills text instead of a parsed uploaded resume, so gaps may reflect incomplete source material.";
+    return base ? `${base}\n\n${warning}` : warning;
+  }
+  if (source === "none") {
+    const warning =
+      "Confidence note: no full resume text was available for scoring. Upload a resume file or save resume text for a reliable pure-AI match.";
+    return base ? `${base}\n\n${warning}` : warning;
+  }
+  return base || null;
 }
 
 export async function runSingleMatchCheck(opts: {
@@ -106,7 +120,7 @@ export async function runSingleMatchCheck(opts: {
 
   const jd = (jobRow.description || "").trim();
   if (!jd) {
-    throw Object.assign(new Error("Job description is empty — add a JD before running a match check"), {
+    throw Object.assign(new Error("Job description is empty - add a JD before running a match check"), {
       statusCode: 400,
     });
   }
@@ -150,7 +164,7 @@ export async function runSingleMatchCheck(opts: {
 
   if (useAI) {
     if (!process.env.OPENAI_API_KEY) {
-      throw Object.assign(new Error("OPENAI_API_KEY is not set — required for AI match check"), {
+      throw Object.assign(new Error("OPENAI_API_KEY is not set - required for AI match check"), {
         statusCode: 503,
       });
     }
@@ -176,34 +190,50 @@ export async function runSingleMatchCheck(opts: {
 
     if (!aiMap || !aiMap.has(candidateId)) {
       throw Object.assign(
-        new Error("OpenAI scoring failed or returned no result for this candidate — try again or check logs"),
+        new Error("OpenAI scoring failed or returned no result for this candidate - try again or check logs"),
         { statusCode: 502 }
       );
     }
 
     const ai = aiMap.get(candidateId)!;
-    const score = Math.round(ai.match_score);
-    const decisionShort = shortRecruiterDecision(ai.recruiter_decision);
-    const matched = [...ai.matched_skills];
-    const missing = [...ai.missing_skills];
-    const summaryParts = [`${score}% · full JD ↔ resume AI`, `${matched.length} strengths cited`];
-    if (missing.length) summaryParts.push(`${missing.length} gaps`);
+    const advanced = buildAdvancedPureAiInsights({
+      jobTitle: jobRow.title.trim(),
+      jobDescription: jd,
+      mustHave: hints.mustHave,
+      niceToHave: hints.niceToHave,
+      keywords: hints.keywords,
+      resumeText: resume || "",
+      resumeSource: resolvedResume.source,
+      resumeCharsScored: resolvedResume.charCount,
+      jdCharsScored: jd.length,
+      baseAi: ai,
+    });
 
     const result: SingleMatchCheckResultPayload = {
-      match_score: score,
+      match_score: advanced.match_score,
       match_score_no_ai: null,
-      ai_match_score: score,
-      decision: decisionShort,
+      ai_match_score: advanced.ai_match_score,
+      decision: advanced.decision,
       decision_no_ai: null,
-      ai_decision: decisionShort,
-      matched_skills: matched,
-      missing_required_skills: missing,
-      reasoning: ai.reasoning?.trim() || null,
-      summary: ai.recruiter_summary?.trim() || summaryParts.join(" · "),
-      resume_source: resolvedResume.source,
-      resume_chars_scored: resolvedResume.charCount,
-      jd_chars_scored: jd.length,
-      ai_evidence_highlights: ai.strengths?.slice(0, 6) ?? [],
+      ai_decision: advanced.ai_decision,
+      matched_skills: advanced.matched_skills,
+      missing_required_skills: advanced.missing_required_skills,
+      reasoning: withResumeSourceWarning(advanced.reasoning, resolvedResume.source),
+      summary: advanced.summary,
+      resume_source: advanced.resume_source,
+      resume_chars_scored: advanced.resume_chars_scored,
+      jd_chars_scored: advanced.jd_chars_scored,
+      ai_evidence_highlights: advanced.ai_evidence_highlights,
+      requirement_breakdown: advanced.requirement_breakdown,
+      confidence_score: advanced.confidence_score,
+      confidence_reasons: advanced.confidence_reasons,
+      resume_quality_flags: advanced.resume_quality_flags,
+      decision_drivers: advanced.decision_drivers,
+      risk_flags: advanced.risk_flags,
+      interview_focus_areas: advanced.interview_focus_areas,
+      follow_up_questions: advanced.follow_up_questions,
+      recommended_next_step: advanced.recommended_next_step,
+      evidence_quality: advanced.evidence_quality,
     };
     return { result };
   }
