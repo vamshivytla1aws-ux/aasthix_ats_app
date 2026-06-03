@@ -45,6 +45,16 @@ function buildAdvancedInsightsJson(result: SingleMatchCheckResultPayload): Recor
     follow_up_questions: result.follow_up_questions ?? [],
     recommended_next_step: result.recommended_next_step ?? null,
     evidence_quality: result.evidence_quality ?? null,
+    fit_level: result.fit_level ?? null,
+    score_breakdown: result.score_breakdown ?? null,
+    partial_matches: result.partial_matches ?? [],
+    missing_nice_to_have_requirements: result.missing_nice_to_have_requirements ?? [],
+    critical_unknowns: result.critical_unknowns ?? [],
+    red_flags: result.red_flags ?? [],
+    recruiter_summary: result.recruiter_summary ?? null,
+    candidate_feedback: result.candidate_feedback ?? null,
+    debug_requirements: result.debug_requirements ?? [],
+    developer_debug: result.developer_debug ?? null,
   };
 }
 
@@ -111,6 +121,24 @@ function mapHistoryRuns(rows: DbRow[]): SingleMatchHistoryRun[] {
       evidence_quality:
         typeof advanced.evidence_quality === "string"
           ? (advanced.evidence_quality as SingleMatchHistoryRun["evidence_quality"])
+          : undefined,
+      fit_level: typeof advanced.fit_level === "string" ? (advanced.fit_level as SingleMatchHistoryRun["fit_level"]) : undefined,
+      score_breakdown:
+        advanced.score_breakdown && typeof advanced.score_breakdown === "object"
+          ? (advanced.score_breakdown as SingleMatchHistoryRun["score_breakdown"])
+          : undefined,
+      partial_matches: parseStringArray(advanced.partial_matches),
+      missing_nice_to_have_requirements: parseStringArray(advanced.missing_nice_to_have_requirements),
+      critical_unknowns: parseStringArray(advanced.critical_unknowns),
+      red_flags: parseStringArray(advanced.red_flags),
+      recruiter_summary: typeof advanced.recruiter_summary === "string" ? advanced.recruiter_summary : undefined,
+      candidate_feedback: typeof advanced.candidate_feedback === "string" ? advanced.candidate_feedback : undefined,
+      debug_requirements: Array.isArray(advanced.debug_requirements)
+        ? (advanced.debug_requirements as SingleMatchHistoryRun["debug_requirements"])
+        : undefined,
+      developer_debug:
+        advanced.developer_debug && typeof advanced.developer_debug === "object"
+          ? (advanced.developer_debug as SingleMatchHistoryRun["developer_debug"])
           : undefined,
       created_at: toIsoTimestamp(row.created_at),
     };

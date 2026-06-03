@@ -196,9 +196,10 @@ export async function runSingleMatchCheck(opts: {
     }
 
     const ai = aiMap.get(candidateId)!;
-    const advanced = buildAdvancedPureAiInsights({
+    const advanced = await buildAdvancedPureAiInsights({
       jobTitle: jobRow.title.trim(),
       jobDescription: jd,
+      experienceRequirement: jobRow.experience_requirement?.trim() || null,
       mustHave: hints.mustHave,
       niceToHave: hints.niceToHave,
       keywords: hints.keywords,
@@ -234,6 +235,16 @@ export async function runSingleMatchCheck(opts: {
       follow_up_questions: advanced.follow_up_questions,
       recommended_next_step: advanced.recommended_next_step,
       evidence_quality: advanced.evidence_quality,
+      fit_level: advanced.fit_level,
+      score_breakdown: advanced.score_breakdown,
+      partial_matches: advanced.partial_matches,
+      missing_nice_to_have_requirements: advanced.missing_nice_to_have_requirements,
+      critical_unknowns: advanced.critical_unknowns,
+      red_flags: advanced.red_flags,
+      recruiter_summary: advanced.recruiter_summary,
+      candidate_feedback: advanced.candidate_feedback,
+      debug_requirements: advanced.debug_requirements,
+      developer_debug: advanced.developer_debug,
     };
     return { result };
   }

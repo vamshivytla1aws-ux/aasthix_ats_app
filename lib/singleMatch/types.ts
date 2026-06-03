@@ -4,6 +4,17 @@ export type SingleMatchRequirementStatus =
   | "not_met"
   | "unclear_due_to_source_quality";
 
+export type SingleMatchRequirementMatchType =
+  | "exact_match"
+  | "normalized_match"
+  | "synonym_match"
+  | "fuzzy_match"
+  | "semantic_match"
+  | "gpt_validated_match"
+  | "partial_match"
+  | "missing"
+  | "unknown";
+
 export type SingleMatchRequirementBucket =
   | "core_responsibility"
   | "must_have_skill"
@@ -15,6 +26,23 @@ export type SingleMatchRequirementPriority = "core" | "important" | "nice_to_hav
 
 export type SingleMatchEvidenceQuality = "strong" | "mixed" | "limited" | "insufficient";
 
+export type SingleMatchFitLevel = "Strong Match" | "Good Match" | "Moderate Match" | "Weak Match" | "Not Recommended";
+
+export type SingleMatchScoreBreakdownDetail = {
+  score: number;
+  max_score: number;
+  details: string[] | string;
+};
+
+export type SingleMatchScoreBreakdown = {
+  must_have_skills: SingleMatchScoreBreakdownDetail;
+  experience: SingleMatchScoreBreakdownDetail;
+  responsibilities: SingleMatchScoreBreakdownDetail;
+  nice_to_have_skills: SingleMatchScoreBreakdownDetail;
+  domain_cloud_education: SingleMatchScoreBreakdownDetail;
+  resume_evidence_quality: SingleMatchScoreBreakdownDetail;
+};
+
 export type SingleMatchRequirementBreakdownItem = {
   id: string;
   label: string;
@@ -24,6 +52,11 @@ export type SingleMatchRequirementBreakdownItem = {
   weight: number;
   evidence: string[];
   rationale?: string | null;
+  match_type?: SingleMatchRequirementMatchType | null;
+  score_awarded?: number | null;
+  max_score?: number | null;
+  similarity_score?: number | null;
+  confidence?: number | null;
 };
 
 export type SingleMatchCheckResultPayload = {
@@ -51,6 +84,40 @@ export type SingleMatchCheckResultPayload = {
   follow_up_questions?: string[];
   recommended_next_step?: string | null;
   evidence_quality?: SingleMatchEvidenceQuality | null;
+  fit_level?: SingleMatchFitLevel | null;
+  score_breakdown?: SingleMatchScoreBreakdown | null;
+  partial_matches?: string[];
+  missing_nice_to_have_requirements?: string[];
+  critical_unknowns?: string[];
+  red_flags?: string[];
+  recruiter_summary?: string | null;
+  candidate_feedback?: string | null;
+  debug_requirements?: Array<{
+    requirement: string;
+    category: string;
+    status: string;
+    match_type: SingleMatchRequirementMatchType | string;
+    score_awarded: number;
+    max_score: number;
+    evidence: string;
+    reason: string;
+    similarity_score: number;
+    confidence: number;
+  }>;
+  developer_debug?: {
+    extracted_jd_requirements?: Array<{
+      requirement: string;
+      category: string;
+      normalized_terms: string[];
+      equivalents: string[];
+    }>;
+    extracted_resume_signals?: string[];
+    synonym_matches?: Array<{ requirement: string; matches: string[] }>;
+    semantic_matches?: Array<{ requirement: string; similarity_score: number; evidence: string[] }>;
+    final_gaps_after_gap_audit?: Array<{ requirement: string; status: string; reason: string }>;
+    caps_applied?: Array<{ code: string; limit: number; reason: string }>;
+    final_score?: number;
+  };
 };
 
 export type SingleMatchCheckApiResponse = {
@@ -93,6 +160,16 @@ export type SingleMatchHistoryRun = {
   follow_up_questions?: string[];
   recommended_next_step?: string | null;
   evidence_quality?: SingleMatchEvidenceQuality | null;
+  fit_level?: SingleMatchFitLevel | null;
+  score_breakdown?: SingleMatchScoreBreakdown | null;
+  partial_matches?: string[];
+  missing_nice_to_have_requirements?: string[];
+  critical_unknowns?: string[];
+  red_flags?: string[];
+  recruiter_summary?: string | null;
+  candidate_feedback?: string | null;
+  debug_requirements?: SingleMatchCheckResultPayload["debug_requirements"];
+  developer_debug?: SingleMatchCheckResultPayload["developer_debug"];
   created_at: string;
 };
 

@@ -222,6 +222,16 @@ export default function SingleMatchCheckModal({
       follow_up_questions: latestRun.follow_up_questions ?? [],
       recommended_next_step: latestRun.recommended_next_step ?? null,
       evidence_quality: latestRun.evidence_quality ?? null,
+      fit_level: latestRun.fit_level ?? null,
+      score_breakdown: latestRun.score_breakdown ?? null,
+      partial_matches: latestRun.partial_matches ?? [],
+      missing_nice_to_have_requirements: latestRun.missing_nice_to_have_requirements ?? [],
+      critical_unknowns: latestRun.critical_unknowns ?? [],
+      red_flags: latestRun.red_flags ?? [],
+      recruiter_summary: latestRun.recruiter_summary ?? null,
+      candidate_feedback: latestRun.candidate_feedback ?? null,
+      debug_requirements: latestRun.debug_requirements ?? [],
+      developer_debug: latestRun.developer_debug ?? undefined,
     });
     setLastUseAI(Boolean(latestRun.use_ai));
     setRunError(null);
@@ -455,6 +465,12 @@ export default function SingleMatchCheckModal({
                     <div className="text-sm font-semibold capitalize text-slate-800">{result.evidence_quality}</div>
                   </div>
                 ) : null}
+                {result.fit_level ? (
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase text-slate-500">Fit</div>
+                    <div className="text-sm font-semibold text-slate-800">{result.fit_level}</div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="mb-2 flex flex-wrap gap-2">
@@ -491,6 +507,12 @@ export default function SingleMatchCheckModal({
               {result.reasoning ? (
                 <p className="mb-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">{result.reasoning}</p>
               ) : null}
+              {result.candidate_feedback ? (
+                <div className="mb-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">
+                  <div className="font-semibold text-slate-900">Candidate feedback</div>
+                  <p className="mt-1">{result.candidate_feedback}</p>
+                </div>
+              ) : null}
 
               {result.resume_source || result.resume_chars_scored != null || result.jd_chars_scored != null ? (
                 <div className="mb-2 rounded-lg border border-indigo-100 bg-indigo-50 px-2 py-1.5 text-[11px] text-slate-700">
@@ -509,6 +531,31 @@ export default function SingleMatchCheckModal({
                       <li key={line}>{line}</li>
                     ))}
                   </ul>
+                </div>
+              ) : null}
+
+              {result.score_breakdown ? (
+                <div className="mb-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-700">
+                  <div className="mb-2 font-semibold text-slate-900">Score breakdown</div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {Object.entries(result.score_breakdown).map(([key, value]) => (
+                      <div key={key} className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-2">
+                        <div className="font-medium text-slate-900">{key.replace(/_/g, " ")}</div>
+                        <div className="mt-1 text-[11px] text-slate-600">
+                          {value.score}/{value.max_score}
+                        </div>
+                        {Array.isArray(value.details) ? (
+                          <ul className="mt-1 list-inside list-disc text-[11px] text-slate-700">
+                            {value.details.slice(0, 4).map((detail) => (
+                              <li key={detail}>{detail}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-1 text-[11px] text-slate-700">{value.details}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : null}
 
@@ -597,6 +644,16 @@ export default function SingleMatchCheckModal({
                     </ul>
                   </div>
                 ) : null}
+                {result.critical_unknowns?.length ? (
+                  <div className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5 text-sky-900">
+                    <div className="font-semibold">Critical unknowns</div>
+                    <ul className="mt-1 list-inside list-disc">
+                      {result.critical_unknowns.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
 
               {result.resume_quality_flags?.length ? (
@@ -604,6 +661,28 @@ export default function SingleMatchCheckModal({
                   <div className="font-semibold">Resume quality flags</div>
                   <ul className="mt-1 list-inside list-disc">
                     {result.resume_quality_flags.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {result.missing_nice_to_have_requirements?.length ? (
+                <div className="mt-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">
+                  <div className="font-semibold text-slate-900">Missing nice-to-have</div>
+                  <ul className="mt-1 list-inside list-disc">
+                    {result.missing_nice_to_have_requirements.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {result.partial_matches?.length ? (
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                  <div className="font-semibold">Partial matches</div>
+                  <ul className="mt-1 list-inside list-disc">
+                    {result.partial_matches.map((line) => (
                       <li key={line}>{line}</li>
                     ))}
                   </ul>
