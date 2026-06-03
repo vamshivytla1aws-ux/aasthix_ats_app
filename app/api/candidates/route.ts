@@ -179,6 +179,7 @@ export async function POST(request: Request) {
       website_url,
       location,
       resume_url,
+      resume_text,
       skills,
       current_salary,
       expected_salary,
@@ -202,9 +203,10 @@ export async function POST(request: Request) {
       INSERT INTO candidates (
         full_name, email, phone, linkedin_url, website_url, location, resume_url, skills,
         notice_period, current_salary, expected_salary, experience_summary, source, location_source,
+        resume_text,
         created_by_user_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       ON CONFLICT (created_by_user_id, email) DO UPDATE
         SET full_name = EXCLUDED.full_name,
             phone = EXCLUDED.phone,
@@ -215,6 +217,7 @@ export async function POST(request: Request) {
               ELSE EXCLUDED.location
             END,
             resume_url = COALESCE(EXCLUDED.resume_url, candidates.resume_url),
+            resume_text = COALESCE(EXCLUDED.resume_text, candidates.resume_text),
             skills = COALESCE(EXCLUDED.skills, candidates.skills),
             notice_period = COALESCE(EXCLUDED.notice_period, candidates.notice_period),
             current_salary = COALESCE(EXCLUDED.current_salary, candidates.current_salary),
@@ -260,12 +263,14 @@ export async function POST(request: Request) {
         typeof experience_summary === "string" ? experience_summary : null,
         src,
         location ? "manual" : "parsed",
+        typeof resume_text === "string" ? resume_text : null,
         user.user_id,
       ]
     );
 
     const row = insert.rows[0] as { id: number };
     void persistCandidateDerivedProfile(row.id).catch(() => {});
+    void refreshResumeEmbeddingForCandidate(row.id, user.user_id).catch(() => {});
     return NextResponse.json(insert.rows[0], { status: 201 });
   } catch (error: any) {
     console.error("Error creating candidate", error);
@@ -298,6 +303,7 @@ export async function PUT(request: Request) {
       website_url,
       location,
       resume_url,
+      resume_text,
       skills,
       current_salary,
       expected_salary,
@@ -334,12 +340,13 @@ export async function PUT(request: Request) {
             ELSE 'manual'
           END,
           resume_url = $8,
-          skills = $9,
-          notice_period = $10,
-          current_salary = $11,
-          expected_salary = $12,
-          experience_summary = COALESCE($13, experience_summary),
-          source = COALESCE($14, source),
+          resume_text = COALESCE($9, resume_text),
+          skills = $10,
+          notice_period = $11,
+          current_salary = $12,
+          expected_salary = $13,
+          experience_summary = COALESCE($14, experience_summary),
+          source = COALESCE($15, source),
           updated_at = NOW()
         WHERE id = $1
       RETURNING
@@ -369,6 +376,7 @@ export async function PUT(request: Request) {
           website_url ?? null,
           location ?? null,
           resume_url ?? null,
+          typeof resume_text === "string" ? resume_text : null,
           typeof skills === "string" ? skills : null,
           typeof notice_period === "string" ? notice_period : null,
           current_salary ?? null,

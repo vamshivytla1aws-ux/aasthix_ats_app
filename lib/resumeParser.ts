@@ -11,6 +11,7 @@ export type ParsedResumeFields = {
   linkedin_url: string | null;
   skills: string | null;
   resume_url: string | null;
+  resume_text: string | null;
   confidence: {
     full_name: number;
     email: number;
@@ -884,6 +885,7 @@ export async function parseResumeBuffer(filename: string, buffer: Buffer): Promi
     linkedin_url: finalLinkedIn,
     skills: finalSkills,
     resume_url,
+    resume_text: text.slice(0, 500_000),
     confidence,
   };
 }

@@ -42,14 +42,15 @@ async function upsertCandidate(
     location_source?: "parsed" | "manual";
     skills?: string | null;
     resume_url?: string | null;
+    resume_text?: string | null;
   }
 ) {
   const insert = await query(
     `
     INSERT INTO candidates (
-      full_name, email, phone, linkedin_url, location, location_source, resume_url, skills, created_by_user_id
+      full_name, email, phone, linkedin_url, location, location_source, resume_url, resume_text, skills, created_by_user_id
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
     ON CONFLICT (created_by_user_id, email) DO UPDATE
       SET full_name = EXCLUDED.full_name,
           phone = COALESCE(EXCLUDED.phone, candidates.phone),
@@ -64,6 +65,7 @@ async function upsertCandidate(
             ELSE candidates.location_source
           END,
           resume_url = COALESCE(EXCLUDED.resume_url, candidates.resume_url),
+          resume_text = COALESCE(EXCLUDED.resume_text, candidates.resume_text),
           skills = COALESCE(EXCLUDED.skills, candidates.skills),
           updated_at = NOW()
     RETURNING id, full_name, email
@@ -76,6 +78,7 @@ async function upsertCandidate(
       row.location ?? null,
       row.location ? row.location_source ?? "parsed" : "parsed",
       row.resume_url ?? null,
+      row.resume_text ?? null,
       row.skills ?? null,
       userId,
     ]
@@ -172,6 +175,7 @@ export async function POST(request: Request) {
             location_source: item.location ? "manual" : "parsed",
             skills: item.skills || null,
             resume_url: item.resume_url || null,
+            resume_text: null,
           });
           imported += 1;
           if (createApplication && done.candidate_id) {
@@ -222,6 +226,7 @@ export async function POST(request: Request) {
             location_source: parsed.location ? "parsed" : "parsed",
             skills: parsed.skills ?? null,
             resume_url: parsed.resume_url ?? null,
+            resume_text: parsed.resume_text ?? null,
           });
           imported += 1;
           results.push(done);

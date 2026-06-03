@@ -153,6 +153,7 @@ export default function CandidateForm({
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [location, setLocation] = useState("");
   const [resumeUrl, setResumeUrl] = useState<string | null>(null);
+  const [resumeText, setResumeText] = useState<string | null>(null);
   const [skills, setSkills] = useState<string[]>([]);
   const [skillDraft, setSkillDraft] = useState("");
   const [currentSalary, setCurrentSalary] = useState("");
@@ -179,6 +180,7 @@ export default function CandidateForm({
     setWebsiteUrl(initialCandidate.website_url ?? "");
     setLocation(initialCandidate.location ?? "");
     setResumeUrl(initialCandidate.resume_url ?? null);
+    setResumeText(null);
     setSkills(
       (initialCandidate.skills ?? "")
         .split(",")
@@ -379,6 +381,7 @@ export default function CandidateForm({
         location: string | null;
         linkedin_url: string | null;
         resume_url?: string | null;
+        resume_text?: string | null;
         skills?: string | null;
       }>("/api/resume/parse", { method: "POST", body: fd });
 
@@ -388,6 +391,9 @@ export default function CandidateForm({
       setLocation(sanitizeLocationForForm(parsed.location));
       if (parsed.linkedin_url) setLinkedinUrl(parsed.linkedin_url);
       if (parsed.resume_url) setResumeUrl(parsed.resume_url);
+      if (typeof parsed.resume_text === "string" && parsed.resume_text.trim()) {
+        setResumeText(parsed.resume_text);
+      }
       if (parsed.skills) {
         const items = parsed.skills.split(",").map((s) => s.trim()).filter(Boolean);
         setSkills((prev) => {
@@ -430,6 +436,7 @@ export default function CandidateForm({
           website_url: websiteUrl || null,
           location: location || null,
           resume_url: resumeUrl || null,
+          resume_text: resumeText || null,
           skills: skills.length > 0 ? skills.join(", ") : null,
           current_salary: currentSalary.trim().length ? Number(currentSalary) : null,
           expected_salary: expectedSalary.trim().length ? Number(expectedSalary) : null,
@@ -467,6 +474,7 @@ export default function CandidateForm({
         setWebsiteUrl("");
         setLocation("");
         setResumeUrl(null);
+        setResumeText(null);
         setResumeFile(null);
         setSkills([]);
         setSkillDraft("");
