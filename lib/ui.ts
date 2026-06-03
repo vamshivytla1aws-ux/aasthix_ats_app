@@ -3,6 +3,10 @@
  * Built around semantic CSS variables from globals.css so dark mode works globally.
  */
 export const UI = {
+  layout: {
+    wideTableMinWidth: "min-w-[1360px]",
+    wideTableShell: "max-w-[1600px]",
+  },
   pageShell:
     "w-full rounded-[1.5rem] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-6 py-6 shadow-[var(--ats-shadow-md)] ring-1 ring-[rgb(255_255_255_/_0.5)] md:px-8 md:py-7",
   sectionCard:

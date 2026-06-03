@@ -106,7 +106,7 @@ html.dark {
 
 @layer utilities {
   .ats-page-inner {
-    @apply mx-auto w-full max-w-7xl;
+    @apply mx-auto w-full max-w-[1600px];
   }
 
   .mobile-safe-bottom {

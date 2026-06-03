@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { UI } from "@/lib/ui";
 import { normalizeResumeLink } from "@/lib/resumeLink";
 
 type Candidate = {
@@ -214,7 +215,7 @@ export default function CandidateTable({
       )}
 
       <div className="-mx-1 overflow-x-auto overflow-y-visible rounded-2xl border border-slate-200 bg-white shadow-sm sm:mx-0">
-        <table className="min-w-[1100px] divide-y divide-slate-200 sm:min-w-full">
+        <table className={`${UI.layout.wideTableMinWidth} divide-y divide-slate-200`}>
         <thead className="bg-slate-50">
           <tr>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -277,7 +278,9 @@ export default function CandidateTable({
               className="odd:bg-slate-50/50 hover:bg-slate-100/60 transition-colors"
             >
               <td className="px-4 py-3.5 whitespace-nowrap font-semibold text-slate-900">
-                {c.full_name}
+                <Link href={`/candidates/${c.id}`} className="text-blue-700 transition hover:text-blue-800 hover:underline">
+                  {c.full_name}
+                </Link>
               </td>
               <td className="px-4 py-3.5 whitespace-nowrap">
                 <a className="text-blue-700 hover:underline" href={`mailto:${c.email}`}>

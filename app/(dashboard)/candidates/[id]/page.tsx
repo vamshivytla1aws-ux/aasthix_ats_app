@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Check, Download, Mail, MapPin, Pencil, Phone, X } from "lucide-react";
+import CandidateForm from "@/components/CandidateForm";
 import CandidateHeader from "@/components/candidate/CandidateHeader";
 import Timeline from "@/components/candidate/Timeline";
 import NotesSection from "@/components/candidate/NotesSection";
@@ -166,6 +167,7 @@ function CandidateProfilePageContent() {
   const [locationDraft, setLocationDraft] = useState("");
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
   const router = useRouter();
 
   const isValidId = useMemo(() => Number.isFinite(candidateId), [candidateId]);
@@ -262,6 +264,20 @@ function CandidateProfilePageContent() {
 
   const c = data.candidate;
   const normalizedResumeUrl = normalizeResumeLink(c.resume_url);
+  const editableCandidate = {
+    id: c.id,
+    full_name: c.name,
+    email: c.email ?? "",
+    phone: c.phone,
+    linkedin_url: c.linkedin_url,
+    website_url: c.website_url,
+    location: c.location,
+    resume_url: c.resume_url,
+    skills: c.skills,
+    current_salary: c.current_salary,
+    expected_salary: c.expected_salary,
+    notice_period: c.notice_period,
+  };
   const stageLabel = c.stage || "Applied";
   const stageProgressWidth =
     stageLabel === "Selected"
@@ -641,6 +657,57 @@ function CandidateProfilePageContent() {
 
   return (
     <div className="space-y-4">
+      {editProfileOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={() => setEditProfileOpen(false)} />
+          <div className="absolute inset-0 overflow-y-auto p-4 md:p-6">
+            <div className="mx-auto max-w-5xl">
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-4 py-3 shadow-[var(--ats-shadow-md)]">
+                <div>
+                  <div className="text-sm font-semibold text-[var(--ats-text)]">Edit Candidate Profile</div>
+                  <div className="text-xs text-[var(--ats-text-muted)]">Update the profile summary without leaving this page.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditProfileOpen(false)}
+                  className="inline-flex items-center rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-3 py-2 text-sm font-medium text-[var(--ats-text)] transition hover:bg-[var(--ats-bg-panel-strong)]"
+                >
+                  Close
+                </button>
+              </div>
+              <CandidateForm
+                mode="edit"
+                initialCandidate={editableCandidate}
+                onCancel={() => setEditProfileOpen(false)}
+                onCreated={(updated) => {
+                  setData((current) =>
+                    current
+                      ? {
+                          ...current,
+                          candidate: {
+                            ...current.candidate,
+                            name: updated.full_name,
+                            email: updated.email,
+                            phone: updated.phone ?? null,
+                            linkedin_url: updated.linkedin_url ?? null,
+                            website_url: updated.website_url ?? null,
+                            location: updated.location ?? null,
+                            skills: updated.skills ?? null,
+                            current_salary: updated.current_salary ?? null,
+                            expected_salary: updated.expected_salary ?? null,
+                            notice_period: updated.notice_period ?? null,
+                            resume_url: updated.resume_url ?? current.candidate.resume_url,
+                          },
+                        }
+                      : current
+                  );
+                  setEditProfileOpen(false);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link href="/candidates" className="text-xs font-semibold text-blue-700 hover:underline dark:text-blue-400">
           ← Candidates
@@ -661,8 +728,22 @@ function CandidateProfilePageContent() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start">
         {/* Left summary — sticky on large screens */}
         <aside className={`${UI.enterprise.elevatedCard} p-4 lg:sticky lg:top-24 lg:col-span-4`}>
-          <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{c.name}</h1>
-          <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">{c.job_title || "Role not set"}</p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{c.name}</h1>
+              <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">{c.job_title || "Role not set"}</p>
+            </div>
+            {canManageCandidate ? (
+              <button
+                type="button"
+                onClick={() => setEditProfileOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-3 py-2 text-xs font-semibold text-[var(--ats-text)] transition hover:border-[var(--ats-border-strong)] hover:bg-[var(--ats-bg-panel-strong)]"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit profile
+              </button>
+            ) : null}
+          </div>
           <div className="mt-3">
             <div className="mb-1 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               <span>Pipeline stage</span>

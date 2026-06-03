@@ -76,6 +76,18 @@ function formatCreatedDate(value: string | null | undefined) {
   }
 }
 
+const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
+  name: 280,
+  email: 280,
+  createdDate: 150,
+  resume: 110,
+  location: 180,
+  company: 240,
+  source: 130,
+  status: 120,
+  actions: 90,
+};
+
 export default function DataTable({
   data,
   onEdit,
@@ -140,17 +152,7 @@ export default function DataTable({
     actions: true,
   });
 
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
-    name: 200,
-    email: 220,
-    createdDate: 140,
-    resume: 88,
-    location: 150,
-    company: 190,
-    source: 130,
-    status: 120,
-    actions: 56,
-  });
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(DEFAULT_COLUMN_WIDTHS);
 
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
 
@@ -237,7 +239,7 @@ export default function DataTable({
         setColumnWidths((prev) => {
           const next = { ...prev };
           for (const [k, v] of Object.entries(parsed)) {
-            if (typeof v === "number" && Number.isFinite(v)) next[k] = v;
+            if (typeof v === "number" && Number.isFinite(v)) next[k] = Math.max(v, DEFAULT_COLUMN_WIDTHS[k] ?? 100);
           }
           return next;
         });
@@ -549,7 +551,7 @@ export default function DataTable({
       <div className={`${UI.enterprise.elevatedCard} overflow-hidden`}>
         <div className="max-h-[72vh] overflow-y-auto">
           <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-          <table className="w-full min-w-[980px] sm:min-w-[1100px]">
+          <table className={`w-full ${UI.layout.wideTableMinWidth}`}>
             <thead>
               <tr className="border-b border-[var(--enterprise-table-border)]">
                 <th
@@ -682,10 +684,18 @@ export default function DataTable({
                     />
                   </td>
                   {columns.name ? <td style={{ width: columnWidths.name }} className={[rowClass, "font-semibold text-slate-900"].join(" ")}>
-                    <span className="block max-w-[200px] truncate">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/candidates/${c.id}`);
+                      }}
+                      className="block max-w-[280px] truncate text-left text-blue-700 transition hover:text-blue-800 hover:underline"
+                      title={`Open ${toDisplayName(c)} profile`}
+                    >
                       {toDisplayName(c)}
                       <span className="ml-1 text-[10px] font-normal text-slate-400">#{c.id}</span>
-                    </span>
+                    </button>
                   </td> : null}
                   {columns.email ? <td style={{ width: columnWidths.email }} className={[rowClass, "text-slate-700"].join(" ")}>
                     <span className="block max-w-[280px] truncate">{c.email}</span>
@@ -715,7 +725,7 @@ export default function DataTable({
                     <span className="block max-w-[200px] truncate">{c.location || "—"}</span>
                   </td> : null}
                   {columns.company ? <td style={{ width: columnWidths.company }} className={[rowClass, "text-slate-700"].join(" ")}>
-                    <span className="block max-w-[220px] truncate">{c.applied_company_names || "—"}</span>
+                    <span className="block max-w-[260px] truncate">{c.applied_company_names || "—"}</span>
                   </td> : null}
                   {columns.source ? (
                     <td style={{ width: columnWidths.source }} className={rowClass}>

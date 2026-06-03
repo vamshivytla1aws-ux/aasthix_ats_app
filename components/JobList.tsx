@@ -579,7 +579,7 @@ export function JobList({
         ) : null}
         <div className="max-h-[72vh] overflow-y-auto">
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className={`w-full ${UI.layout.wideTableMinWidth} text-sm`}>
             <thead className="bg-gray-50 dark:bg-slate-900">
               <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:text-slate-400">
                 {canManageJobs ? (
