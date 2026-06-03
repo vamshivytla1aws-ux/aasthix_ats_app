@@ -12,6 +12,7 @@ type ResumeSource = NonNullable<SingleMatchCheckResultPayload["resume_source"]>;
 
 type RequirementDraft = {
   id: string;
+  conceptKey: string;
   label: string;
   bucket: SingleMatchRequirementBucket;
   priority: SingleMatchRequirementPriority;
@@ -74,7 +75,7 @@ const TOKEN_ALIASES: Array<{ canonical: string; patterns: RegExp[] }> = [
   { canonical: "playwright", patterns: [/\bplaywright\b/i] },
   { canonical: "postman", patterns: [/\bpostman\b/i, /\bapi testing\b/i] },
   { canonical: "jmeter", patterns: [/\bjmeter\b/i, /\bperformance testing\b/i, /\bload testing\b/i] },
-  { canonical: "llm", patterns: [/\bllm\b/i, /\blarge language model\b/i, /\bopenai\b/i, /\banthropic\b/i, /\bgemini\b/i] },
+  { canonical: "llm", patterns: [/\bllms?\b/i, /\blarge language model\b/i, /\bopenai\b/i, /\banthropic\b/i, /\bgemini\b/i] },
   { canonical: "agents", patterns: [/\bagents?\b/i, /\bmulti-agent\b/i, /\bagentic\b/i] },
   { canonical: "langgraph", patterns: [/\blanggraph\b/i] },
   { canonical: "langchain", patterns: [/\blangchain\b/i] },
@@ -91,8 +92,74 @@ const TOKEN_ALIASES: Array<{ canonical: string; patterns: RegExp[] }> = [
   { canonical: "cross-functional collaboration", patterns: [/\bcross-functional\b/i, /\bstakeholder\b/i, /\bcollaborat(?:e|ion)\b/i] },
 ];
 
+const GENERIC_REQUIREMENT_TOKENS = new Set([
+  "ability",
+  "across",
+  "and",
+  "architect",
+  "architecture",
+  "build",
+  "building",
+  "built",
+  "collaborate",
+  "collaboration",
+  "develop",
+  "developing",
+  "design",
+  "designing",
+  "end",
+  "experience",
+  "expertise",
+  "for",
+  "framework",
+  "frameworks",
+  "hands",
+  "hands-on",
+  "implementation",
+  "implement",
+  "implementing",
+  "integrate",
+  "integrating",
+  "junior",
+  "looking",
+  "mentor",
+  "mentoring",
+  "platform",
+  "platforms",
+  "real",
+  "real-time",
+  "services",
+  "software",
+  "systems",
+  "solution",
+  "solutions",
+  "strong",
+  "teams",
+  "to",
+  "using",
+  "with",
+  "work",
+  "working",
+  "years",
+  "you",
+  "we",
+  "the",
+  "their",
+  "our",
+]);
+
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+
+function cleanRequirementDisplayLabel(label: string): string {
+  return normalizeText(
+    label
+      .replace(/^(and|or|then|to|with)\s+/i, "")
+      .replace(/^(design|develop|build|implement|integrate|work on|collaborate|mentor|lead|own|architect|design and develop|build and maintain)\s+/i, "")
+      .replace(/^(scalable|strong|hands-on|experience with|familiarity with)\s+/i, "")
+      .replace(/[.]+$/g, "")
+  );
 }
 
 function slugify(text: string): string {
@@ -130,7 +197,8 @@ function tokenizeRequirement(label: string): string[] {
   const words = lower
     .split(/[^a-z0-9+.#/-]+/)
     .map((part) => part.trim())
-    .filter((part) => part.length >= 3);
+    .filter((part) => part.length >= 3)
+    .filter((part) => !GENERIC_REQUIREMENT_TOKENS.has(part));
   return uniqueList([...matchedCanonicals, ...words]).slice(0, 12);
 }
 
@@ -149,15 +217,37 @@ function buildRequirement(
   priority: SingleMatchRequirementPriority,
   weight: number
 ): RequirementDraft {
+  const normalizedLabel = cleanRequirementDisplayLabel(label);
+  const phrases = requirementPhrases(normalizedLabel);
+  const tokens = tokenizeRequirement(normalizedLabel);
   return {
-    id: slugify(`${bucket}-${label}`),
-    label: normalizeText(label),
+    id: slugify(`${bucket}-${normalizedLabel}`),
+    conceptKey: requirementConceptKey(normalizedLabel, tokens),
+    label: normalizedLabel,
     bucket,
     priority,
     weight,
-    phrases: requirementPhrases(label),
-    tokens: tokenizeRequirement(label),
+    phrases,
+    tokens,
   };
+}
+
+function requirementConceptKey(label: string, tokens: string[]): string {
+  const canonical = tokens.find((token) => TOKEN_ALIASES.some((alias) => alias.canonical === token));
+  if (canonical) return canonical;
+  const meaningful = tokens.find((token) => token.length >= 4 && !GENERIC_REQUIREMENT_TOKENS.has(token.toLowerCase()));
+  if (meaningful) return meaningful;
+  return slugify(label);
+}
+
+function splitRequirementChunks(label: string): string[] {
+  return uniqueList(
+    label
+      .split(/[;,|]/)
+      .flatMap((part) => part.split(/\s+\/\s+/))
+      .map((part) => cleanRequirementDisplayLabel(part))
+      .filter((part) => part.length >= 4)
+  ).slice(0, 6);
 }
 
 function parseResponsibilities(jobDescription: string): string[] {
@@ -175,11 +265,11 @@ function parseSenioritySignals(jobDescription: string): string[] {
   const jd = jobDescription.toLowerCase();
   const signals: string[] = [];
   if (/\bmentor\b|\bmentoring\b|\bcoach\b/.test(jd)) signals.push("Mentor junior engineers");
-  if (/\bownership\b|\bowner(ship)?\b|\bend-to-end\b/.test(jd)) signals.push("Demonstrate ownership mindset");
+  if (/\bownership\b|\bowner(ship)?\b|\bend-to-end\b/.test(jd)) signals.push("Ownership mindset");
   if (/\bcross-functional\b|\bcollaborate with cross-functional teams\b|\bstakeholder\b/.test(jd)) {
-    signals.push("Collaborate across teams and stakeholders");
+    signals.push("Cross-functional collaboration");
   }
-  if (/\blead\b|\barchitect\b|\bdesign scalable\b/.test(jd)) signals.push("Lead technical design for scalable systems");
+  if (/\blead\b|\barchitect\b|\bdesign scalable\b/.test(jd)) signals.push("Technical leadership and scalable design");
   return uniqueList(signals).slice(0, 4);
 }
 
@@ -204,13 +294,17 @@ function buildRequirementSet(input: {
     out.push(buildRequirement(label, "must_have_skill", "core", 1.35));
   }
   for (const label of parseResponsibilities(input.jobDescription)) {
-    out.push(buildRequirement(label, "core_responsibility", "core", 1.2));
+    for (const chunk of splitRequirementChunks(label)) {
+      out.push(buildRequirement(chunk, "core_responsibility", "core", 1.2));
+    }
   }
   for (const label of parseSenioritySignals(input.jobDescription)) {
     out.push(buildRequirement(label, "seniority_ownership", "important", 0.9));
   }
   for (const label of parseDomainPlatformSignals(input.jobDescription)) {
-    out.push(buildRequirement(label, "domain_platform", "important", 1.0));
+    for (const chunk of splitRequirementChunks(label)) {
+      out.push(buildRequirement(chunk, "domain_platform", "important", 1.0));
+    }
   }
   for (const label of input.niceToHave.filter(Boolean).slice(0, 8)) {
     out.push(buildRequirement(label, "nice_to_have", "nice_to_have", 0.55));
@@ -218,7 +312,43 @@ function buildRequirementSet(input: {
   for (const label of input.keywords.filter(Boolean).slice(0, 6)) {
     out.push(buildRequirement(label, "domain_platform", "important", 0.8));
   }
-  return uniqueList(out.map((item) => JSON.stringify(item))).map((item) => JSON.parse(item) as RequirementDraft);
+  const merged = new Map<string, RequirementDraft>();
+  const priorityRank: Record<SingleMatchRequirementPriority, number> = {
+    nice_to_have: 0,
+    important: 1,
+    core: 2,
+  };
+  const bucketRank: Record<SingleMatchRequirementBucket, number> = {
+    nice_to_have: 0,
+    domain_platform: 1,
+    seniority_ownership: 2,
+    core_responsibility: 3,
+    must_have_skill: 4,
+  };
+  for (const draft of out) {
+    const key = draft.conceptKey;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, {
+        ...draft,
+        phrases: uniqueList(draft.phrases),
+        tokens: uniqueList(draft.tokens),
+      });
+      continue;
+    }
+    const betterPriority =
+      priorityRank[draft.priority] > priorityRank[existing.priority] ? draft.priority : existing.priority;
+    const betterBucket = bucketRank[draft.bucket] > bucketRank[existing.bucket] ? draft.bucket : existing.bucket;
+    merged.set(key, {
+      ...existing,
+      bucket: betterBucket,
+      priority: betterPriority,
+      weight: Math.max(existing.weight, draft.weight),
+      phrases: uniqueList([...existing.phrases, ...draft.phrases]),
+      tokens: uniqueList([...existing.tokens, ...draft.tokens]),
+    });
+  }
+  return Array.from(merged.values());
 }
 
 function matchAnyPattern(text: string, token: string): boolean {
@@ -246,6 +376,28 @@ function extractEvidenceForRequirement(resumeText: string, item: RequirementDraf
   return evidence;
 }
 
+function getExplicitSpecializedProofPatterns(item: RequirementDraft): RegExp[] {
+  const label = item.label.toLowerCase();
+  const patterns: RegExp[] = [];
+  if (/\bvoice\b|\bstt\b|\btts\b/.test(label)) {
+    patterns.push(/\bvoice\b/i, /\bstt\b/i, /\btts\b/i, /\bspeech\b/i, /\baudio\b/i);
+  }
+  if (/\bmcp\b/.test(label)) {
+    patterns.push(/\bmcp\b/i, /\bmodel context protocol\b/i);
+  }
+  if (/\bmulti[- ]?modal\b/.test(label)) {
+    patterns.push(/\bmulti[- ]?modal\b/i, /\bmultimodal\b/i);
+  }
+  return patterns;
+}
+
+function hasExplicitSpecializedProof(item: RequirementDraft, evidence: string[], resumeText: string): boolean {
+  const proofPatterns = getExplicitSpecializedProofPatterns(item);
+  if (!proofPatterns.length) return true;
+  const text = [resumeText, ...evidence].join("\n");
+  return proofPatterns.some((pattern) => pattern.test(text));
+}
+
 function evaluateRequirementStatus(
   item: RequirementDraft,
   resumeText: string,
@@ -254,10 +406,17 @@ function evaluateRequirementStatus(
   const evidence = extractEvidenceForRequirement(resumeText, item);
   const tokenMatches = item.tokens.filter((token) => matchAnyPattern(resumeText, token));
   const directPhraseMatches = item.phrases.filter((phrase) => resumeText.toLowerCase().includes(phrase));
-  const tokenCoverage = item.tokens.length ? tokenMatches.length / item.tokens.length : 0;
+  const meaningfulTokenMatches = tokenMatches.filter((token) => !GENERIC_REQUIREMENT_TOKENS.has(token.toLowerCase()));
+  const tokenCoverage = item.tokens.length ? meaningfulTokenMatches.length / item.tokens.length : 0;
   const phraseCoverage = item.phrases.length ? directPhraseMatches.length / item.phrases.length : 0;
+  const explicitSpecializedProof = hasExplicitSpecializedProof(item, evidence, resumeText);
 
-  if (directPhraseMatches.length > 0 || tokenCoverage >= 0.6 || evidence.length >= 2) {
+  const strongTokenHitCount = meaningfulTokenMatches.length;
+  const requiresStrongerProof = item.bucket === "must_have_skill" || item.bucket === "domain_platform";
+  const directProof = directPhraseMatches.length > 0 || evidence.length >= 2;
+  const strongTokenProof = requiresStrongerProof ? strongTokenHitCount >= 2 || tokenCoverage >= 0.55 : strongTokenHitCount >= 1;
+
+  if ((directProof || strongTokenProof) && explicitSpecializedProof) {
     return {
       status: "met",
       evidence,
@@ -265,7 +424,22 @@ function evaluateRequirementStatus(
     };
   }
 
-  if (tokenMatches.length > 0 || evidence.length === 1 || phraseCoverage >= 0.34) {
+  if (!explicitSpecializedProof && getExplicitSpecializedProofPatterns(item).length > 0) {
+    if (meaningfulTokenMatches.length > 0 || evidence.length === 1 || phraseCoverage >= 0.34) {
+      return {
+        status: "partially_met",
+        evidence,
+        rationale: "The resume shows related evidence, but not the specific proof required for this specialized requirement.",
+      };
+    }
+    return {
+      status: "not_met",
+      evidence: [],
+      rationale: "No explicit proof for this specialized requirement was found in the scored resume text.",
+    };
+  }
+
+  if (meaningfulTokenMatches.length > 0 || evidence.length === 1 || phraseCoverage >= 0.34) {
     return {
       status: "partially_met",
       evidence,
@@ -358,9 +532,31 @@ function computeWeightedScore(
   const totalWeight = breakdown.reduce((sum, item) => sum + item.weight, 0) || 1;
   const raw = breakdown.reduce((sum, item) => sum + item.weight * scoreForStatus(item.status), 0);
   let score = Math.round((raw / totalWeight) * 100);
+  score = applyScoreCaps(score, breakdown);
   if (sourceTier === "limited") score = Math.min(score, 78);
   if (sourceTier === "insufficient") score = Math.min(score, 55);
   return Math.max(0, Math.min(100, score));
+}
+
+function applyScoreCaps(score: number, breakdown: SingleMatchRequirementBreakdownItem[]): number {
+  const requiredMissing = breakdown.filter((item) => item.priority !== "nice_to_have" && item.status === "not_met").length;
+  const requiredPartial = breakdown.filter(
+    (item) => item.priority !== "nice_to_have" && item.status === "partially_met"
+  ).length;
+  const niceMissing = breakdown.filter((item) => item.priority === "nice_to_have" && item.status === "not_met").length;
+
+  if (requiredMissing > 0) {
+    const cap = Math.max(72, 92 - requiredMissing * 3);
+    score = Math.min(score, cap);
+  } else if (requiredPartial > 0) {
+    const cap = Math.max(78, 96 - requiredPartial * 2);
+    score = Math.min(score, cap);
+  } else if (niceMissing > 0) {
+    const cap = Math.max(84, 98 - niceMissing);
+    score = Math.min(score, cap);
+  }
+
+  return score;
 }
 
 function deriveDecision(score: number, confidence: number): "Proceed" | "Hold" | "Reject" {

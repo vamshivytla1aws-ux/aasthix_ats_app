@@ -78,4 +78,30 @@ describe("buildAdvancedPureAiInsights", () => {
     ).toBe(true);
     expect(result.recommended_next_step?.toLowerCase().includes("resume")).toBe(true);
   });
+
+  it("deduplicates repeated JD concepts and stays strict on specialized gaps", () => {
+    const result = buildAdvancedPureAiInsights({
+      jobTitle: "Senior Backend Engineer",
+      jobDescription:
+        "Design and develop scalable backend services using Python. Build microservices, RESTful APIs, and event-driven systems. Integrate APIs and vector databases. Work on voice systems using STT/TTS and real-time streaming architectures.",
+      mustHave: ["Python", "microservices", "RESTful APIs", "vector databases"],
+      niceToHave: ["voice systems", "MCP"],
+      keywords: ["Python", "microservices", "REST APIs", "vector DBs"],
+      resumeText:
+        "Built Python FastAPI backend services with event-driven microservices and REST APIs. Integrated Pinecone vector databases and RAG pipelines. Worked on streaming architecture and realtime services, but not on protocol-driven orchestration frameworks or multimodal systems.",
+      resumeSource: "uploaded_resume_file",
+      resumeCharsScored: 1200,
+      jdCharsScored: 520,
+      baseAi: baseAi({
+        match_score: 71,
+        strengths: ["Python backend", "Microservices", "REST APIs"],
+        gaps: ["Voice systems", "MCP"],
+      }),
+    });
+
+    const pythonRequirements = result.requirement_breakdown?.filter((item) => item.label.toLowerCase().includes("python")) ?? [];
+    expect(pythonRequirements.length).toBe(1);
+    const mcpRequirement = result.requirement_breakdown?.find((item) => item.label.toLowerCase().includes("mcp"));
+    expect(mcpRequirement?.status).not.toBe("met");
+  });
 });
