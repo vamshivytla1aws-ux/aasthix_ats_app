@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import type {
   SingleMatchCheckApiResponse,
@@ -217,7 +218,14 @@ export function SingleMatchHistoryTable({
                     {formatWhen(r.created_at)}
                   </td>
                   <td className={`${compact ? "px-2 py-1.5" : "px-3 py-2"} font-medium text-slate-900`}>
-                    {r.candidate_full_name}
+                    <Link
+                      href={`/candidates/${r.candidate_id}`}
+                      onClick={(event) => event.stopPropagation()}
+                      className="text-blue-700 transition hover:text-blue-800 hover:underline"
+                      title={`Open ${r.candidate_full_name} profile`}
+                    >
+                      {r.candidate_full_name}
+                    </Link>
                   </td>
                   <td className={`${compact ? "px-2 py-1.5" : "px-3 py-2"} text-slate-700`}>{modeLabel(r.use_ai, r)}</td>
                   <td className={`${compact ? "whitespace-nowrap px-2 py-1.5" : "px-3 py-2"} font-semibold text-slate-900`}>
@@ -263,7 +271,7 @@ export function SingleMatchHistoryTable({
                         onClick={(event) => handleOpen(r, event)}
                         className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 hover:text-indigo-800"
                       >
-                        {selected ? "Open" : "View"}
+                        View
                       </button>
                       <button
                         type="button"

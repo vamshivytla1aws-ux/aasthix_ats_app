@@ -2512,7 +2512,6 @@ export default function PipelineBoard({
                                       className="text-inherit text-slate-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 rounded dark:text-slate-100 dark:ring-offset-slate-900"
                                       title={a.candidate_full_name}
                                       onClick={(e) => e.stopPropagation()}
-                                      onPointerDown={(e) => e.stopPropagation()}
                                     >
                                       {a.candidate_full_name}
                                     </Link>
