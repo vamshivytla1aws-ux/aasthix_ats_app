@@ -40,6 +40,25 @@ export type FinanceTransaction = {
   createdAt: string;
 };
 
+export type FinanceLedgerEntry = {
+  groupId: string;
+  isGrouped: boolean;
+  primaryTransactionId: number;
+  txId: string;
+  kind: FinanceTransactionKind;
+  date: string;
+  description: string;
+  category: string;
+  totalMinor: number;
+  currency: string;
+  partnerId: number | null;
+  accountEntryType: FinanceAccountEntryType | null;
+  displayDirection: FinanceAccountEntryType | null;
+  displayKindLabel: string;
+  accountContext: string | null;
+  linkedTransactions: FinanceTransaction[];
+};
+
 export type FinanceImportBatch = {
   id: number;
   batchId: string;
@@ -65,6 +84,7 @@ export type FinanceDashboardTotals = {
   thisMonthInflowMinor: number;
   thisMonthOutflowMinor: number;
   recentLedger: FinanceTransaction[];
+  groupedRecentLedger: FinanceLedgerEntry[];
   equalization: Array<{
     partnerId: number;
     partnerName: string;
@@ -117,6 +137,7 @@ export type FinanceAnalyticsSeries = {
   equalizationGapByPartner: Array<{ partnerId: number; partnerName: string; deltaMinor: number }>;
   categorySpendMix: Array<{ category: string; amountMinor: number }>;
   recentLedger: FinanceTransaction[];
+  groupedRecentLedger: FinanceLedgerEntry[];
 };
 
 export type FinanceBackupPayload = {

@@ -5,6 +5,7 @@ import type {
   FinanceDashboardTotals,
   FinanceDateRangePreset,
   FinanceImportBatch,
+  FinanceLedgerEntry,
   FinancePartner,
   FinancePartnerStatementSummary,
   FinanceRangeInput,
@@ -32,6 +33,89 @@ function toMinor(value: string | number) {
   const n = typeof value === "number" ? value : Number(String(value).replace(/[^0-9.-]/g, ""));
   if (!Number.isFinite(n)) throw new Error("Invalid amount");
   return Math.round(n * 100);
+}
+
+function getLinkedRootTxId(tx: FinanceTransaction) {
+  const linkedSourceTxId = tx.metadata?.linkedSourceTxId;
+  return typeof linkedSourceTxId === "string" && linkedSourceTxId.trim() ? linkedSourceTxId : tx.txId;
+}
+
+function preferredPrimaryTransaction(transactions: FinanceTransaction[]) {
+  const exactRoot = transactions.find((tx) => getLinkedRootTxId(tx) === tx.txId);
+  if (exactRoot) return exactRoot;
+  const nonAccount = transactions.find(
+    (tx) => tx.kind !== "company_account_entry" && tx.kind !== "direct_others_account_entry"
+  );
+  return nonAccount ?? transactions[0];
+}
+
+function inferDisplayDirection(transactions: FinanceTransaction[], primary: FinanceTransaction) {
+  const accountTx =
+    transactions.find((tx) => tx.kind === "company_account_entry" || tx.kind === "direct_others_account_entry") ?? primary;
+  if (accountTx.accountEntryType) return accountTx.accountEntryType;
+  if (primary.kind === "partner_investment" || primary.kind === "company_inflow") return "credit";
+  if (primary.kind === "company_expense" || primary.kind === "expense") return "debit";
+  return null;
+}
+
+function inferAccountContext(transactions: FinanceTransaction[], primary: FinanceTransaction) {
+  const directOthers = transactions.find((tx) => tx.kind === "direct_others_account_entry");
+  if (directOthers) return "Direct/Others Account";
+  const companyAccount = transactions.find((tx) => tx.kind === "company_account_entry");
+  if (companyAccount) return "Company Account";
+  if (primary.kind === "partner_investment") return "Partner Investment";
+  if (primary.kind === "company_expense") return "Company Expense";
+  if (primary.kind === "company_inflow") return "Company Inflow";
+  if (primary.kind === "expense") return "Imported Expense";
+  return null;
+}
+
+function inferDisplayKindLabel(direction: "debit" | "credit" | null, primary: FinanceTransaction) {
+  if (direction === "credit") return "Credit";
+  if (direction === "debit") return "Debit";
+  return primary.kind.replace(/_/g, " ");
+}
+
+export function groupLedgerEntries(transactions: FinanceTransaction[]): FinanceLedgerEntry[] {
+  const grouped = new Map<string, FinanceTransaction[]>();
+  for (const tx of transactions) {
+    const groupId = getLinkedRootTxId(tx);
+    const bucket = grouped.get(groupId) ?? [];
+    bucket.push(tx);
+    grouped.set(groupId, bucket);
+  }
+
+  return Array.from(grouped.entries())
+    .map(([groupId, txs]) => {
+      const sorted = [...txs].sort((a, b) => {
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        return b.createdAt.localeCompare(a.createdAt);
+      });
+      const primary = preferredPrimaryTransaction(sorted);
+      const displayDirection = inferDisplayDirection(sorted, primary);
+      return {
+        groupId,
+        isGrouped: sorted.length > 1,
+        primaryTransactionId: primary.id,
+        txId: primary.txId,
+        kind: primary.kind,
+        date: primary.date,
+        description: primary.description,
+        category: primary.category,
+        totalMinor: primary.totalMinor,
+        currency: primary.currency,
+        partnerId: primary.partnerId,
+        accountEntryType: primary.accountEntryType,
+        displayDirection,
+        displayKindLabel: inferDisplayKindLabel(displayDirection, primary),
+        accountContext: inferAccountContext(sorted, primary),
+        linkedTransactions: sorted,
+      } satisfies FinanceLedgerEntry;
+    })
+    .sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return b.primaryTransactionId - a.primaryTransactionId;
+    });
 }
 
 export async function getWorkspace() {
@@ -257,6 +341,45 @@ export async function listTransactions(input: {
     params
   );
   return res.rows.map(mapTx);
+}
+
+export async function listGroupedTransactions(input: {
+  workspaceId: number;
+  kind?: string;
+  queryText?: string;
+  fromDate?: string;
+  toDate?: string;
+  sort?: "asc" | "desc";
+}): Promise<FinanceLedgerEntry[]> {
+  const transactions = await listTransactions({
+    ...input,
+    kind: "all",
+  });
+  const grouped = groupLedgerEntries(transactions);
+  if (!input.kind || input.kind === "all") return grouped;
+  return grouped.filter((entry) => entry.linkedTransactions.some((tx) => tx.kind === input.kind));
+}
+
+export async function updateTransactionGroup(input: UpsertTxInput): Promise<FinanceTransaction> {
+  if (!input.id) throw new Error("Transaction id is required.");
+  const updated = await upsertTransaction(input);
+  const rootTxId = getLinkedRootTxId(updated);
+  await query(
+    `UPDATE finance_transactions
+     SET tx_date = $3,
+         description = $4,
+         category = $5,
+         total_minor = $6,
+         updated_at = NOW()
+     WHERE workspace_id = $1
+       AND id <> $2
+       AND (
+         tx_id = $7
+         OR metadata_json->>'linkedSourceTxId' = $7
+       )`,
+    [input.workspaceId, updated.id, updated.date, updated.description, updated.category, updated.totalMinor, rootTxId]
+  );
+  return updated;
 }
 
 export async function deleteTransaction(workspaceId: number, id: number) {
@@ -592,6 +715,7 @@ export async function computeDashboardTotals(workspaceId: number): Promise<Finan
     thisMonthInflowMinor,
     thisMonthOutflowMinor,
     recentLedger: transactions.slice(0, 10),
+    groupedRecentLedger: groupLedgerEntries(transactions).slice(0, 10),
     equalization,
     splitwiseSummary: {
       memberTotals,
@@ -751,6 +875,7 @@ export async function buildAnalytics(
     equalizationGapByPartner,
     categorySpendMix,
     recentLedger: filtered.slice(0, 10),
+    groupedRecentLedger: groupLedgerEntries(filtered).slice(0, 10),
   };
 }
 

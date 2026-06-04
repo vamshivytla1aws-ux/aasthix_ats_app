@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteTransaction, getWorkspace, listTransactions, toMinor, upsertTransaction } from "@/lib/finance/service";
+import { deleteTransaction, getWorkspace, listGroupedTransactions, listTransactions, toMinor, updateTransactionGroup, upsertTransaction } from "@/lib/finance/service";
 import { requirePermission } from "@/lib/rbac";
 
 export const runtime = "nodejs";
@@ -19,7 +19,15 @@ export async function GET(request: Request) {
       toDate: url.searchParams.get("to") ?? "",
       sort: (url.searchParams.get("sort") as "asc" | "desc" | null) ?? "desc",
     });
-    return NextResponse.json({ transactions });
+    const groupedTransactions = await listGroupedTransactions({
+      workspaceId: workspace.id,
+      kind: url.searchParams.get("kind") ?? "all",
+      queryText: url.searchParams.get("q") ?? "",
+      fromDate: url.searchParams.get("from") ?? "",
+      toDate: url.searchParams.get("to") ?? "",
+      sort: (url.searchParams.get("sort") as "asc" | "desc" | null) ?? "desc",
+    });
+    return NextResponse.json({ transactions, groupedTransactions });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status: 500 });
   }
@@ -82,7 +90,7 @@ export async function PUT(request: Request) {
     };
     const workspace = await getWorkspace();
     const totalMinor = typeof body.amount === "number" ? body.amount : toMinor(body.amount);
-    const transaction = await upsertTransaction({
+    const transaction = await updateTransactionGroup({
       id: body.id,
       workspaceId: workspace.id,
       kind: body.kind as never,

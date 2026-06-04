@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetchJson } from "@/lib/apiClient";
 
 type Tab = "dashboard" | "partners" | "partner_accounts" | "investments" | "company_account" | "direct_others" | "ledger" | "import_audit";
@@ -9,6 +9,7 @@ type Preset = "full" | "monthly" | "yearly" | "custom";
 type Partner = { id: number; name: string; email: string | null; roleLabel: string | null; isActive: boolean };
 type Tx = {
   id: number;
+  txId?: string;
   kind: string;
   date: string;
   description: string;
@@ -16,6 +17,29 @@ type Tx = {
   totalMinor: number;
   partnerId: number | null;
   accountEntryType: "debit" | "credit" | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+};
+type LedgerEntry = {
+  groupId: string;
+  isGrouped: boolean;
+  primaryTransactionId: number;
+  txId: string;
+  kind: string;
+  date: string;
+  description: string;
+  category: string;
+  totalMinor: number;
+  currency: string;
+  partnerId: number | null;
+  accountEntryType: "debit" | "credit" | null;
+  displayDirection: "debit" | "credit" | null;
+  displayKindLabel: string;
+  accountContext: string | null;
+  linkedTransactions: Tx[];
+};
+type MePayload = {
+  user?: { role?: string };
 };
 
 function inr(minor: number) {
@@ -76,9 +100,11 @@ export default function FinancePage() {
   const [message, setMessage] = useState("");
   const [partners, setPartners] = useState<Partner[]>([]);
   const [ledger, setLedger] = useState<Tx[]>([]);
+  const [groupedLedger, setGroupedLedger] = useState<LedgerEntry[]>([]);
   const [batches, setBatches] = useState<Array<{ id: number; batchId: string; source: string; status: string; importedTransactions: number }>>([]);
   const [dashboard, setDashboard] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
+  const [me, setMe] = useState<MePayload | null>(null);
 
   const [partnerName, setPartnerName] = useState("");
   const [partnerEmail, setPartnerEmail] = useState("");
@@ -110,6 +136,7 @@ export default function FinancePage() {
   const [partnerStatement, setPartnerStatement] = useState<any>(null);
   const backupImportInputRef = useRef<HTMLInputElement | null>(null);
   const [contributionTargetMinor, setContributionTargetMinor] = useState<number>(100000000);
+  const [expandedLedgerGroups, setExpandedLedgerGroups] = useState<string[]>([]);
 
   const rangeQuery = useMemo(() => {
     const p = new URLSearchParams();
@@ -147,17 +174,35 @@ export default function FinancePage() {
     const runwayMonths = avgMonthlyOutflowMinor > 0 ? companyBalanceMinor / avgMonthlyOutflowMinor : 0;
     return { avgMonthlyOutflowMinor, runwayMonths };
   }, [analytics, dashboard]);
+  const isAdmin = String(me?.user?.role || "user").toLowerCase() === "admin";
+
+  useEffect(() => {
+    let active = true;
+    apiFetchJson<MePayload>("/api/auth/me")
+      .then((payload) => {
+        if (active) setMe(payload);
+      })
+      .catch(() => {
+        if (active) setMe(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function refreshBase() {
     const [workspace, p, tx, b] = await Promise.all([
       apiFetchJson<{ dashboard: any }>("/api/finance/workspace"),
       apiFetchJson<{ partners: Partner[] }>("/api/finance/partners"),
-      apiFetchJson<{ transactions: Tx[] }>(`/api/finance/transactions?kind=${encodeURIComponent(kindFilter)}&q=${encodeURIComponent(search)}&sort=desc`),
+      apiFetchJson<{ transactions: Tx[]; groupedTransactions: LedgerEntry[] }>(
+        `/api/finance/transactions?kind=${encodeURIComponent(kindFilter)}&q=${encodeURIComponent(search)}&sort=desc`
+      ),
       apiFetchJson<{ batches: any[] }>("/api/finance/batches"),
     ]);
     setDashboard(workspace.dashboard);
     setPartners(p.partners ?? []);
     setLedger(tx.transactions ?? []);
+    setGroupedLedger(tx.groupedTransactions ?? []);
     setBatches(b.batches ?? []);
   }
 
@@ -369,6 +414,18 @@ export default function FinancePage() {
     setTab(tx.kind === "company_account_entry" ? "company_account" : tx.kind === "direct_others_account_entry" ? "direct_others" : "investments");
   }
 
+  function editLedgerEntry(entry: LedgerEntry) {
+    const primary = entry.linkedTransactions.find((tx) => tx.id === entry.primaryTransactionId) ?? entry.linkedTransactions[0];
+    if (!primary) return;
+    editTx(primary);
+  }
+
+  function toggleLedgerGroup(groupId: string) {
+    setExpandedLedgerGroups((current) =>
+      current.includes(groupId) ? current.filter((value) => value !== groupId) : [...current, groupId]
+    );
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
@@ -572,9 +629,12 @@ export default function FinancePage() {
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
               <h3 className="text-base font-semibold">Recent ledger</h3>
               <div className="mt-2 space-y-1">
-                {(analytics?.recentLedger ?? []).map((r: any) => (
-                  <button key={`${r.id}-${r.date}`} type="button" onClick={() => { setSearch(r.description); setTab("ledger"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
-                    <span className="truncate pr-2">{toDisplayDate(r.date)} - {r.description}</span>
+                {(analytics?.groupedRecentLedger ?? []).map((r: any) => (
+                  <button key={`${r.groupId}-${r.date}`} type="button" onClick={() => { setSearch(r.description); setTab("ledger"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
+                    <span className="truncate pr-2">
+                      {toDisplayDate(r.date)} - {r.description}
+                      {r.displayKindLabel ? ` · ${r.displayKindLabel}` : ""}
+                    </span>
                     <span>{inr(r.totalMinor)}</span>
                   </button>
                 ))}
@@ -681,8 +741,86 @@ export default function FinancePage() {
               <option value="all">All</option><option value="partner_investment">Partner investment</option><option value="company_expense">Company expense</option><option value="company_inflow">Company inflow</option><option value="company_account_entry">Company account</option><option value="direct_others_account_entry">Direct/Others account</option><option value="expense">Imported expense</option>
             </select>
           </div>
-          <table className="w-full text-sm"><thead><tr className="text-left text-[var(--ats-text-muted)]"><th className="py-2">Date</th><th>Description</th><th>Category</th><th>Kind</th><th className="text-right">Amount</th><th>Action</th></tr></thead>
-            <tbody>{ledger.map((tx) => <tr className="border-t border-[var(--ats-border)]" key={tx.id}><td className="py-2">{toDisplayDate(tx.date)}</td><td>{tx.description}</td><td>{tx.category}</td><td>{tx.kind}</td><td className="text-right">{inr(tx.totalMinor)}</td><td className="space-x-2"><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => editTx(tx)}>Edit</button><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => removeTx(tx.id)}>Delete</button></td></tr>)}</tbody>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[var(--ats-text-muted)]">
+                <th className="py-2">Date</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Direction</th>
+                <th>Account</th>
+                <th className="text-right">Amount</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupedLedger.map((entry) => {
+                const isExpanded = expandedLedgerGroups.includes(entry.groupId);
+                return (
+                  <Fragment key={entry.groupId}>
+                    <tr className="border-t border-[var(--ats-border)]" key={entry.groupId}>
+                      <td className="py-2">{toDisplayDate(entry.date)}</td>
+                      <td>
+                        <div className="font-medium">{entry.description}</div>
+                        {entry.isGrouped ? <div className="text-xs text-[var(--ats-text-muted)]">{entry.linkedTransactions.length} linked accounting rows</div> : null}
+                      </td>
+                      <td>{entry.category}</td>
+                      <td>{entry.displayKindLabel}</td>
+                      <td>{entry.accountContext ?? "-"}</td>
+                      <td className="text-right">{inr(entry.totalMinor)}</td>
+                      <td className="space-x-2">
+                        {isAdmin && entry.isGrouped ? (
+                          <button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => toggleLedgerGroup(entry.groupId)}>
+                            {isExpanded ? "Hide detail" : "Show detail"}
+                          </button>
+                        ) : null}
+                        <button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => editLedgerEntry(entry)}>Edit</button>
+                        <button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => removeTx(entry.primaryTransactionId)}>Delete</button>
+                      </td>
+                    </tr>
+                    {isAdmin && entry.isGrouped && isExpanded ? (
+                      <tr className="border-t border-[var(--ats-border)] bg-slate-50/40" key={`${entry.groupId}-detail`}>
+                        <td colSpan={7} className="px-3 py-3">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ats-text-muted)]">Raw accounting rows</div>
+                          <div className="mt-2 overflow-auto rounded-lg border border-[var(--ats-border)]">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-left text-[var(--ats-text-muted)]">
+                                  <th className="px-2 py-2">Kind</th>
+                                  <th className="px-2 py-2">Entry Type</th>
+                                  <th className="px-2 py-2">Description</th>
+                                  <th className="px-2 py-2">Account</th>
+                                  <th className="px-2 py-2 text-right">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {entry.linkedTransactions.map((tx) => (
+                                  <tr className="border-t border-[var(--ats-border)]" key={`${entry.groupId}-${tx.id}`}>
+                                    <td className="px-2 py-2">{tx.kind}</td>
+                                    <td className="px-2 py-2">{tx.accountEntryType ?? "-"}</td>
+                                    <td className="px-2 py-2">{tx.description}</td>
+                                    <td className="px-2 py-2">
+                                      {tx.kind === "company_account_entry"
+                                        ? "Company Account"
+                                        : tx.kind === "direct_others_account_entry"
+                                          ? "Direct/Others Account"
+                                          : tx.kind === "partner_investment"
+                                            ? "Partner Investment"
+                                            : "-"}
+                                    </td>
+                                    <td className="px-2 py-2 text-right">{inr(tx.totalMinor)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </tbody>
           </table>
         </section>
       )}
