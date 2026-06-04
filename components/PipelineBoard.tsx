@@ -313,6 +313,7 @@ const stageStyles: Record<Stage, { headerBg: string; badgeBg: string; badgeText:
 export default function PipelineBoard({
   applications,
   onStageUpdated,
+  onRefreshRequested,
   onApplicationRemoved,
   canManage = true,
   density = "compact",
@@ -327,6 +328,7 @@ export default function PipelineBoard({
 }: {
   applications: ApplicationRow[];
   onStageUpdated: (updated: ApplicationRow) => void;
+  onRefreshRequested?: () => void;
   /** After DELETE /api/applications/:id */
   onApplicationRemoved?: (applicationId: number) => void;
   canManage?: boolean;
@@ -644,6 +646,7 @@ export default function PipelineBoard({
       });
       reconcileLocalApplication(updated);
       onStageUpdated(updated);
+      onRefreshRequested?.();
     } catch (err: any) {
       flushSync(() => setLocalApplications(previousApplications));
       if (optimisticRow) onStageUpdated(optimisticRow);
@@ -932,6 +935,7 @@ export default function PipelineBoard({
           });
 
           onStageUpdated(updated);
+          onRefreshRequested?.();
           setLocalApplications((prev) =>
             prev.map((row) => (row.id === updated.id ? { ...row, ...updated, stage: destStage } : row))
           );

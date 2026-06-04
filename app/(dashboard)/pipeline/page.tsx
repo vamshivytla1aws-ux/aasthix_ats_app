@@ -217,7 +217,7 @@ function PipelinePageContent() {
       try {
         const me = await apiFetchJson<{ user?: { role?: string }; permissions?: Record<string, boolean> }>("/api/auth/me");
         const role = (me.user?.role || "user").toLowerCase();
-        const manageAllowed = role === "admin" || me.permissions?.["pipeline.manage"] !== false;
+        const manageAllowed = role === "admin" || me.permissions?.["pipeline.manage"] === true;
         if (!cancelled) setCanManage(manageAllowed);
       } catch {
         if (!cancelled) setCanManage(false);
@@ -819,6 +819,7 @@ function PipelinePageContent() {
               density={density}
               applications={applications}
               onStageUpdated={handleStageUpdated}
+              onRefreshRequested={() => void mutateApplications()}
               onApplicationRemoved={() => void mutateApplications()}
               canManage={canManage}
               recruiters={recruiters}
