@@ -95,6 +95,11 @@ function thisYear() {
   return String(new Date().getFullYear());
 }
 
+function entrySortValue(date: string) {
+  const parsed = new Date(`${date}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
 export default function FinancePage() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [message, setMessage] = useState("");
@@ -174,6 +179,24 @@ export default function FinancePage() {
     const runwayMonths = avgMonthlyOutflowMinor > 0 ? companyBalanceMinor / avgMonthlyOutflowMinor : 0;
     return { avgMonthlyOutflowMinor, runwayMonths };
   }, [analytics, dashboard]);
+  const sortedGroupedLedger = useMemo(
+    () =>
+      [...groupedLedger].sort((a, b) => {
+        const dateDiff = entrySortValue(b.date) - entrySortValue(a.date);
+        if (dateDiff !== 0) return dateDiff;
+        return b.primaryTransactionId - a.primaryTransactionId;
+      }),
+    [groupedLedger]
+  );
+  const sortedGroupedRecentLedger = useMemo(
+    () =>
+      [...(analytics?.groupedRecentLedger ?? [])].sort((a: any, b: any) => {
+        const dateDiff = entrySortValue(b.date) - entrySortValue(a.date);
+        if (dateDiff !== 0) return dateDiff;
+        return Number(b.primaryTransactionId ?? 0) - Number(a.primaryTransactionId ?? 0);
+      }),
+    [analytics?.groupedRecentLedger]
+  );
   const isAdmin = String(me?.user?.role || "user").toLowerCase() === "admin";
 
   useEffect(() => {
@@ -629,7 +652,7 @@ export default function FinancePage() {
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
               <h3 className="text-base font-semibold">Recent ledger</h3>
               <div className="mt-2 space-y-1">
-                {(analytics?.groupedRecentLedger ?? []).map((r: any) => (
+                {sortedGroupedRecentLedger.map((r: any) => (
                   <button key={`${r.groupId}-${r.date}`} type="button" onClick={() => { setSearch(r.description); setTab("ledger"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
                     <span className="truncate pr-2">
                       {toDisplayDate(r.date)} - {r.description}
@@ -754,7 +777,7 @@ export default function FinancePage() {
               </tr>
             </thead>
             <tbody>
-              {groupedLedger.map((entry) => {
+              {sortedGroupedLedger.map((entry) => {
                 const isExpanded = expandedLedgerGroups.includes(entry.groupId);
                 return (
                   <Fragment key={entry.groupId}>
