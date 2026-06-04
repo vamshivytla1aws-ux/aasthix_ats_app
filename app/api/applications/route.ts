@@ -622,6 +622,13 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  let committedStageMove:
+    | {
+        applicationId: number;
+        userId: number;
+        payload: Record<string, unknown>;
+      }
+    | null = null;
   try {
     const auth = await requirePermission("pipeline.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -1008,6 +1015,11 @@ export async function PATCH(request: Request) {
       rejected_in_round_order: number | null;
       selected_after_rounds: number | null;
       final_outcome: string | null;
+    };
+    committedStageMove = {
+      applicationId: updated.id,
+      userId: user.user_id,
+      payload: updated as unknown as Record<string, unknown>,
     };
 
     const effectiveRoundAction = interview_decision === "next_round" ? "next" : round_action;
@@ -1784,6 +1796,18 @@ export async function PATCH(request: Request) {
     });
   } catch (error) {
     console.error("Error updating application stage", error);
+    if (committedStageMove) {
+      const card = await safeFetchApplicationCardRow(committedStageMove.applicationId, committedStageMove.userId);
+      return NextResponse.json(
+        {
+          ...(card ?? committedStageMove.payload),
+          operation_status: "partial",
+          user_message: "Stage updated, but some follow-up actions failed. Please refresh to confirm the latest state.",
+          next_action_hint: "Pipeline stage move was committed. Review alerts/audit side-effects if this keeps happening.",
+        },
+        { status: 200 }
+      );
+    }
     return NextResponse.json({ error: "Failed to update application" }, { status: 500 });
   }
 }
