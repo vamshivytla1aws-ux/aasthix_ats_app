@@ -27,17 +27,32 @@ type LeaveRequest = {
   decision_note?: string | null;
 };
 
-const TABS: EnterpriseTab[] = [
-  { id: "my", label: "My Leave Dashboard" },
-  { id: "approvals", label: "Manager Approvals" },
-  { id: "holidays", label: "Holidays" },
-  { id: "policy", label: "Policy & Balances" },
-];
+type HolidayRow = {
+  id: number;
+  holiday_date: string;
+  holiday_name?: string | null;
+};
+
+type AuthPayload = {
+  user?: { role?: string };
+  permissions?: Record<string, boolean>;
+};
 
 function formatDate(value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+}
+
+function buildTabs(canApproveTeam: boolean, canManagePolicy: boolean): EnterpriseTab[] {
+  const tabs: EnterpriseTab[] = [
+    { id: "my", label: "My Leave Dashboard" },
+    { id: "holidays", label: "Holiday List" },
+    { id: "calendar", label: "Leave Calendar" },
+  ];
+  if (canApproveTeam) tabs.splice(1, 0, { id: "approvals", label: "Manager Approvals" });
+  if (canManagePolicy) tabs.push({ id: "policy", label: "Policy & Balances" });
+  return tabs;
 }
 
 export default function LeavePage() {
@@ -64,18 +79,35 @@ export default function LeavePage() {
   const [mapUserId, setMapUserId] = React.useState("");
   const [mapManagerId, setMapManagerId] = React.useState("");
 
-  const dashboardSwr = useSWR<{ balances: Array<any>; requests: LeaveRequest[]; holidays: Array<any> }>(
+  const authSwr = useSWR<AuthPayload>("/api/auth/me", dashboardFetcher, { revalidateOnFocus: false });
+  const role = String(authSwr.data?.user?.role || "user").toLowerCase();
+  const permissions = authSwr.data?.permissions || {};
+  const canApproveTeam = role === "admin" || permissions["leave.approve_team"] === true;
+  const canManagePolicy = role === "admin" || permissions["leave.manage_policy"] === true;
+
+  const tabs = React.useMemo(() => buildTabs(canApproveTeam, canManagePolicy), [canApproveTeam, canManagePolicy]);
+
+  React.useEffect(() => {
+    if (tabs.some((item) => item.id === tab)) return;
+    setTab(tabs[0]?.id || "my");
+  }, [tab, tabs]);
+
+  const dashboardSwr = useSWR<{ balances: Array<any>; requests: LeaveRequest[]; holidays: HolidayRow[] }>(
     "/api/leave/dashboard/me",
     dashboardFetcher,
     { revalidateOnFocus: false },
   );
-  const requestsSwr = useSWR<{ requests: LeaveRequest[] }>("/api/leave/requests", dashboardFetcher, { revalidateOnFocus: false });
-  const policySwr = useSWR<{ policy: any }>("/api/leave/policies", dashboardFetcher, { revalidateOnFocus: false });
-  const usersSwr = useSWR<{ users: Array<{ id: number; full_name: string; email: string; role: string }> }>("/api/leave/users", dashboardFetcher, {
+  const requestsSwr = useSWR<{ requests: LeaveRequest[] }>(canApproveTeam ? "/api/leave/requests" : null, dashboardFetcher, {
     revalidateOnFocus: false,
   });
+  const policySwr = useSWR<{ policy: any }>(canManagePolicy ? "/api/leave/policies" : null, dashboardFetcher, { revalidateOnFocus: false });
+  const usersSwr = useSWR<{ users: Array<{ id: number; full_name: string; email: string; role: string }> }>(
+    canManagePolicy ? "/api/leave/users" : null,
+    dashboardFetcher,
+    { revalidateOnFocus: false },
+  );
   const managerMapSwr = useSWR<{ mappings: Array<{ user_id: number; user_name: string; manager_user_id: number; manager_name: string }> }>(
-    "/api/leave/manager-map",
+    canManagePolicy ? "/api/leave/manager-map" : null,
     dashboardFetcher,
     { revalidateOnFocus: false },
   );
@@ -208,10 +240,28 @@ export default function LeavePage() {
     }
   }
 
-  const balances = dashboardSwr.data?.balances || [];
-  const myRequests = dashboardSwr.data?.requests || [];
+  const balances = React.useMemo(() => dashboardSwr.data?.balances ?? [], [dashboardSwr.data?.balances]);
+  const myRequests = React.useMemo(() => dashboardSwr.data?.requests ?? [], [dashboardSwr.data?.requests]);
   const approvals = (requestsSwr.data?.requests || []).filter((row) => row.status === "pending" && row.user_name);
-  const holidays = dashboardSwr.data?.holidays || [];
+  const holidays = React.useMemo(() => dashboardSwr.data?.holidays ?? [], [dashboardSwr.data?.holidays]);
+
+  const calendarItems = React.useMemo(() => {
+    const leaveItems = myRequests.map((request) => ({
+      id: `leave-${request.id}`,
+      date: request.from_date,
+      title: `${request.leave_type.toUpperCase()} leave`,
+      subtitle: `${formatDate(request.from_date)} - ${formatDate(request.to_date)} · ${request.status}`,
+      tone: "leave" as const,
+    }));
+    const holidayItems = holidays.map((holiday) => ({
+      id: `holiday-${holiday.id}`,
+      date: holiday.holiday_date,
+      title: holiday.holiday_name || "Holiday",
+      subtitle: formatDate(holiday.holiday_date),
+      tone: "holiday" as const,
+    }));
+    return [...holidayItems, ...leaveItems].sort((a, b) => a.date.localeCompare(b.date));
+  }, [holidays, myRequests]);
 
   return (
     <AccessGate permissionKey="leave.view_self">
@@ -220,18 +270,22 @@ export default function LeavePage() {
       ) : null}
       <ModulePageFrame
         title="HRMS - Leave"
-        subtitle="Apply and track leave, approve team requests, manage holidays and policy."
-        metrics={<StatusBadge status="IST Policy Boundary" />}
+        subtitle={
+          canManagePolicy
+            ? "Apply and track leave, approve team requests, and manage holidays and policy."
+            : "Track your leave balances, requests, holiday list, and leave calendar."
+        }
+        metrics={<StatusBadge status={canManagePolicy ? "HR operations enabled" : "Self-service view"} />}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link className={UI.secondaryButton + " py-2 text-sm"} href="/salary">Salary</Link>
-            <Link className={UI.secondaryButton + " py-2 text-sm"} href="/attendance">Attendance</Link>
+            <Link className={UI.secondaryButton + " py-2 text-sm"} href="/hrms/my-profile">My Profile</Link>
+            <Link className={UI.secondaryButton + " py-2 text-sm"} href="/salary">Pay</Link>
             <Link className={UI.secondaryButton + " py-2 text-sm"} href="/timesheet">Timesheet</Link>
             <Link className={UI.secondaryButton + " py-2 text-sm"} href="/team-calendar">Team Calendar</Link>
           </div>
         }
       >
-        <EnterpriseTabs tabs={TABS} active={tab} onChange={setTab} className="mb-4" />
+        <EnterpriseTabs tabs={tabs} active={tab} onChange={setTab} className="mb-4" />
 
         {tab === "my" ? (
           <section className={UI.card + " p-4 sm:p-5"}>
@@ -302,13 +356,20 @@ export default function LeavePage() {
                       </td>
                     </tr>
                   ))}
+                  {myRequests.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-2 py-6 text-center text-sm text-[var(--ats-text-muted)]">
+                        No leave requests yet.
+                      </td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>
           </section>
         ) : null}
 
-        {tab === "approvals" ? (
+        {tab === "approvals" && canApproveTeam ? (
           <section className={UI.card + " p-4 sm:p-5"}>
             <h3 className="mb-3 text-base font-semibold text-[var(--ats-text)]">Pending approvals</h3>
             <div className="space-y-3">
@@ -346,14 +407,24 @@ export default function LeavePage() {
 
         {tab === "holidays" ? (
           <section className={UI.card + " p-4 sm:p-5"}>
-            <h3 className="mb-3 text-base font-semibold text-[var(--ats-text)]">Fixed holidays</h3>
-            <div className="grid gap-3 md:grid-cols-[1fr_2fr_auto]">
-              <input type="date" className={UI.input} value={holidayDate} onChange={(e) => setHolidayDate(e.target.value)} />
-              <input className={UI.input} value={holidayName} onChange={(e) => setHolidayName(e.target.value)} placeholder="Holiday name" />
-              <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void addHoliday()} disabled={busy === "holiday"}>
-                Add
-              </button>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-[var(--ats-text)]">Holiday list</h3>
+                <p className="mt-1 text-sm text-[var(--ats-text-muted)]">
+                  {canManagePolicy ? "Publish fixed holidays for the company calendar." : "Company holidays published by HR and admin."}
+                </p>
+              </div>
+              {!canManagePolicy ? <StatusBadge status="Admin managed" /> : null}
             </div>
+            {canManagePolicy ? (
+              <div className="mt-4 grid gap-3 md:grid-cols-[1fr_2fr_auto]">
+                <input type="date" className={UI.input} value={holidayDate} onChange={(e) => setHolidayDate(e.target.value)} />
+                <input className={UI.input} value={holidayName} onChange={(e) => setHolidayName(e.target.value)} placeholder="Holiday name" />
+                <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void addHoliday()} disabled={busy === "holiday"}>
+                  Add
+                </button>
+              </div>
+            ) : null}
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -363,19 +434,54 @@ export default function LeavePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {holidays.map((row: any) => (
+                  {holidays.map((row) => (
                     <tr key={Number(row.id)} className="border-t border-[var(--ats-border)]">
                       <td className="px-2 py-2">{formatDate(String(row.holiday_date))}</td>
                       <td className="px-2 py-2">{String(row.holiday_name || "-")}</td>
                     </tr>
                   ))}
+                  {holidays.length === 0 ? (
+                    <tr>
+                      <td colSpan={2} className="px-2 py-6 text-center text-sm text-[var(--ats-text-muted)]">
+                        No holidays published yet.
+                      </td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>
           </section>
         ) : null}
 
-        {tab === "policy" ? (
+        {tab === "calendar" ? (
+          <section className={UI.card + " p-4 sm:p-5"}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-[var(--ats-text)]">Leave calendar</h3>
+                <p className="mt-1 text-sm text-[var(--ats-text-muted)]">See your approved requests alongside company holidays.</p>
+              </div>
+              <StatusBadge status="Self-service" />
+            </div>
+            <div className="mt-4 space-y-3">
+              {calendarItems.map((item) => (
+                <div key={item.id} className={UI.sectionCard + " flex flex-wrap items-center justify-between gap-3 p-3"}>
+                  <div>
+                    <div className="text-sm font-semibold text-[var(--ats-text)]">{item.title}</div>
+                    <div className="mt-1 text-xs text-[var(--ats-text-muted)]">{item.subtitle}</div>
+                  </div>
+                  <StatusBadge status={item.tone === "holiday" ? "Holiday" : "Leave"} />
+                </div>
+              ))}
+              {calendarItems.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-[var(--ats-border)] px-4 py-8 text-center text-sm text-[var(--ats-text-muted)]">
+                  No upcoming leave events or holidays to show yet.
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {tab === "policy" && canManagePolicy ? (
           <section className={UI.card + " p-4 sm:p-5"}>
             <h3 className="mb-3 text-base font-semibold text-[var(--ats-text)]">Policy & balances</h3>
             <div className="grid gap-3 md:grid-cols-2">

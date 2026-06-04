@@ -270,6 +270,60 @@ export async function listEmployees(params: {
   });
 }
 
+export async function getEmployeeSelfProfile(userId: number) {
+  const caps = await hasUsersColumns([
+    "employee_code",
+    "phone",
+    "department",
+    "role",
+    "designation",
+    "employment_type",
+    "joining_date",
+    "work_location",
+    "employment_status",
+    "reporting_manager_user_id",
+  ]);
+
+  const res = await query(
+    `
+      SELECT
+        u.id,
+        ${caps.employee_code ? "COALESCE(u.employee_code, '')" : "''"} AS employee_code,
+        u.full_name,
+        u.email,
+        ${caps.phone ? "COALESCE(u.phone, '')" : "''"} AS phone,
+        ${caps.department ? "COALESCE(u.department, '')" : "''"} AS department,
+        ${caps.role ? "COALESCE(u.role, 'user')" : "'user'"} AS role,
+        ${caps.designation ? "COALESCE(u.designation, '')" : "''"} AS designation,
+        ${caps.employment_type ? "COALESCE(u.employment_type, '')" : "''"} AS employment_type,
+        ${caps.joining_date ? "u.joining_date" : "NULL::date"} AS joining_date,
+        ${caps.work_location ? "COALESCE(u.work_location, '')" : "''"} AS work_location,
+        ${caps.employment_status ? "COALESCE(u.employment_status, 'active')" : "'active'"} AS employment_status,
+        ${caps.reporting_manager_user_id ? "u.reporting_manager_user_id" : "NULL::int"} AS reporting_manager_user_id,
+        ${caps.reporting_manager_user_id ? "COALESCE(m.full_name, '')" : "''"} AS reporting_manager_name,
+        ${caps.reporting_manager_user_id ? "COALESCE(m.email, '')" : "''"} AS reporting_manager_email
+      FROM users u
+      ${caps.reporting_manager_user_id ? "LEFT JOIN users m ON m.id = u.reporting_manager_user_id" : ""}
+      WHERE u.id = $1
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  if (res.rowCount === 0) return null;
+  const row = res.rows[0] as Record<string, unknown>;
+  const filled = COMPLETENESS_FIELDS.reduce((acc, key) => {
+    const value = row[key];
+    const present = value !== null && value !== undefined && String(value).trim() !== "";
+    return acc + (present ? 1 : 0);
+  }, 0);
+
+  return {
+    ...row,
+    profile_completeness: Math.round((filled / COMPLETENESS_FIELDS.length) * 100),
+  };
+}
+
 function normalizeEmployeeInput(input: Partial<EmployeeDirectoryInput>): EmployeeDirectoryInput {
   return {
     employeeIdCode: String(input.employeeIdCode || "").trim(),

@@ -59,6 +59,32 @@ export const DASHBOARD_DOMAIN_NAV: DashboardDomainNav[] = [
   { id: "admin", label: "Admin", href: "/admin/permissions" },
 ];
 
+const WORKFORCE_SELF_SERVICE_ITEMS: DashboardNavItem[] = [
+  { id: "hrms-home", label: "HRMS Home", href: "/hrms", permissionKey: "leave.view_self" },
+  { id: "my-profile", label: "My Profile", href: "/hrms/my-profile", permissionKey: "employee_directory.view_self" },
+  { id: "salary", label: "Pay", href: "/salary", permissionKey: "salary.view" },
+  { id: "leave", label: "Leave", href: "/leave", permissionKey: "leave.view_self" },
+  { id: "attendance", label: "Attendance", href: "/attendance", permissionKey: "attendance.view_self" },
+  { id: "team-calendar", label: "Leave Calendar", href: "/team-calendar", permissionKey: "team_calendar.view" },
+  { id: "timesheet", label: "Timesheet", href: "/timesheet", permissionKey: "timesheet.view_self" },
+];
+
+const WORKFORCE_ADMIN_ITEMS: DashboardNavItem[] = [
+  { id: "hrms-home", label: "HRMS Home", href: "/hrms", permissionKey: "leave.view_self" },
+  { id: "employees", label: "Employee Directory", href: "/hrms/employees", permissionKey: "employee_directory.view_all" },
+  { id: "documents", label: "Documents", href: "/hrms/documents", permissionKey: "documents.view_all" },
+  { id: "attendance-rules", label: "Attendance Rules", href: "/hrms/attendance-rules", permissionKey: "attendance.view_all" },
+  { id: "payroll", label: "Payroll", href: "/hrms/payroll", permissionKey: "payroll.run" },
+  { id: "ctc", label: "CTC Management", href: "/hrms/ctc", permissionKey: "salary.manage" },
+  { id: "onboarding-exit", label: "Onboarding & Exit", href: "/hrms/onboarding-exit", permissionKey: "onboarding_exit.view_all" },
+  { id: "performance", label: "Performance", href: "/hrms/performance", permissionKey: "performance.view_all" },
+  { id: "leave", label: "Leave", href: "/leave", permissionKey: "leave.view_self" },
+  { id: "team-calendar", label: "Team Calendar", href: "/team-calendar", permissionKey: "team_calendar.view" },
+  { id: "salary", label: "Salary", href: "/salary", permissionKey: "salary.view" },
+  { id: "attendance", label: "Attendance", href: "/attendance", permissionKey: "attendance.view_self" },
+  { id: "timesheet", label: "Timesheet", href: "/timesheet", permissionKey: "timesheet.view_self" },
+];
+
 export const DASHBOARD_DOMAIN_ITEMS: Record<DashboardDomain, DashboardNavItem[]> = {
   hiring: [
     { id: "home", label: "Home", href: "/dashboard", permissionKey: "dashboard.view" },
@@ -82,26 +108,26 @@ export const DASHBOARD_DOMAIN_ITEMS: Record<DashboardDomain, DashboardNavItem[]>
     { id: "usage", label: "AI Usage", href: "/usage", permissionKey: "jobs.view" },
     { id: "audit", label: "Audit trail", href: "/audit", permissionKey: "jobs.view" },
   ],
-  workforce: [
-    { id: "hrms-home", label: "HRMS Home", href: "/hrms", permissionKey: "leave.view_self" },
-    { id: "employees", label: "Employee Directory", href: "/hrms/employees", permissionKey: "employee_directory.view_self" },
-    { id: "documents", label: "Documents", href: "/hrms/documents", permissionKey: "documents.view_self" },
-    { id: "attendance-rules", label: "Attendance Rules", href: "/hrms/attendance-rules", permissionKey: "attendance.view_self" },
-    { id: "payroll", label: "Payroll", href: "/hrms/payroll", permissionKey: "payroll.run" },
-    { id: "onboarding-exit", label: "Onboarding & Exit", href: "/hrms/onboarding-exit", permissionKey: "onboarding_exit.view_self" },
-    { id: "performance", label: "Performance", href: "/hrms/performance", permissionKey: "performance.view_self" },
-    { id: "leave", label: "Leave", href: "/leave", permissionKey: "leave.view_self" },
-    { id: "team-calendar", label: "Team Calendar", href: "/team-calendar", permissionKey: "team_calendar.view" },
-    { id: "salary", label: "Salary", href: "/salary", permissionKey: "salary.view" },
-    { id: "attendance", label: "Attendance", href: "/attendance", permissionKey: "attendance.view_self" },
-    { id: "timesheet", label: "Timesheet", href: "/timesheet", permissionKey: "timesheet.view_self" },
-  ],
+  workforce: WORKFORCE_SELF_SERVICE_ITEMS,
   admin: [
     { id: "permissions", label: "Access control", href: "/admin/permissions", permissionKey: "jobs.view" },
     { id: "disposition", label: "Disposition reasons", href: "/admin/disposition-reasons", permissionKey: "jobs.view" },
     { id: "settings", label: "Settings", href: "/settings", permissionKey: "dashboard.view" },
   ],
 };
+
+const HRMS_MANAGEMENT_PERMISSION_KEYS = [
+  "employee_directory.view_all",
+  "documents.view_all",
+  "attendance.view_all",
+  "leave.manage_policy",
+  "payroll.run",
+  "salary.manage",
+  "onboarding_exit.view_all",
+  "performance.view_all",
+  "timesheet.view_all",
+  "timesheet.manage_all",
+] as const;
 
 export function isNavItemVisible(
   item: Pick<DashboardNavItem, "permissionKey">,
@@ -111,6 +137,25 @@ export function isNavItemVisible(
   if (role === "admin") return true;
   if (!item.permissionKey) return true;
   return permissions[item.permissionKey] !== false;
+}
+
+export function hasHrmsManagementAccess(role: string, permissions: Record<string, boolean>): boolean {
+  if (role === "admin") return true;
+  return HRMS_MANAGEMENT_PERMISSION_KEYS.some((key) => permissions[key] === true);
+}
+
+export function getDashboardDomainItemsForRole(
+  domain: DashboardDomain,
+  role: string,
+  permissions: Record<string, boolean>
+): DashboardNavItem[] {
+  const items =
+    domain === "workforce"
+      ? hasHrmsManagementAccess(role, permissions)
+        ? WORKFORCE_ADMIN_ITEMS
+        : WORKFORCE_SELF_SERVICE_ITEMS
+      : DASHBOARD_DOMAIN_ITEMS[domain] ?? [];
+  return items.filter((item) => isNavItemVisible(item, role, permissions));
 }
 
 /** Active state for top nav tabs (prefix rules for nested routes). */

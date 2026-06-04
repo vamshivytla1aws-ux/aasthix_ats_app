@@ -17,10 +17,10 @@ import DashboardThemeToggle from "@/components/DashboardThemeToggle";
 import GlobalHeaderSearch from "@/components/GlobalHeaderSearch";
 import AIUsageQuickPanel from "@/components/usage/AIUsageQuickPanel";
 import {
-  DASHBOARD_DOMAIN_ITEMS,
   DASHBOARD_DOMAIN_NAV,
   DASHBOARD_MORE_NAV,
   DASHBOARD_PRIMARY_NAV,
+  getDashboardDomainItemsForRole,
   getDomainForPath,
   isDashboardNavHrefActive,
   isNavItemVisible,
@@ -132,8 +132,7 @@ export default function MegaMenuNavbar() {
   );
   const domainMoreVisible = useMemo(() => {
     const activeDomain = getDomainForPath(pathname);
-    const items = DASHBOARD_DOMAIN_ITEMS[activeDomain] ?? [];
-    return items.filter((item) => isNavItemVisible(item, role, permissions));
+    return getDashboardDomainItemsForRole(activeDomain, role, permissions);
   }, [pathname, role, permissions]);
   const moreVisible = useMemo(
     () => DASHBOARD_MORE_NAV.filter((item) => isNavItemVisible(item, role, permissions)),
@@ -149,10 +148,11 @@ export default function MegaMenuNavbar() {
   );
   const mobileNavItems = useMemo(() => {
     if (!IA_V2_ENABLED) return [...primaryVisible, ...moreVisible];
-    const all = Object.values(DASHBOARD_DOMAIN_ITEMS).flat();
+    const all = (["hiring", "delivery", "collaboration", "reporting", "workforce", "admin"] as const).flatMap((domain) =>
+      getDashboardDomainItemsForRole(domain, role, permissions)
+    );
     const dedupe = new Map<string, (typeof all)[number]>();
     for (const item of all) {
-      if (!isNavItemVisible(item, role, permissions)) continue;
       dedupe.set(item.href, item);
     }
     return Array.from(dedupe.values());

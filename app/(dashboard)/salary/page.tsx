@@ -4,12 +4,14 @@ import React from "react";
 import useSWR from "swr";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import SelfServiceSalaryView from "@/components/hrms/SelfServiceSalaryView";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import Toast from "@/components/Toast";
 import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import { getMonthDaysFromDateString } from "@/lib/salary/monthDays";
+import { hasHrmsManagementAccess } from "@/lib/dashboardNavConfig";
 
 type EmployeeOption = {
   id: number;
@@ -61,7 +63,7 @@ function todayMonthDate() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
-export default function SalaryPage() {
+function AdminSalaryPage() {
   const [toast, setToast] = React.useState<{ message: string; variant?: "success" | "error" | "blocked" | "info" } | null>(null);
   const [calculation, setCalculation] = React.useState<SalaryCalculation | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -453,6 +455,20 @@ export default function SalaryPage() {
           </section>
         ) : null}
       </ModulePageFrame>
+    </AccessGate>
+  );
+}
+
+export default function SalaryPage() {
+  const { data: me } = useSWR<{ user?: { role?: string }; permissions?: Record<string, boolean> }>("/api/auth/me", dashboardFetcher, {
+    revalidateOnFocus: false,
+  });
+  const role = String(me?.user?.role || "user").toLowerCase();
+  const isManagerView = hasHrmsManagementAccess(role, me?.permissions || {});
+
+  return (
+    <AccessGate permissionKey="salary.view">
+      {isManagerView ? <AdminSalaryPage /> : <SelfServiceSalaryView />}
     </AccessGate>
   );
 }
