@@ -7,7 +7,6 @@ import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import HrmsSelfServiceHome from "@/components/hrms/HrmsSelfServiceHome";
 import { UI } from "@/lib/ui";
 import { dashboardFetcher } from "@/lib/swrFetcher";
-import { hasHrmsManagementAccess } from "@/lib/dashboardNavConfig";
 
 const MODULES = [
   { href: "/hrms/employees", title: "Employee Directory", subtitle: "Manage employee records, status, and reporting structure." },
@@ -25,12 +24,10 @@ const MODULES = [
 ] as const;
 
 export default function HrmsHomePage() {
-  const { data: me } = useSWR<{ user?: { role?: string }; permissions?: Record<string, boolean> }>("/api/auth/me", dashboardFetcher, {
-    revalidateOnFocus: false,
-  });
+  const { data: me } = useSWR<{ user?: { role?: string } }>("/api/auth/me", dashboardFetcher, { revalidateOnFocus: false });
   const { data } = useSWR<{ summary: any }>("/api/hrms/summary", dashboardFetcher, { revalidateOnFocus: false });
   const role = String(me?.user?.role || "user").toLowerCase();
-  const isManagerView = hasHrmsManagementAccess(role, me?.permissions || {});
+  const isAdmin = role === "admin";
   const summary = data?.summary;
   const approvals = summary?.pending_approvals;
   const payroll = summary?.payroll;
@@ -41,7 +38,7 @@ export default function HrmsHomePage() {
 
   return (
     <AccessGate permissionKey="dashboard.view">
-      {!isManagerView ? (
+      {!isAdmin ? (
         <HrmsSelfServiceHome />
       ) : (
       <ModulePageFrame

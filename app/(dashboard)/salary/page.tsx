@@ -11,7 +11,6 @@ import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import { getMonthDaysFromDateString } from "@/lib/salary/monthDays";
-import { hasHrmsManagementAccess } from "@/lib/dashboardNavConfig";
 
 type EmployeeOption = {
   id: number;
@@ -460,15 +459,13 @@ function AdminSalaryPage() {
 }
 
 export default function SalaryPage() {
-  const { data: me } = useSWR<{ user?: { role?: string }; permissions?: Record<string, boolean> }>("/api/auth/me", dashboardFetcher, {
-    revalidateOnFocus: false,
-  });
+  const { data: me } = useSWR<{ user?: { role?: string } }>("/api/auth/me", dashboardFetcher, { revalidateOnFocus: false });
   const role = String(me?.user?.role || "user").toLowerCase();
-  const isManagerView = hasHrmsManagementAccess(role, me?.permissions || {});
+  const isAdmin = role === "admin";
 
   return (
     <AccessGate permissionKey="salary.view">
-      {isManagerView ? <AdminSalaryPage /> : <SelfServiceSalaryView />}
+      {isAdmin ? <AdminSalaryPage /> : <SelfServiceSalaryView />}
     </AccessGate>
   );
 }

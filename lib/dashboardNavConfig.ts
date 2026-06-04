@@ -116,19 +116,6 @@ export const DASHBOARD_DOMAIN_ITEMS: Record<DashboardDomain, DashboardNavItem[]>
   ],
 };
 
-const HRMS_MANAGEMENT_PERMISSION_KEYS = [
-  "employee_directory.view_all",
-  "documents.view_all",
-  "attendance.view_all",
-  "leave.manage_policy",
-  "payroll.run",
-  "salary.manage",
-  "onboarding_exit.view_all",
-  "performance.view_all",
-  "timesheet.view_all",
-  "timesheet.manage_all",
-] as const;
-
 export function isNavItemVisible(
   item: Pick<DashboardNavItem, "permissionKey">,
   role: string,
@@ -139,22 +126,13 @@ export function isNavItemVisible(
   return permissions[item.permissionKey] !== false;
 }
 
-export function hasHrmsManagementAccess(role: string, permissions: Record<string, boolean>): boolean {
-  if (role === "admin") return true;
-  return HRMS_MANAGEMENT_PERMISSION_KEYS.some((key) => permissions[key] === true);
-}
-
 export function getDashboardDomainItemsForRole(
   domain: DashboardDomain,
   role: string,
   permissions: Record<string, boolean>
 ): DashboardNavItem[] {
   const items =
-    domain === "workforce"
-      ? hasHrmsManagementAccess(role, permissions)
-        ? WORKFORCE_ADMIN_ITEMS
-        : WORKFORCE_SELF_SERVICE_ITEMS
-      : DASHBOARD_DOMAIN_ITEMS[domain] ?? [];
+    domain === "workforce" ? (role === "admin" ? WORKFORCE_ADMIN_ITEMS : WORKFORCE_SELF_SERVICE_ITEMS) : DASHBOARD_DOMAIN_ITEMS[domain] ?? [];
   return items.filter((item) => isNavItemVisible(item, role, permissions));
 }
 
