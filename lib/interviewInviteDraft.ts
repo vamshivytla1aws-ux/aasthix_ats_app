@@ -64,6 +64,63 @@ function sanitizeDraftBody(body: string) {
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function buildExactInterviewDateTimeLabel(input: InterviewInviteDraftInput) {
+  const base = clean(input.interviewDateTimeLabel);
+  const tz = clean(input.timezoneLabel);
+  if (!base) return "";
+  if (!tz) return base;
+  if (base.toLowerCase().includes(tz.toLowerCase())) return base;
+  return `${base} ${tz}`;
+}
+
+function normalizeWhitespace(body: string) {
+  return body
+    .replace(/[ \t]+/g, " ")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function enforceExactInterviewDetails(body: string, input: InterviewInviteDraftInput) {
+  const exactDateTimeLabel = buildExactInterviewDateTimeLabel(input);
+  const joinLine = input.meetLink
+    ? "Please join a few minutes before the scheduled time using the Google Meet link in this invite."
+    : clean(input.meetingLocation)
+      ? `Please join a few minutes before the scheduled time. Access details: ${clean(input.meetingLocation)}`
+      : "Please join a few minutes before the scheduled time.";
+  const durationLine = clean(input.durationLabel) ? `Duration: ${clean(input.durationLabel)}.` : "";
+
+  let next = String(body || "");
+  next = next.replace(/\bWe will share the Google Meet link with you shortly\.?/gi, "");
+  next = next.replace(/\bThe interview is scheduled[^.]*\./gi, "");
+  next = next.replace(/\bYour interview is scheduled[^.]*\./gi, "");
+  next = next.replace(/\bPlease join[^.]*scheduled time[^.]*\./gi, "");
+  next = next.replace(/\bPlease join[^.]*Google Meet[^.]*\./gi, "");
+  next = normalizeWhitespace(next);
+
+  const paragraphs = next
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const intro = paragraphs.shift() || "";
+  const detailLines = [
+    exactDateTimeLabel ? `The interview is scheduled for ${exactDateTimeLabel}.` : "",
+    durationLine,
+    joinLine,
+  ].filter(Boolean);
+
+  const rebuilt = [
+    intro,
+    detailLines.join(" "),
+    ...paragraphs,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return normalizeWhitespace(rebuilt);
+}
+
 function buildFallbackDraft(input: InterviewInviteDraftInput) {
   const candidateName = clean(input.candidateName) || "Candidate";
   const jobTitle = clean(input.jobTitle) || "the role";
@@ -76,19 +133,19 @@ function buildFallbackDraft(input: InterviewInviteDraftInput) {
     ? `Updated interview schedule for ${jobTitle}`
     : `Interview invitation for ${jobTitle}`;
 
+  const exactDateTimeLabel = buildExactInterviewDateTimeLabel(input);
   const paragraphs = normalizeParagraphs([
     `Hi ${candidateName},`,
     input.isReschedule
       ? `Your interview for the ${jobTitle} role has been rescheduled.`
       : `You have been shortlisted for the ${jobTitle} role.`,
-    `Your interview is scheduled on ${input.interviewDateTimeLabel}${input.timezoneLabel ? ` (${input.timezoneLabel})` : ""}.`,
+    `The interview is scheduled for ${exactDateTimeLabel}.`,
     durationLabel ? `Duration: ${durationLabel}.` : "",
     input.meetLink
-      ? `Please join through Google Meet using this link: ${input.meetLink}`
+      ? "Please join a few minutes before the scheduled time using the Google Meet link in this invite."
       : meetingLocation
-        ? `Interview mode: ${meetingMode}. Details: ${meetingLocation}`
+        ? `Please join a few minutes before the scheduled time. Access details: ${meetingLocation}`
         : `Interview mode: ${meetingMode}.`,
-    "Please join a few minutes before the scheduled time.",
     notes ? `Additional details: ${notes}` : "",
     "Please let me know if you have any questions.",
   ]);
@@ -143,7 +200,9 @@ export async function draftInterviewInviteWithAi(
     'Do not use generic AI-style phrases such as "we are delighted", "exciting opportunity", "seamless experience", or "kindly be informed."',
     "Keep the email short and realistic.",
     "Write only the subject and email body.",
-    "The body should invite the candidate to join the interview through Google Meet when a Meet link is available, mention the date and time clearly, and ask them to join a few minutes before the scheduled time.",
+    "The body should invite the candidate to join the interview through Google Meet when a Meet link is available, mention the exact date and time exactly as provided in the context, and ask them to join a few minutes before the scheduled time.",
+    "Do not alter, convert, round, or reinterpret the provided interview date/time.",
+    "Do not say the Google Meet link will be shared later if the invite already includes it.",
     "Do not mention the company name anywhere in subject or body.",
     "Do not add sign-off lines like Best regards / Thanks / recruiter name.",
     "If this is a reschedule, make that clear naturally.",
@@ -187,7 +246,10 @@ export async function draftInterviewInviteWithAi(
 
     const parsed = JSON.parse(raw) as { subject?: unknown; body?: unknown };
     const subject = stripCompanyMentions(clean(parsed.subject).slice(0, 500), input.company);
-    const body = sanitizeDraftBody(stripCompanyMentions(clean(parsed.body).slice(0, 100_000), input.company));
+    const body = enforceExactInterviewDetails(
+      sanitizeDraftBody(stripCompanyMentions(clean(parsed.body).slice(0, 100_000), input.company)),
+      input
+    );
     if (!subject || !body) return fallback;
 
     return { source: "ai", subject, body };

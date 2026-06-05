@@ -23,7 +23,7 @@ function parseEmails(raw: unknown) {
 }
 
 function formatDateTimeLabel(value: string) {
-  return `${formatInAtsTimezone(value)} (${ATS_TIMEZONE_LABEL})`;
+  return formatInAtsTimezone(value);
 }
 
 function normalizeDurationMinutes(raw: unknown) {
