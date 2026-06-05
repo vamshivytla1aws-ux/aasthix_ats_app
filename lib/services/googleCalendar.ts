@@ -552,8 +552,8 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
     const payload = {
       summary: summaryText,
       description: descriptionLines.join("\n"),
-      start: { dateTime: start.toISOString() },
-      end: { dateTime: end.toISOString() },
+      start: { dateTime: start.toISOString(), timeZone: ATS_TIMEZONE },
+      end: { dateTime: end.toISOString(), timeZone: ATS_TIMEZONE },
       attendees: attendees.map((email) => ({ email })),
       conferenceData: input.existingEventId
         ? undefined
