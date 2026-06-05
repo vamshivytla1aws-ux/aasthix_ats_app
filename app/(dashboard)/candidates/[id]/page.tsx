@@ -1,9 +1,9 @@
 "use client";
 
-import React, { Suspense, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Check, Download, Mail, MapPin, Pencil, Phone, X } from "lucide-react";
+import { Check, Download, FileUp, Mail, MapPin, Pencil, Phone, X } from "lucide-react";
 import CandidateForm from "@/components/CandidateForm";
 import CandidateHeader from "@/components/candidate/CandidateHeader";
 import Timeline from "@/components/candidate/Timeline";
@@ -168,6 +168,10 @@ function CandidateProfilePageContent() {
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [resumeUploadBusy, setResumeUploadBusy] = useState(false);
+  const [resumeUploadError, setResumeUploadError] = useState<string | null>(null);
+  const [resumeUploadMessage, setResumeUploadMessage] = useState<string | null>(null);
+  const resumeUploadInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
   const isValidId = useMemo(() => Number.isFinite(candidateId), [candidateId]);
@@ -323,19 +327,76 @@ function CandidateProfilePageContent() {
     }
   }
 
+  async function uploadResumeFile(file: File | null) {
+    if (!file) return;
+    setResumeUploadBusy(true);
+    setResumeUploadError(null);
+    setResumeUploadMessage(null);
+    try {
+      const fd = new FormData();
+      fd.append("resume_file", file);
+      const updated = await apiFetchJson<{ resume_url: string | null }>(`/api/candidates/${candidateId}/resume`, {
+        method: "POST",
+        body: fd,
+      });
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              candidate: {
+                ...current.candidate,
+                resume_url: updated.resume_url ?? null,
+              },
+            }
+          : current
+      );
+      setResumeUploadMessage("Resume updated successfully.");
+      if (resumeUploadInputRef.current) resumeUploadInputRef.current.value = "";
+    } catch (err: any) {
+      setResumeUploadError(err?.message || "Failed to upload resume");
+    } finally {
+      setResumeUploadBusy(false);
+    }
+  }
+
   const detailsPanel = (
     <div className="space-y-0">
       <CandidateHeader candidate={c} density={density} />
       <div className={[`border-b border-slate-200 dark:border-slate-700`, sectionPad].join(" ")}>
         <div className={["mb-0.5 text-slate-500 dark:text-slate-400", titleClass].join(" ")}>Resume</div>
-        {normalizedResumeUrl ? (
-          <a href={normalizedResumeUrl} target="_blank" rel="noopener noreferrer" className={btnClass}>
-            <Download size={density === "ultra" ? 12 : 14} />
-            Download resume
-          </a>
-        ) : (
-          <div className="text-xs text-slate-500 dark:text-slate-400">No resume uploaded</div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {normalizedResumeUrl ? (
+            <a href={normalizedResumeUrl} target="_blank" rel="noopener noreferrer" className={btnClass}>
+              <Download size={density === "ultra" ? 12 : 14} />
+              Download resume
+            </a>
+          ) : (
+            <div className="text-xs text-slate-500 dark:text-slate-400">No resume uploaded</div>
+          )}
+          {canManageCandidate ? (
+            <>
+              <button
+                type="button"
+                onClick={() => resumeUploadInputRef.current?.click()}
+                disabled={resumeUploadBusy}
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-3 py-2 text-xs font-semibold text-[var(--ats-text)] transition hover:bg-[var(--ats-bg-panel-strong)] disabled:opacity-60"
+              >
+                <FileUp className="h-3.5 w-3.5" />
+                {resumeUploadBusy ? "Uploading..." : normalizedResumeUrl ? "Replace resume" : "Upload resume"}
+              </button>
+              <input
+                ref={resumeUploadInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="sr-only"
+                onChange={(e) => void uploadResumeFile(e.target.files?.[0] ?? null)}
+                disabled={resumeUploadBusy}
+              />
+            </>
+          ) : null}
+        </div>
+        {resumeUploadMessage ? <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">{resumeUploadMessage}</div> : null}
+        {resumeUploadError ? <div className="mt-2 text-xs text-red-600 dark:text-red-400">{resumeUploadError}</div> : null}
       </div>
       <div className={[`border-b border-slate-200 dark:border-slate-700`, sectionPad].join(" ")}>
         <h3 className={[titleClass, "text-slate-500 dark:text-slate-400"].join(" ")}>Skills</h3>

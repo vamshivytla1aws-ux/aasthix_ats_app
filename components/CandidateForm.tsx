@@ -524,7 +524,7 @@ export default function CandidateForm({
                 {mode === "edit" ? "Edit candidate" : "Add candidate"}
               </h2>
               <p className="mt-1 max-w-2xl text-xs text-slate-600">
-                Upload a resume to auto-fill fields, then refine details. Name and email are required to save.
+                Use the separate resume upload action first, then review the parsed fields. Name and email are required to save.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -606,14 +606,14 @@ export default function CandidateForm({
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="sm:col-span-2 lg:col-span-3">
-                    <label className={UI.label}>Resume</label>
+                    <label className={UI.label}>Resume upload</label>
                     <div className="flex flex-wrap items-center gap-2">
                       <label
                         htmlFor="resume-file"
                         className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-blue-300 hover:bg-blue-50/50"
                       >
                         <FileUp className="h-4 w-4" aria-hidden />
-                        {resumeFileLabel ? resumeFileLabel : "Select PDF/DOCX"}
+                          {resumeFileLabel ? resumeFileLabel : resumeUrl ? "Choose replacement resume" : "Choose resume PDF/DOCX"}
                       </label>
                       <button
                         type="button"
@@ -621,7 +621,7 @@ export default function CandidateForm({
                         disabled={!resumeFile || isBusy}
                         className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-45"
                       >
-                        {parsing ? "Parsing..." : "Parse & fill"}
+                          {parsing ? "Uploading..." : "Upload & parse resume"}
                       </button>
                       {resumeUrl && normalizeResumeLink(resumeUrl) ? (
                         <a className="text-xs font-semibold text-blue-700 hover:underline" href={normalizeResumeLink(resumeUrl) || undefined} target="_blank" rel="noreferrer">
@@ -742,8 +742,8 @@ export default function CandidateForm({
               <SectionHeader
                 step="01"
                 icon={FileUp}
-                title="Resume & parsing"
-                description="PDF or Word — we extract contact info and skills. You stay in control of every field."
+                title="Resume upload"
+                description="Upload or replace the resume first, then we extract contact info and skills for review."
               />
               <div className="grid gap-6 lg:grid-cols-12">
                 <div className="lg:col-span-7">
@@ -757,7 +757,7 @@ export default function CandidateForm({
                     >
                       <FileUp className="h-8 w-8 text-slate-400" aria-hidden />
                       <span className="mt-2 text-sm font-medium text-slate-700">
-                        {resumeFileLabel ? resumeFileLabel : "Drop file or click to browse"}
+                          {resumeFileLabel ? resumeFileLabel : "Drop resume file or click to browse"}
                       </span>
                       <span className="mt-1 text-xs text-slate-500">PDF, DOCX · max typical resume size</span>
                     </label>
@@ -783,7 +783,7 @@ export default function CandidateForm({
                       </a>
                     </div>
                   ) : null}
-                  <p className={fieldHint}>Parsing uses your configured engine (AI + rules). Always verify before saving.</p>
+                    <p className={fieldHint}>This is a separate resume action. After upload and parse, save the candidate profile to persist the rest of the changes.</p>
                 </div>
                 <div className="flex flex-col justify-end lg:col-span-5">
                   <button
@@ -797,7 +797,7 @@ export default function CandidateForm({
                     ) : (
                       <Sparkles className="h-4 w-4" aria-hidden />
                     )}
-                    {parsing ? "Parsing resume…" : "Parse & fill fields"}
+                      {parsing ? "Uploading resume…" : "Upload & parse resume"}
                   </button>
                 </div>
               </div>
