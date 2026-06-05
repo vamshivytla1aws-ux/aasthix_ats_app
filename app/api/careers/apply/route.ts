@@ -14,6 +14,7 @@ import { sendCareersApplicationConfirmation } from "@/lib/careersConfirmationEma
 import { extractPlainTextFromResumeBuffer } from "@/lib/resumeParser";
 import { refreshResumeEmbeddingForCandidate } from "@/lib/candidates/refreshResumeEmbedding";
 import { getPublicCareersJob } from "@/lib/careersPublicJob";
+import { buildResumeBlobRecord } from "@/lib/resumeStorage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -132,6 +133,13 @@ export async function POST(request: Request) {
   const absPath = path.join(absDir, fileName);
   await fs.writeFile(absPath, buf);
   const resumeUrl = `/uploads/resumes/${relDir.replace(/\\/g, "/")}/${fileName}`;
+  const resumeRecord = await buildResumeBlobRecord({
+    resumeUrl,
+    resumeText: null,
+    fileName: origName,
+    fileType: file.type || null,
+    fileBytes: buf,
+  });
 
   let resumeTextDb: string | null = null;
   try {
@@ -230,13 +238,17 @@ export async function POST(request: Request) {
           END,
           resume_url = $5,
           resume_text = COALESCE($6, resume_text),
-          experience_summary = $7,
-          notice_period = $8,
-          current_salary = COALESCE($9, current_salary),
-          expected_salary = COALESCE($10, expected_salary),
-          source = $11,
+          resume_file_name = COALESCE($7, resume_file_name),
+          resume_file_type = COALESCE($8, resume_file_type),
+          resume_file_size = COALESCE($9, resume_file_size),
+          resume_blob = COALESCE($10, resume_blob),
+          experience_summary = $11,
+          notice_period = $12,
+          current_salary = COALESCE($13, current_salary),
+          expected_salary = COALESCE($14, expected_salary),
+          source = $15,
           updated_at = NOW()
-        WHERE id = $1 AND created_by_user_id = $12
+        WHERE id = $1 AND created_by_user_id = $16
         `,
         [
           candidateId,
@@ -245,6 +257,10 @@ export async function POST(request: Request) {
           location,
           resumeUrl,
           resumeTextDb,
+          resumeRecord.resume_file_name,
+          resumeRecord.resume_file_type,
+          resumeRecord.resume_file_size,
+          resumeRecord.resume_blob,
           experienceSummary,
           noticePeriod,
           currentSalary,
@@ -271,13 +287,17 @@ export async function POST(request: Request) {
           END,
           resume_url = $5,
           resume_text = COALESCE($6, resume_text),
-          experience_summary = $7,
-          notice_period = $8,
-          current_salary = COALESCE($9, current_salary),
-          expected_salary = COALESCE($10, expected_salary),
-          source = $11,
+          resume_file_name = COALESCE($7, resume_file_name),
+          resume_file_type = COALESCE($8, resume_file_type),
+          resume_file_size = COALESCE($9, resume_file_size),
+          resume_blob = COALESCE($10, resume_blob),
+          experience_summary = $11,
+          notice_period = $12,
+          current_salary = COALESCE($13, current_salary),
+          expected_salary = COALESCE($14, expected_salary),
+          source = $15,
           updated_at = NOW()
-        WHERE id = $1 AND created_by_user_id = $12
+        WHERE id = $1 AND created_by_user_id = $16
         `,
         [
           candidateId,
@@ -286,6 +306,10 @@ export async function POST(request: Request) {
           location,
           resumeUrl,
           resumeTextDb,
+          resumeRecord.resume_file_name,
+          resumeRecord.resume_file_type,
+          resumeRecord.resume_file_size,
+          resumeRecord.resume_blob,
           experienceSummary,
           noticePeriod,
           currentSalary,
@@ -298,10 +322,11 @@ export async function POST(request: Request) {
       const ins = await client.query(
         `
         INSERT INTO candidates (
-          full_name, email, phone, linkedin_url, website_url, location, location_source, resume_url, resume_text, skills,
+          full_name, email, phone, linkedin_url, website_url, location, location_source, resume_url, resume_text,
+          resume_file_name, resume_file_type, resume_file_size, resume_blob, skills,
           notice_period, current_salary, expected_salary, experience_summary, source, created_by_user_id
         )
-        VALUES ($1, $2, $3, NULL, NULL, $4, 'manual', $5, $6, NULL, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, NULL, NULL, $4, 'manual', $5, $6, $7, $8, $9, $10, NULL, $11, $12, $13, $14, $15, $16)
         RETURNING id
         `,
         [
@@ -311,6 +336,10 @@ export async function POST(request: Request) {
           location,
           resumeUrl,
           resumeTextDb,
+          resumeRecord.resume_file_name,
+          resumeRecord.resume_file_type,
+          resumeRecord.resume_file_size,
+          resumeRecord.resume_blob,
           noticePeriod,
           currentSalary,
           expectedSalary,

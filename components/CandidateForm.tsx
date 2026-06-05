@@ -424,25 +424,26 @@ export default function CandidateForm({
     setToast(null);
     try {
       const isEdit = mode === "edit" && !!initialCandidate?.id;
+      const fd = new FormData();
+      if (isEdit) fd.append("id", String(initialCandidate!.id));
+      fd.append("full_name", fullName);
+      fd.append("email", email);
+      if (phone) fd.append("phone", phone);
+      if (linkedinUrl) fd.append("linkedin_url", linkedinUrl);
+      if (websiteUrl) fd.append("website_url", websiteUrl);
+      if (location) fd.append("location", location);
+      if (resumeUrl) fd.append("resume_url", resumeUrl);
+      if (resumeText) fd.append("resume_text", resumeText);
+      if (skills.length > 0) fd.append("skills", skills.join(", "));
+      if (currentSalary.trim().length) fd.append("current_salary", String(Number(currentSalary)));
+      if (expectedSalary.trim().length) fd.append("expected_salary", String(Number(expectedSalary)));
+      const finalNoticePeriod = noticePreset === "Custom" ? noticeCustom.trim() || "" : noticePreset || "";
+      if (finalNoticePeriod) fd.append("notice_period", finalNoticePeriod);
+      if (resumeFile) fd.append("resume_file", resumeFile);
+
       const created = await apiFetchJson<Candidate>("/api/candidates", {
         method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: isEdit ? initialCandidate!.id : undefined,
-          full_name: fullName,
-          email,
-          phone: phone || null,
-          linkedin_url: linkedinUrl || null,
-          website_url: websiteUrl || null,
-          location: location || null,
-          resume_url: resumeUrl || null,
-          resume_text: resumeText || null,
-          skills: skills.length > 0 ? skills.join(", ") : null,
-          current_salary: currentSalary.trim().length ? Number(currentSalary) : null,
-          expected_salary: expectedSalary.trim().length ? Number(expectedSalary) : null,
-          notice_period:
-            noticePreset === "Custom" ? noticeCustom.trim() || null : noticePreset || null,
-        }),
+        body: fd,
       });
 
       if (!isEdit && selectedJobId) {

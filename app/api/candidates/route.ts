@@ -3,6 +3,57 @@ import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { refreshResumeEmbeddingForCandidate } from "@/lib/candidates/refreshResumeEmbedding";
 import { persistCandidateDerivedProfile } from "@/lib/candidateDerivedProfileDb";
+import { parseResumeBuffer } from "@/lib/resumeParser";
+import { buildResumeBlobRecord } from "@/lib/resumeStorage";
+
+async function parseCandidatePayload(request: Request) {
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("multipart/form-data")) {
+    const form = await request.formData();
+    const file = form.get("resume_file");
+    const resumeFile = file instanceof File ? file : null;
+    const resumeBytes = resumeFile ? Buffer.from(await resumeFile.arrayBuffer()) : null;
+    const parsedResume =
+      resumeFile && resumeBytes ? await parseResumeBuffer(resumeFile.name || "resume", resumeBytes) : null;
+    const resumeRecord = await buildResumeBlobRecord({
+      resumeUrl:
+        parsedResume?.resume_url ??
+        (typeof form.get("resume_url") === "string" ? String(form.get("resume_url")) : null),
+      resumeText:
+        parsedResume?.resume_text ??
+        (typeof form.get("resume_text") === "string" ? String(form.get("resume_text")) : null),
+      fileName: resumeFile?.name ?? null,
+      fileType: resumeFile?.type ?? null,
+      fileBytes: resumeBytes,
+    });
+    return {
+      id: form.get("id"),
+      full_name: typeof form.get("full_name") === "string" ? String(form.get("full_name")) : "",
+      email: typeof form.get("email") === "string" ? String(form.get("email")) : "",
+      phone: typeof form.get("phone") === "string" ? String(form.get("phone")) : null,
+      linkedin_url: typeof form.get("linkedin_url") === "string" ? String(form.get("linkedin_url")) : null,
+      website_url: typeof form.get("website_url") === "string" ? String(form.get("website_url")) : null,
+      location: typeof form.get("location") === "string" ? String(form.get("location")) : null,
+      skills: typeof form.get("skills") === "string" ? String(form.get("skills")) : null,
+      current_salary: typeof form.get("current_salary") === "string" && String(form.get("current_salary")).trim() ? Number(form.get("current_salary")) : null,
+      expected_salary: typeof form.get("expected_salary") === "string" && String(form.get("expected_salary")).trim() ? Number(form.get("expected_salary")) : null,
+      notice_period: typeof form.get("notice_period") === "string" ? String(form.get("notice_period")) : null,
+      experience_summary: typeof form.get("experience_summary") === "string" ? String(form.get("experience_summary")) : null,
+      source: typeof form.get("source") === "string" ? String(form.get("source")) : null,
+      ...resumeRecord,
+    };
+  }
+
+  const body = await request.json();
+  const resumeRecord = await buildResumeBlobRecord({
+    resumeUrl: body.resume_url ?? null,
+    resumeText: typeof body.resume_text === "string" ? body.resume_text : null,
+  });
+  return {
+    ...body,
+    ...resumeRecord,
+  };
+}
 
 export async function GET(request: Request) {
   try {
@@ -170,7 +221,7 @@ export async function POST(request: Request) {
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const user = auth.access;
 
-    const body = await request.json();
+    const body = await parseCandidatePayload(request);
     const {
       full_name,
       email,
@@ -186,6 +237,10 @@ export async function POST(request: Request) {
       notice_period,
       experience_summary,
       source,
+      resume_file_name,
+      resume_file_type,
+      resume_file_size,
+      resume_blob,
     } = body;
 
     if (!full_name || !email) {
@@ -203,10 +258,10 @@ export async function POST(request: Request) {
       INSERT INTO candidates (
         full_name, email, phone, linkedin_url, website_url, location, resume_url, skills,
         notice_period, current_salary, expected_salary, experience_summary, source, location_source,
-        resume_text,
+        resume_text, resume_file_name, resume_file_type, resume_file_size, resume_blob,
         created_by_user_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       ON CONFLICT (created_by_user_id, email) DO UPDATE
         SET full_name = EXCLUDED.full_name,
             phone = EXCLUDED.phone,
@@ -218,6 +273,10 @@ export async function POST(request: Request) {
             END,
             resume_url = COALESCE(EXCLUDED.resume_url, candidates.resume_url),
             resume_text = COALESCE(EXCLUDED.resume_text, candidates.resume_text),
+            resume_file_name = COALESCE(EXCLUDED.resume_file_name, candidates.resume_file_name),
+            resume_file_type = COALESCE(EXCLUDED.resume_file_type, candidates.resume_file_type),
+            resume_file_size = COALESCE(EXCLUDED.resume_file_size, candidates.resume_file_size),
+            resume_blob = COALESCE(EXCLUDED.resume_blob, candidates.resume_blob),
             skills = COALESCE(EXCLUDED.skills, candidates.skills),
             notice_period = COALESCE(EXCLUDED.notice_period, candidates.notice_period),
             current_salary = COALESCE(EXCLUDED.current_salary, candidates.current_salary),
@@ -264,6 +323,10 @@ export async function POST(request: Request) {
         src,
         location ? "manual" : "parsed",
         typeof resume_text === "string" ? resume_text : null,
+        resume_file_name ?? null,
+        resume_file_type ?? null,
+        resume_file_size ?? null,
+        resume_blob ?? null,
         user.user_id,
       ]
     );
@@ -293,7 +356,7 @@ export async function PUT(request: Request) {
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const user = auth.access;
 
-    const body = await request.json();
+    const body = await parseCandidatePayload(request);
     const {
       id,
       full_name,
@@ -310,6 +373,10 @@ export async function PUT(request: Request) {
       notice_period,
       experience_summary,
       source,
+      resume_file_name,
+      resume_file_type,
+      resume_file_size,
+      resume_blob,
     } = body ?? {};
 
     if (!id || !Number.isFinite(Number(id))) {
@@ -341,12 +408,16 @@ export async function PUT(request: Request) {
           END,
           resume_url = $8,
           resume_text = COALESCE($9, resume_text),
-          skills = $10,
-          notice_period = $11,
-          current_salary = $12,
-          expected_salary = $13,
-          experience_summary = COALESCE($14, experience_summary),
-          source = COALESCE($15, source),
+          resume_file_name = COALESCE($10, resume_file_name),
+          resume_file_type = COALESCE($11, resume_file_type),
+          resume_file_size = COALESCE($12, resume_file_size),
+          resume_blob = COALESCE($13, resume_blob),
+          skills = $14,
+          notice_period = $15,
+          current_salary = $16,
+          expected_salary = $17,
+          experience_summary = COALESCE($18, experience_summary),
+          source = COALESCE($19, source),
           updated_at = NOW()
         WHERE id = $1
       RETURNING
@@ -377,6 +448,10 @@ export async function PUT(request: Request) {
           location ?? null,
           resume_url ?? null,
           typeof resume_text === "string" ? resume_text : null,
+          resume_file_name ?? null,
+          resume_file_type ?? null,
+          resume_file_size ?? null,
+          resume_blob ?? null,
           typeof skills === "string" ? skills : null,
           typeof notice_period === "string" ? notice_period : null,
           current_salary ?? null,

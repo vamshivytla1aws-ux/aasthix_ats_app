@@ -2,16 +2,10 @@ import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 import { requireAuthUser } from "@/lib/authServer";
+import { query } from "@/lib/db";
+import { contentTypeFromStoredResume } from "@/lib/resumeStorage";
 
 export const runtime = "nodejs";
-
-function contentTypeFromExt(filePath: string) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === ".pdf") return "application/pdf";
-  if (ext === ".doc") return "application/msword";
-  if (ext === ".docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  return "application/octet-stream";
-}
 
 export async function GET(
   _request: Request,
@@ -44,7 +38,34 @@ export async function GET(
     try {
       fileBuffer = await fs.readFile(absolutePath);
     } catch {
-      return NextResponse.json({ error: "Resume not found" }, { status: 404 });
+      const storedUrl = `/uploads/resumes/${parts.join("/")}`;
+      const blobRes = await query(
+        `
+        SELECT resume_blob, resume_file_name, resume_file_type
+        FROM candidates
+        WHERE resume_url = $1
+          AND resume_blob IS NOT NULL
+        ORDER BY updated_at DESC NULLS LAST, id DESC
+        LIMIT 1
+        `,
+        [storedUrl]
+      );
+      const row = blobRes.rows[0] as
+        | { resume_blob: Buffer | null; resume_file_name: string | null; resume_file_type: string | null }
+        | undefined;
+      if (!row?.resume_blob || !Buffer.isBuffer(row.resume_blob)) {
+        return NextResponse.json({ error: "Resume not found" }, { status: 404 });
+      }
+      const fileName = row.resume_file_name?.trim() || path.basename(absolutePath);
+      const body = new Uint8Array(row.resume_blob);
+      return new NextResponse(body, {
+        status: 200,
+        headers: {
+          "Content-Type": contentTypeFromStoredResume(row.resume_file_name, row.resume_file_type, storedUrl),
+          "Content-Disposition": `inline; filename="${fileName}"`,
+          "Cache-Control": "private, max-age=300",
+        },
+      });
     }
 
     const fileName = path.basename(absolutePath);
@@ -52,7 +73,7 @@ export async function GET(
     return new NextResponse(body, {
       status: 200,
       headers: {
-        "Content-Type": contentTypeFromExt(absolutePath),
+        "Content-Type": contentTypeFromStoredResume(fileName, null, absolutePath),
         "Content-Disposition": `inline; filename="${fileName}"`,
         "Cache-Control": "private, max-age=300",
       },

@@ -174,11 +174,16 @@ export default function BulkCandidateIntake({ onImported }: { onImported: () => 
             resume_url: r.resume_url || null,
           })),
       };
+      const fd = new FormData();
+      fd.append("manifest", JSON.stringify(payload));
+      const selectedFileNames = new Set(payload.rows.map((r) => r.file_name));
+      for (const file of files) {
+        if (selectedFileNames.has(file.name)) fd.append("files", file);
+      }
 
       const res = await apiFetchJson<BulkImportResponse>("/api/candidates/bulk-import", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: fd,
       });
       setReport(res);
       onImported();

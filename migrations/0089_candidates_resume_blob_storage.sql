@@ -1,0 +1,5 @@
+ALTER TABLE candidates
+  ADD COLUMN IF NOT EXISTS resume_file_name TEXT NULL,
+  ADD COLUMN IF NOT EXISTS resume_file_type TEXT NULL,
+  ADD COLUMN IF NOT EXISTS resume_file_size INTEGER NULL,
+  ADD COLUMN IF NOT EXISTS resume_blob BYTEA NULL;

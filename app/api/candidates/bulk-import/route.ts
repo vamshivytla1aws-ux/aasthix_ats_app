@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { parseResumeBuffer } from "@/lib/resumeParser";
+import { buildResumeBlobRecord } from "@/lib/resumeStorage";
 
 export const runtime = "nodejs";
 
@@ -43,14 +44,19 @@ async function upsertCandidate(
     skills?: string | null;
     resume_url?: string | null;
     resume_text?: string | null;
+    resume_file_name?: string | null;
+    resume_file_type?: string | null;
+    resume_file_size?: number | null;
+    resume_blob?: Buffer | null;
   }
 ) {
   const insert = await query(
     `
     INSERT INTO candidates (
-      full_name, email, phone, linkedin_url, location, location_source, resume_url, resume_text, skills, created_by_user_id
+      full_name, email, phone, linkedin_url, location, location_source, resume_url, resume_text,
+      resume_file_name, resume_file_type, resume_file_size, resume_blob, skills, created_by_user_id
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
     ON CONFLICT (created_by_user_id, email) DO UPDATE
       SET full_name = EXCLUDED.full_name,
           phone = COALESCE(EXCLUDED.phone, candidates.phone),
@@ -66,6 +72,10 @@ async function upsertCandidate(
           END,
           resume_url = COALESCE(EXCLUDED.resume_url, candidates.resume_url),
           resume_text = COALESCE(EXCLUDED.resume_text, candidates.resume_text),
+          resume_file_name = COALESCE(EXCLUDED.resume_file_name, candidates.resume_file_name),
+          resume_file_type = COALESCE(EXCLUDED.resume_file_type, candidates.resume_file_type),
+          resume_file_size = COALESCE(EXCLUDED.resume_file_size, candidates.resume_file_size),
+          resume_blob = COALESCE(EXCLUDED.resume_blob, candidates.resume_blob),
           skills = COALESCE(EXCLUDED.skills, candidates.skills),
           updated_at = NOW()
     RETURNING id, full_name, email
@@ -79,6 +89,10 @@ async function upsertCandidate(
       row.location ? row.location_source ?? "parsed" : "parsed",
       row.resume_url ?? null,
       row.resume_text ?? null,
+      row.resume_file_name ?? null,
+      row.resume_file_type ?? null,
+      row.resume_file_size ?? null,
+      row.resume_blob ?? null,
       row.skills ?? null,
       userId,
     ]
@@ -166,6 +180,10 @@ export async function POST(request: Request) {
           continue;
         }
         try {
+          const resumeRecord = await buildResumeBlobRecord({
+            resumeUrl: item.resume_url || null,
+            resumeText: null,
+          });
           const done = await upsertCandidate(user.user_id, file_name, {
             full_name,
             email,
@@ -174,8 +192,7 @@ export async function POST(request: Request) {
             location: item.location || null,
             location_source: item.location ? "manual" : "parsed",
             skills: item.skills || null,
-            resume_url: item.resume_url || null,
-            resume_text: null,
+            ...resumeRecord,
           });
           imported += 1;
           if (createApplication && done.candidate_id) {
@@ -193,22 +210,59 @@ export async function POST(request: Request) {
           });
         }
       }
-    } else {
+    } else if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
       const files = form.getAll("files").filter((x): x is File => x instanceof File);
-      if (files.length === 0) {
-        return NextResponse.json({ error: "No files uploaded. Use field name 'files'." }, { status: 400 });
-      }
       if (files.length > 50) {
         return NextResponse.json({ error: "Maximum 50 resumes per batch." }, { status: 400 });
+      }
+      const manifestRaw = form.get("manifest");
+      const manifest =
+        typeof manifestRaw === "string"
+          ? ((JSON.parse(manifestRaw) as { rows?: ImportRowInput[]; options?: ImportOptions }) || {})
+          : {};
+      const rows = Array.isArray(manifest.rows) ? manifest.rows : [];
+      const options = manifest.options || {};
+      const createApplication = Boolean(options.create_application);
+      const jobId = Number(options.job_id);
+      if (createApplication) {
+        const pipelineAuth = await requirePermission("pipeline.manage");
+        if (!pipelineAuth.ok) {
+          return NextResponse.json({ error: "pipeline.manage permission required for auto-application." }, { status: pipelineAuth.status });
+        }
+        if (!Number.isFinite(jobId) || jobId <= 0) {
+          return NextResponse.json({ error: "Valid job_id is required when create_application is enabled." }, { status: 400 });
+        }
+      }
+
+      const rowByFileName = new Map<string, ImportRowInput>();
+      for (const row of rows) {
+        const key = (row.file_name || "").trim();
+        if (key) rowByFileName.set(key, row);
+      }
+
+      if (files.length === 0 && rows.length === 0) {
+        return NextResponse.json({ error: "No resumes provided for import." }, { status: 400 });
       }
 
       for (const file of files) {
         const file_name = file.name || "resume";
         try {
-          const parsed = await parseResumeBuffer(file_name, Buffer.from(await file.arrayBuffer()));
+          const bytes = Buffer.from(await file.arrayBuffer());
+          const parsed = await parseResumeBuffer(file_name, bytes);
+          const override = rowByFileName.get(file_name) || {};
+          const finalEmail = (override.email || "").trim() || parsed.email;
+          const finalName =
+            (override.full_name || "").trim() || parsed.full_name || (finalEmail ? finalEmail.split("@")[0] : "") || "Unknown Candidate";
+          const resumeRecord = await buildResumeBlobRecord({
+            resumeUrl: parsed.resume_url ?? null,
+            resumeText: parsed.resume_text ?? null,
+            fileName: file_name,
+            fileType: file.type || null,
+            fileBytes: bytes,
+          });
 
-          if (!parsed.email) {
+          if (!finalEmail) {
             results.push({
               file_name,
               ok: false,
@@ -218,17 +272,19 @@ export async function POST(request: Request) {
           }
 
           const done = await upsertCandidate(user.user_id, file_name, {
-            full_name: parsed.full_name || parsed.email.split("@")[0] || "Unknown Candidate",
-            email: parsed.email,
-            phone: parsed.phone ?? null,
-            linkedin_url: parsed.linkedin_url ?? null,
-            location: parsed.location ?? null,
-            location_source: parsed.location ? "parsed" : "parsed",
-            skills: parsed.skills ?? null,
-            resume_url: parsed.resume_url ?? null,
-            resume_text: parsed.resume_text ?? null,
+            full_name: finalName,
+            email: finalEmail,
+            phone: override.phone || parsed.phone || null,
+            linkedin_url: override.linkedin_url || parsed.linkedin_url || null,
+            location: override.location || parsed.location || null,
+            location_source: override.location ? "manual" : "parsed",
+            skills: override.skills || parsed.skills || null,
+            ...resumeRecord,
           });
           imported += 1;
+          if (createApplication && done.candidate_id) {
+            await ensureAppliedApplication(user.user_id, done.candidate_id, jobId);
+          }
           results.push(done);
         } catch (e: any) {
           results.push({
@@ -241,6 +297,8 @@ export async function POST(request: Request) {
           });
         }
       }
+    } else {
+      return NextResponse.json({ error: "Unsupported import content type" }, { status: 400 });
     }
 
     return NextResponse.json({
