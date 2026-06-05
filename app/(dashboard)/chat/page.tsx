@@ -587,6 +587,9 @@ export default function ChatPage() {
   const [showTempChatModal, setShowTempChatModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [desktopFullscreenFit, setDesktopFullscreenFit] = useState(false);
+  const [ringVolume, setRingVolume] = useState(0.85);
+  const globalUnreadSnapshotRef = useRef<Map<number, { unread: number; lastMessageId: number }>>(new Map());
+  const lastGlobalDesktopNotifiedRef = useRef<number>(0);
 
   useEffect(() => {
     apiFetchJson<{ user: { id?: number; role?: string } }>("/api/auth/me")
@@ -595,6 +598,16 @@ export default function ChatPage() {
         setCurrentUserRole(String(d.user?.role || "user"));
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("ats_chat_ring_volume");
+    if (!raw) return;
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) {
+      setRingVolume(Math.min(1, Math.max(0.1, parsed)));
+    }
   }, []);
 
   useEffect(() => {
@@ -621,6 +634,10 @@ export default function ChatPage() {
         .filter((c) => Number.isFinite(c.id) && c.id > 0),
     [convData]
   );
+  const { data: globalPrefData } = useSWR<{
+    user: { mention_only: boolean; desktop_sound: boolean; desktop_toast: boolean; email_digest: boolean; email_digest_frequency: string };
+    conversations: Array<{ conversation_id: number; muted: boolean; mention_only: boolean }>;
+  }>("/api/chat/preferences", dashboardFetcher, { refreshInterval: 30_000 });
   useEffect(() => {
     const raw = convData?.conversations ?? [];
     if (!raw.length) return;
@@ -679,6 +696,66 @@ export default function ChatPage() {
   }, [conversations, queryConversationId, activeConvId]);
 
   const unreadTotal = useMemo(() => conversations.reduce((sum, conv) => sum + (conv.unread_count ?? 0), 0), [conversations]);
+
+  useEffect(() => {
+    const next = new Map<number, { unread: number; lastMessageId: number }>();
+    let notificationCandidate: Conversation | null = null;
+    for (const conv of conversations) {
+      const lastMessageId = Number(conv.last_message?.id ?? 0);
+      const unread = Number(conv.unread_count ?? 0);
+      next.set(conv.id, { unread, lastMessageId });
+      const previous = globalUnreadSnapshotRef.current.get(conv.id);
+      const isIncoming = Number(conv.last_message?.sender_id ?? 0) !== Number(currentUserId ?? 0);
+      const conversationMuted = Boolean(globalPrefData?.conversations?.find((pref) => pref.conversation_id === conv.id)?.muted);
+      if (
+        previous &&
+        unread > previous.unread &&
+        lastMessageId > previous.lastMessageId &&
+        isIncoming &&
+        !conversationMuted
+      ) {
+        notificationCandidate = conv;
+      }
+    }
+
+    if (notificationCandidate) {
+      const latestMessageId = Number(notificationCandidate.last_message?.id ?? 0);
+      if ((globalPrefData?.user?.desktop_sound ?? true) && latestMessageId > 0) {
+        playTone("message", 120, Math.max(0.4, ringVolume * 0.6));
+      }
+      if (
+        (globalPrefData?.user?.desktop_toast ?? true) &&
+        latestMessageId > 0 &&
+        latestMessageId !== lastGlobalDesktopNotifiedRef.current &&
+        typeof window !== "undefined" &&
+        "Notification" in window
+      ) {
+        const notify = () => {
+          try {
+            return new Notification(convLabel(notificationCandidate as Conversation, currentUserId), {
+              body: notificationCandidate?.last_message?.content?.slice(0, 140) || "New message",
+              tag: `chat-sidebar-msg-${notificationCandidate?.id}-${latestMessageId}`,
+            });
+          } catch {
+            return null;
+          }
+        };
+        if (Notification.permission === "granted") {
+          notify();
+          lastGlobalDesktopNotifiedRef.current = latestMessageId;
+        } else if (Notification.permission === "default") {
+          void Notification.requestPermission().then((permission) => {
+            if (permission === "granted") {
+              notify();
+              lastGlobalDesktopNotifiedRef.current = latestMessageId;
+            }
+          });
+        }
+      }
+    }
+
+    globalUnreadSnapshotRef.current = next;
+  }, [conversations, currentUserId, globalPrefData, ringVolume]);
 
   return (
     <ChatPageBoundary>
@@ -1074,6 +1151,7 @@ function ChatWorkspace({
   const [localAudioTrackPresent, setLocalAudioTrackPresent] = useState(false);
   const [remoteAudioTracksCount, setRemoteAudioTracksCount] = useState(0);
   const callStateRef = useRef<CallUiState>(callState);
+  const optimisticMessageCounterRef = useRef(0);
   const buildCallSessionPayload = useCallback((roomId: number) => {
     const session_id = getStableCallSessionId(roomId);
     currentCallSessionIdRef.current = session_id;
@@ -1284,6 +1362,31 @@ function ChatWorkspace({
     setUploadQueue((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   const removeUploadItem = (id: string) => setUploadQueue((prev) => prev.filter((item) => item.id !== id));
 
+  const buildOptimisticMessage = useCallback(
+    (content: string, attachment?: UploadItemState["uploaded"], parentMessageId?: number): Message => {
+      optimisticMessageCounterRef.current += 1;
+      const tempId = -(Date.now() * 100 + optimisticMessageCounterRef.current);
+      return {
+        id: tempId,
+        conversation_id: conversation.id,
+        sender_id: Number(currentUserId ?? 0),
+        content,
+        is_system: false,
+        created_at: new Date().toISOString(),
+        sender_name: "You",
+        sender_email: "",
+        attachment_type: attachment?.type ?? null,
+        attachment_url: attachment?.url ?? null,
+        attachment_name: attachment?.name ?? null,
+        attachment_size: attachment?.size ?? null,
+        parent_message_id: parentMessageId ?? null,
+        delivery_state: "queued",
+        mentions: parseMentionsFromText(content),
+      };
+    },
+    [conversation.id, currentUserId]
+  );
+
   const uploadOneFile = useCallback(
     async (file: File) => {
       const localId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1345,8 +1448,16 @@ function ChatWorkspace({
       const plainText = stripMentionTokens(trimmed);
       if (!trimmed && !attachment) return;
       setSending(true);
+      const optimisticMessage = buildOptimisticMessage(plainText, attachment, parentMessageId);
+      const idempotencyKey = `chat-msg-${conversation.id}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      await mutateMessages(
+        (current) => ({
+          messages: [...(current?.messages ?? []), optimisticMessage],
+        }),
+        { revalidate: false }
+      );
       try {
-        await apiFetchJson(`/api/chat/conversations/${conversation.id}/messages`, {
+        const response = await apiFetchJson<{ message: Message }>(`/api/chat/conversations/${conversation.id}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1357,14 +1468,26 @@ function ChatWorkspace({
             attachment_name: attachment?.name ?? null,
             attachment_size: attachment?.size ?? null,
             parent_message_id: parentMessageId ?? null,
+            idempotency_key: idempotencyKey,
           }),
         });
+        await mutateMessages(
+          (current) => ({
+            messages: (current?.messages ?? []).map((msg) => (msg.id === optimisticMessage.id ? response.message : msg)),
+          }),
+          { revalidate: false }
+        );
         setMessageInput("");
         setUploadQueue([]);
         resetComposer();
-        void mutateMessages();
         onMutateConversations();
       } catch (error) {
+        await mutateMessages(
+          (current) => ({
+            messages: (current?.messages ?? []).filter((msg) => msg.id !== optimisticMessage.id),
+          }),
+          { revalidate: false }
+        );
         const msg = error instanceof ApiError ? error.message : "Failed to send message";
         onToast(msg, "error");
       } finally {
@@ -1372,7 +1495,7 @@ function ChatWorkspace({
         textareaRef.current?.focus();
       }
     },
-    [sending, conversation.id, mutateMessages, onMutateConversations, onToast]
+    [sending, buildOptimisticMessage, conversation.id, mutateMessages, onMutateConversations, onToast]
   );
 
   const sendComposer = useCallback(async () => {
@@ -1441,23 +1564,43 @@ function ChatWorkspace({
       const mentions = parseMentionsFromText(trimmed);
       const plainText = stripMentionTokens(trimmed);
       if (!trimmed && !attachment) return;
-      await apiFetchJson(`/api/chat/conversations/${conversation.id}/threads/${threadParent.id}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: plainText,
-          mentions,
-          attachment_type: attachment?.type ?? null,
-          attachment_url: attachment?.url ?? null,
-          attachment_name: attachment?.name ?? null,
-          attachment_size: attachment?.size ?? null,
+      const optimisticReply = buildOptimisticMessage(plainText, attachment, threadParent.id);
+      await mutateThread(
+        (current) => ({
+          parent_message: current?.parent_message ?? threadParent,
+          replies: [...(current?.replies ?? []), optimisticReply],
         }),
-      });
-      void mutateThread();
-      void mutateMessages();
-      onMutateConversations();
+        { revalidate: false }
+      );
+      try {
+        await apiFetchJson(`/api/chat/conversations/${conversation.id}/threads/${threadParent.id}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: plainText,
+            mentions,
+            attachment_type: attachment?.type ?? null,
+            attachment_url: attachment?.url ?? null,
+            attachment_name: attachment?.name ?? null,
+            attachment_size: attachment?.size ?? null,
+          }),
+        });
+        void mutateThread();
+        void mutateMessages();
+        onMutateConversations();
+      } catch (error) {
+        await mutateThread(
+          (current) => ({
+            parent_message: current?.parent_message ?? threadParent,
+            replies: (current?.replies ?? []).filter((msg) => msg.id !== optimisticReply.id),
+          }),
+          { revalidate: false }
+        );
+        const msg = error instanceof ApiError ? error.message : "Failed to send thread reply";
+        onToast(msg, "error");
+      }
     },
-    [threadParent, conversation.id, mutateThread, mutateMessages, onMutateConversations]
+    [threadParent, buildOptimisticMessage, conversation.id, mutateThread, mutateMessages, onMutateConversations, onToast]
   );
 
   const onDropZone = useCallback(
