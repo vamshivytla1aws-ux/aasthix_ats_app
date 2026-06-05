@@ -22,55 +22,95 @@ export async function GET(request: Request) {
     const search = searchParams.get("search")?.trim() || "";
 
     const res = await query(
-      `SELECT
-         c.id,
-         c.name,
-         c.type,
-         c.created_by,
-         c.created_at,
-         c.updated_at,
-         cm.last_read_at,
-         COALESCE(ccp.muted, FALSE) AS muted,
-         COALESCE(ccp.mention_only, FALSE) AS mention_only,
-         (
-           SELECT COUNT(*)::int FROM messages m
-           WHERE m.conversation_id = c.id AND m.created_at > cm.last_read_at
-         ) AS unread_count,
-         (
-           SELECT COUNT(*)::int FROM conversation_pins cp
-           WHERE cp.conversation_id = c.id
-         ) AS pin_count,
-         (
-           SELECT jsonb_build_object(
+      `WITH member_conversations AS (
+         SELECT
+           c.id,
+           c.name,
+           c.type,
+           c.created_by,
+           c.created_at,
+           c.updated_at,
+           cm.last_read_at,
+           COALESCE(ccp.muted, FALSE) AS muted,
+           COALESCE(ccp.mention_only, FALSE) AS mention_only
+         FROM conversations c
+         JOIN conversation_members cm
+           ON cm.conversation_id = c.id
+          AND cm.user_id = $1
+         LEFT JOIN chat_conversation_preferences ccp
+           ON ccp.conversation_id = c.id
+          AND ccp.user_id = $1
+       ),
+       unread_counts AS (
+         SELECT
+           mc.id AS conversation_id,
+           COUNT(m.id)::int AS unread_count
+         FROM member_conversations mc
+         LEFT JOIN messages m
+           ON m.conversation_id = mc.id
+          AND m.created_at > mc.last_read_at
+         GROUP BY mc.id
+       ),
+       pin_counts AS (
+         SELECT
+           cp.conversation_id,
+           COUNT(*)::int AS pin_count
+         FROM conversation_pins cp
+         JOIN member_conversations mc ON mc.id = cp.conversation_id
+         GROUP BY cp.conversation_id
+       ),
+       last_messages AS (
+         SELECT DISTINCT ON (m.conversation_id)
+           m.conversation_id,
+           jsonb_build_object(
              'id', m.id,
              'content', m.content,
              'sender_id', m.sender_id,
              'is_system', m.is_system,
              'created_at', m.created_at,
              'sender_name', u.full_name
-           )
-           FROM messages m
-           JOIN users u ON u.id = m.sender_id
-           WHERE m.conversation_id = c.id
-           ORDER BY m.created_at DESC
-           LIMIT 1
-         ) AS last_message,
-         (
-           SELECT jsonb_agg(jsonb_build_object(
-             'user_id', mu.id,
-             'full_name', mu.full_name,
-             'email', mu.email
-           ) ORDER BY mu.full_name)
-           FROM conversation_members cm2
-           JOIN users mu ON mu.id = cm2.user_id
-           WHERE cm2.conversation_id = c.id
-         ) AS members
-       FROM conversations c
-       JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = $1
-       LEFT JOIN chat_conversation_preferences ccp
-         ON ccp.conversation_id = c.id
-        AND ccp.user_id = $1
-       ORDER BY c.updated_at DESC`,
+           ) AS last_message
+         FROM messages m
+         JOIN member_conversations mc ON mc.id = m.conversation_id
+         JOIN users u ON u.id = m.sender_id
+         ORDER BY m.conversation_id, m.created_at DESC
+       ),
+       member_lists AS (
+         SELECT
+           cm2.conversation_id,
+           jsonb_agg(
+             jsonb_build_object(
+               'user_id', mu.id,
+               'full_name', mu.full_name,
+               'email', mu.email
+             )
+             ORDER BY mu.full_name
+           ) AS members
+         FROM conversation_members cm2
+         JOIN member_conversations mc ON mc.id = cm2.conversation_id
+         JOIN users mu ON mu.id = cm2.user_id
+         GROUP BY cm2.conversation_id
+       )
+       SELECT
+         mc.id,
+         mc.name,
+         mc.type,
+         mc.created_by,
+         mc.created_at,
+         mc.updated_at,
+         mc.last_read_at,
+         mc.muted,
+         mc.mention_only,
+         COALESCE(uc.unread_count, 0) AS unread_count,
+         COALESCE(pc.pin_count, 0) AS pin_count,
+         lm.last_message,
+         COALESCE(ml.members, '[]'::jsonb) AS members
+       FROM member_conversations mc
+       LEFT JOIN unread_counts uc ON uc.conversation_id = mc.id
+       LEFT JOIN pin_counts pc ON pc.conversation_id = mc.id
+       LEFT JOIN last_messages lm ON lm.conversation_id = mc.id
+       LEFT JOIN member_lists ml ON ml.conversation_id = mc.id
+       ORDER BY mc.updated_at DESC`,
       [access.user_id]
     );
 

@@ -60,6 +60,14 @@ type Conversation = {
 };
 
 type ConversationLike = Partial<Conversation> & { id: number };
+type ConversationSidebarPatch = {
+  conversationId: number;
+  lastMessage?: Conversation["last_message"] | Message | null;
+  unreadCount?: number;
+  markRead?: boolean;
+  updatedAt?: string;
+  bumpToTop?: boolean;
+};
 type Message = {
   id: number;
   conversation_id: number;
@@ -287,6 +295,20 @@ function normalizeConversation(conv: ConversationLike): Conversation {
           email: String(m.email ?? ""),
         }))
       : [],
+  };
+}
+
+function normalizeConversationLastMessage(
+  message: Conversation["last_message"] | Message | null | undefined
+): Conversation["last_message"] {
+  if (!message || typeof message !== "object") return null;
+  return {
+    id: Number(message.id ?? 0),
+    content: String(message.content ?? ""),
+    sender_id: Number(message.sender_id ?? 0),
+    is_system: Boolean(message.is_system),
+    created_at: String(message.created_at ?? new Date(0).toISOString()),
+    sender_name: String(message.sender_name ?? "Unknown"),
   };
 }
 
@@ -590,6 +612,7 @@ export default function ChatPage() {
   const [ringVolume, setRingVolume] = useState(0.85);
   const globalUnreadSnapshotRef = useRef<Map<number, { unread: number; lastMessageId: number }>>(new Map());
   const lastGlobalDesktopNotifiedRef = useRef<number>(0);
+  const pendingConversationRefreshRef = useRef<number | null>(null);
 
   useEffect(() => {
     apiFetchJson<{ user: { id?: number; role?: string } }>("/api/auth/me")
@@ -624,7 +647,7 @@ export default function ChatPage() {
   const { data: convData, mutate: mutateConvs } = useSWR<{ conversations: Conversation[] }>(
     "/api/chat/conversations",
     dashboardFetcher,
-    { refreshInterval: 6000 }
+    { refreshInterval: 15_000 }
   );
 
   const conversations = useMemo(
@@ -682,6 +705,70 @@ export default function ChatPage() {
     () => conversations.find((conv) => conv.id === activeConvId) ?? null,
     [conversations, activeConvId]
   );
+
+  const queueConversationRefresh = useCallback((delayMs = 450) => {
+    if (typeof window === "undefined") {
+      void mutateConvs();
+      return;
+    }
+    if (pendingConversationRefreshRef.current) {
+      window.clearTimeout(pendingConversationRefreshRef.current);
+    }
+    pendingConversationRefreshRef.current = window.setTimeout(() => {
+      pendingConversationRefreshRef.current = null;
+      void mutateConvs();
+    }, delayMs);
+  }, [mutateConvs]);
+
+  const patchConversationSidebar = useCallback(
+    (patch: ConversationSidebarPatch) => {
+      void mutateConvs(
+        (current) => {
+          if (!current?.conversations?.length) return current;
+          let touched = false;
+          const next = current.conversations
+            .map((item) => {
+              const conv = normalizeConversation(item as ConversationLike);
+              if (conv.id !== patch.conversationId) return conv;
+              touched = true;
+              const nextLastMessage =
+                patch.lastMessage !== undefined
+                  ? normalizeConversationLastMessage(patch.lastMessage)
+                  : conv.last_message;
+              const nextUpdatedAt =
+                patch.updatedAt ??
+                nextLastMessage?.created_at ??
+                conv.updated_at;
+              return {
+                ...conv,
+                last_message: nextLastMessage,
+                unread_count: patch.markRead ? 0 : patch.unreadCount ?? conv.unread_count,
+                updated_at: nextUpdatedAt,
+              };
+            })
+            .sort((a, b) => {
+              if (patch.bumpToTop) {
+                if (a.id === patch.conversationId) return -1;
+                if (b.id === patch.conversationId) return 1;
+              }
+              return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+            });
+          if (!touched) return current;
+          return { conversations: next };
+        },
+        { revalidate: false }
+      );
+    },
+    [mutateConvs]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (pendingConversationRefreshRef.current && typeof window !== "undefined") {
+        window.clearTimeout(pendingConversationRefreshRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!conversations.length) return;
@@ -935,7 +1022,8 @@ export default function ChatPage() {
               currentUserRole={currentUserRole}
               initialRoomId={queryRoomId}
               onBack={() => setActiveConvId(null)}
-              onMutateConversations={() => void mutateConvs()}
+              onMutateConversations={queueConversationRefresh}
+              onPatchConversation={patchConversationSidebar}
               onToast={(message, tone = "success") => setToast({ message, tone })}
             />
           ) : (
@@ -1051,6 +1139,7 @@ function ChatWorkspace({
   initialRoomId,
   onBack,
   onMutateConversations,
+  onPatchConversation,
   onToast,
 }: {
   conversation: Conversation;
@@ -1058,7 +1147,8 @@ function ChatWorkspace({
   currentUserRole: string;
   initialRoomId: number | null;
   onBack: () => void;
-  onMutateConversations: () => void;
+  onMutateConversations: (delayMs?: number) => void;
+  onPatchConversation: (patch: ConversationSidebarPatch) => void;
   onToast: (message: string, tone?: ToastTone) => void;
 }) {
   const liveKitPrimary = true;
@@ -1244,13 +1334,13 @@ function ChatWorkspace({
     const stream = new EventSource(`/api/chat/realtime?conversation_id=${conversation.id}`);
     const onMessageEvent = () => {
       void mutateMessages();
-      onMutateConversations();
+      onMutateConversations(350);
     };
     const onCallEvent = () => {
       void mutateCallState();
       void mutateCalendar();
       void mutateMessages();
-      onMutateConversations();
+      onMutateConversations(350);
       window.setTimeout(() => {
         void mutateCallState();
       }, 300);
@@ -1288,10 +1378,13 @@ function ChatWorkspace({
   useEffect(() => {
     if (conversation.unread_count > 0) {
       apiFetchJson(`/api/chat/conversations/${conversation.id}/read`, { method: "PATCH" })
-        .then(() => onMutateConversations())
+        .then(() => {
+          onPatchConversation({ conversationId: conversation.id, unreadCount: 0, markRead: true });
+          onMutateConversations(1500);
+        })
         .catch(() => {});
     }
-  }, [conversation.id, conversation.unread_count, onMutateConversations]);
+  }, [conversation.id, conversation.unread_count, onMutateConversations, onPatchConversation]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1477,10 +1570,17 @@ function ChatWorkspace({
           }),
           { revalidate: false }
         );
+        onPatchConversation({
+          conversationId: conversation.id,
+          lastMessage: response.message,
+          unreadCount: 0,
+          markRead: true,
+          updatedAt: response.message.created_at,
+          bumpToTop: true,
+        });
         setMessageInput("");
         setUploadQueue([]);
         resetComposer();
-        onMutateConversations();
       } catch (error) {
         await mutateMessages(
           (current) => ({
@@ -1495,7 +1595,7 @@ function ChatWorkspace({
         textareaRef.current?.focus();
       }
     },
-    [sending, buildOptimisticMessage, conversation.id, mutateMessages, onMutateConversations, onToast]
+    [sending, buildOptimisticMessage, conversation.id, mutateMessages, onPatchConversation, onToast]
   );
 
   const sendComposer = useCallback(async () => {
@@ -1573,7 +1673,7 @@ function ChatWorkspace({
         { revalidate: false }
       );
       try {
-        await apiFetchJson(`/api/chat/conversations/${conversation.id}/threads/${threadParent.id}/messages`, {
+        const response = await apiFetchJson<{ message: Message }>(`/api/chat/conversations/${conversation.id}/threads/${threadParent.id}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1585,9 +1685,17 @@ function ChatWorkspace({
             attachment_size: attachment?.size ?? null,
           }),
         });
+        onPatchConversation({
+          conversationId: conversation.id,
+          lastMessage: response.message,
+          unreadCount: 0,
+          markRead: true,
+          updatedAt: response.message.created_at,
+          bumpToTop: true,
+        });
         void mutateThread();
         void mutateMessages();
-        onMutateConversations();
+        onMutateConversations(1200);
       } catch (error) {
         await mutateThread(
           (current) => ({
@@ -1600,7 +1708,7 @@ function ChatWorkspace({
         onToast(msg, "error");
       }
     },
-    [threadParent, buildOptimisticMessage, conversation.id, mutateThread, mutateMessages, onMutateConversations, onToast]
+    [threadParent, buildOptimisticMessage, conversation.id, mutateThread, mutateMessages, onMutateConversations, onPatchConversation, onToast]
   );
 
   const onDropZone = useCallback(
