@@ -572,6 +572,12 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
     }
 
     const summaryText = String(input.inviteSubject || "").trim() || `${input.title} - ${input.candidateName}`;
+    const shouldNotifyAttendees =
+      Boolean(String(input.inviteSubject || "").trim()) ||
+      Boolean(String(input.inviteBody || "").trim()) ||
+      input.inviteMode === "scheduled" ||
+      input.inviteMode === "rescheduled";
+    const sendUpdates = shouldNotifyAttendees ? "all" : "none";
     const payload = {
       summary: summaryText,
       description: descriptionLines.join("\n"),
@@ -590,8 +596,8 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
 
     const method = input.existingEventId ? "PATCH" : "POST";
     const path = input.existingEventId
-      ? `/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.existingEventId)}?conferenceDataVersion=1&sendUpdates=all`
-      : `/calendar/v3/calendars/${calendarId}/events?conferenceDataVersion=1&sendUpdates=all`;
+      ? `/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.existingEventId)}?conferenceDataVersion=1&sendUpdates=${sendUpdates}`
+      : `/calendar/v3/calendars/${calendarId}/events?conferenceDataVersion=1&sendUpdates=${sendUpdates}`;
 
     const event = await googleApi<{
       id?: string;
