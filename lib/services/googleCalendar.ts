@@ -153,6 +153,29 @@ function uniqueEmails(values: Array<string | null | undefined>) {
   );
 }
 
+function toCalendarLocalDateTime(value: string | Date, timeZone = ATS_TIMEZONE) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Invalid calendar datetime");
+  }
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+    .formatToParts(date)
+    .reduce<Record<string, string>>((acc, part) => {
+      if (part.type !== "literal") acc[part.type] = part.value;
+      return acc;
+    }, {});
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
 async function exchangeCodeForTokens(code: string) {
   const body = new URLSearchParams({
     code,
@@ -552,8 +575,8 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
     const payload = {
       summary: summaryText,
       description: descriptionLines.join("\n"),
-      start: { dateTime: start.toISOString(), timeZone: ATS_TIMEZONE },
-      end: { dateTime: end.toISOString(), timeZone: ATS_TIMEZONE },
+      start: { dateTime: toCalendarLocalDateTime(start), timeZone: ATS_TIMEZONE },
+      end: { dateTime: toCalendarLocalDateTime(end), timeZone: ATS_TIMEZONE },
       attendees: attendees.map((email) => ({ email })),
       conferenceData: input.existingEventId
         ? undefined
@@ -681,8 +704,8 @@ export async function syncTeamCalendarMeeting(input: SyncTeamCalendarMeetingInpu
     const payload = {
       summary: String(input.title || "Internal meeting").trim(),
       description: String(input.description || "").trim(),
-      start: { dateTime: new Date(input.startAt).toISOString(), timeZone: ATS_TIMEZONE },
-      end: { dateTime: new Date(input.endAt).toISOString(), timeZone: ATS_TIMEZONE },
+      start: { dateTime: toCalendarLocalDateTime(input.startAt), timeZone: ATS_TIMEZONE },
+      end: { dateTime: toCalendarLocalDateTime(input.endAt), timeZone: ATS_TIMEZONE },
       attendees: attendees.map((email) => ({ email })),
       recurrence: buildRecurrenceRule(input.recurrence || "none", input.recurrenceUntil),
       conferenceData: input.existingEventId
