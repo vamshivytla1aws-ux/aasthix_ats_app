@@ -1027,15 +1027,51 @@ export default function PipelineBoard({
       let inviteResult:
         | { calendar_sync_status?: string; meet_link?: string | null; external_calendar_event_id?: string | null }
         | null = null;
+      let inviteSubject = scheduleDraftSubject;
+      let inviteBody = scheduleDraftBody;
+      let inviteTo = scheduleDraftTo;
+      let inviteCc = scheduleDraftCc;
       if (sendInvite) {
+        if (!scheduleDraftEditedRef.current) {
+          const freshDraft = await apiFetchJson<{
+            subject?: string;
+            body?: string;
+            defaultTo?: string;
+            defaultCc?: string[];
+            source?: "ai" | "fallback";
+          }>(`/api/applications/${scheduleApp.id}/draft-interview-invite`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              interviewDatetime: scheduleIso,
+              timezoneLabel: scheduleTimezone,
+              durationMinutes: scheduleDurationMinutes,
+              meetingMode: scheduleMeetingMode,
+              meetingLocation: scheduleMeetingLocation,
+              panelEmails: scheduleAttendees,
+              notes: scheduleNotes,
+              meetLink: updated.meet_link || null,
+              isReschedule: false,
+            }),
+          });
+          inviteSubject = typeof freshDraft.subject === "string" ? freshDraft.subject : inviteSubject;
+          inviteBody = typeof freshDraft.body === "string" ? freshDraft.body : inviteBody;
+          inviteTo = typeof freshDraft.defaultTo === "string" ? freshDraft.defaultTo : inviteTo;
+          inviteCc = Array.isArray(freshDraft.defaultCc) ? freshDraft.defaultCc.join(", ") : inviteCc;
+          if (typeof freshDraft.subject === "string") setScheduleDraftSubject(freshDraft.subject);
+          if (typeof freshDraft.body === "string") setScheduleDraftBody(freshDraft.body);
+          if (typeof freshDraft.defaultTo === "string") setScheduleDraftTo(freshDraft.defaultTo);
+          if (Array.isArray(freshDraft.defaultCc)) setScheduleDraftCc(freshDraft.defaultCc.join(", "));
+          setScheduleDraftSource(freshDraft.source ?? null);
+        }
         inviteResult = await apiFetchJson(`/api/applications/${scheduleApp.id}/send-interview-invite`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            to: scheduleDraftTo,
-            cc: scheduleDraftCc,
-            subject: scheduleDraftSubject,
-            body: appendMeetingDetailsToBody(scheduleDraftBody, {
+            to: inviteTo,
+            cc: inviteCc,
+            subject: inviteSubject,
+            body: appendMeetingDetailsToBody(inviteBody, {
               meetLink: updated.meet_link,
               meetingMode: scheduleMeetingMode,
               meetingLocation: scheduleMeetingLocation,
@@ -1282,15 +1318,51 @@ export default function PipelineBoard({
       let inviteResult:
         | { calendar_sync_status?: string; meet_link?: string | null; external_calendar_event_id?: string | null }
         | null = null;
+      let inviteSubject = rescheduleDraftSubject;
+      let inviteBody = rescheduleDraftBody;
+      let inviteTo = rescheduleDraftTo;
+      let inviteCc = rescheduleDraftCc;
       if (sendInvite) {
+        if (!rescheduleDraftEditedRef.current) {
+          const freshDraft = await apiFetchJson<{
+            subject?: string;
+            body?: string;
+            defaultTo?: string;
+            defaultCc?: string[];
+            source?: "ai" | "fallback";
+          }>(`/api/applications/${rescheduleApp.id}/draft-interview-invite`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              interviewDatetime: iso,
+              timezoneLabel: rescheduleTimezone,
+              durationMinutes: rescheduleDurationMinutes,
+              meetingMode: rescheduleMeetingMode,
+              meetingLocation: rescheduleMeetingLocation,
+              panelEmails: rescheduleAttendees,
+              notes: rescheduleNotes,
+              meetLink: updated.meet_link || null,
+              isReschedule: true,
+            }),
+          });
+          inviteSubject = typeof freshDraft.subject === "string" ? freshDraft.subject : inviteSubject;
+          inviteBody = typeof freshDraft.body === "string" ? freshDraft.body : inviteBody;
+          inviteTo = typeof freshDraft.defaultTo === "string" ? freshDraft.defaultTo : inviteTo;
+          inviteCc = Array.isArray(freshDraft.defaultCc) ? freshDraft.defaultCc.join(", ") : inviteCc;
+          if (typeof freshDraft.subject === "string") setRescheduleDraftSubject(freshDraft.subject);
+          if (typeof freshDraft.body === "string") setRescheduleDraftBody(freshDraft.body);
+          if (typeof freshDraft.defaultTo === "string") setRescheduleDraftTo(freshDraft.defaultTo);
+          if (Array.isArray(freshDraft.defaultCc)) setRescheduleDraftCc(freshDraft.defaultCc.join(", "));
+          setRescheduleDraftSource(freshDraft.source ?? null);
+        }
         inviteResult = await apiFetchJson(`/api/applications/${rescheduleApp.id}/send-interview-invite`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            to: rescheduleDraftTo,
-            cc: rescheduleDraftCc,
-            subject: rescheduleDraftSubject,
-            body: appendMeetingDetailsToBody(rescheduleDraftBody, {
+            to: inviteTo,
+            cc: inviteCc,
+            subject: inviteSubject,
+            body: appendMeetingDetailsToBody(inviteBody, {
               meetLink: updated.meet_link,
               meetingMode: rescheduleMeetingMode,
               meetingLocation: rescheduleMeetingLocation,

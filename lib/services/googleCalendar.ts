@@ -578,12 +578,13 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
       input.inviteMode === "scheduled" ||
       input.inviteMode === "rescheduled";
     const sendUpdates = shouldNotifyAttendees ? "all" : "none";
+    const attendeePayload = shouldNotifyAttendees ? attendees : [];
     const payload = {
       summary: summaryText,
       description: descriptionLines.join("\n"),
       start: { dateTime: toCalendarLocalDateTime(start), timeZone: ATS_TIMEZONE },
       end: { dateTime: toCalendarLocalDateTime(end), timeZone: ATS_TIMEZONE },
-      attendees: attendees.map((email) => ({ email })),
+      attendees: attendeePayload.map((email) => ({ email })),
       conferenceData: input.existingEventId
         ? undefined
         : {
