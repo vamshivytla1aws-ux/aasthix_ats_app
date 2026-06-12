@@ -730,6 +730,7 @@ export default function InterviewsPage() {
           send_email: false,
           interview_attendee_emails: rescheduleAttendees,
           interview_status_note: rescheduleNotes,
+          skip_google_sync: sendInvite,
         }),
       });
       if (

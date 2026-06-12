@@ -1010,6 +1010,7 @@ export default function PipelineBoard({
           interview_attendee_emails: scheduleAttendees,
           interview_status_note: scheduleNotes,
           send_email: false,
+          skip_google_sync: sendInvite,
         }),
       });
 
@@ -1301,6 +1302,7 @@ export default function PipelineBoard({
           interview_status_note: rescheduleNotes,
           reminder_sent: false,
           send_email: false,
+          skip_google_sync: sendInvite,
         }),
       });
 

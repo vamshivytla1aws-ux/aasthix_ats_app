@@ -9,7 +9,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
+function buildServerTiming(timings: Record<string, number>) {
+  return Object.entries(timings)
+    .filter(([, duration]) => Number.isFinite(duration))
+    .map(([key, duration]) => `${key.replace(/[^a-z0-9_]/gi, "_")};dur=${duration}`)
+    .join(", ");
+}
+
 export async function POST(request: Request, { params }: { params: { id: string } }) {
+  const startedAt = performance.now();
   try {
     const auth = await requirePermission("jobs.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -38,10 +46,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
       return NextResponse.json({ error: "candidateId must be a positive number" }, { status: 400 });
     }
 
-    const { result } = await runSingleMatchCheck({ jobId, candidateId, useAI });
+    const { result, timings } = await runSingleMatchCheck({ jobId, candidateId, useAI });
 
     let historySaved = false;
     try {
+      const historyStartedAt = performance.now();
       const ins = await insertSingleMatchHistory({
         jobId,
         candidateId,
@@ -50,9 +59,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
         result,
       });
       historySaved = ins != null;
+      timings.history_insert_ms = Math.round(performance.now() - historyStartedAt);
     } catch (e) {
       console.error("single-match-check: history insert failed", e);
     }
+    timings.total_ms = Math.round(performance.now() - startedAt);
 
     const payload: SingleMatchCheckApiResponse = {
       success: true,
@@ -61,7 +72,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
       result,
       history_saved: historySaved,
     };
-    return NextResponse.json(payload);
+    const response = NextResponse.json(payload);
+    const serverTiming = buildServerTiming(timings);
+    if (serverTiming) response.headers.set("Server-Timing", serverTiming);
+    console.info("single-match-check timing", { jobId, candidateId, useAI, timings });
+    return response;
   } catch (error: unknown) {
     const status =
       error && typeof error === "object" && "statusCode" in error

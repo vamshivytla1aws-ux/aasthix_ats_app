@@ -100,8 +100,21 @@ export async function runSingleMatchCheck(opts: {
   jobId: number;
   candidateId: number;
   useAI: boolean;
-}): Promise<{ result: SingleMatchCheckResultPayload }> {
+}): Promise<{
+  result: SingleMatchCheckResultPayload;
+  timings: Record<string, number>;
+}> {
   const { jobId, candidateId, useAI } = opts;
+  const timings: Record<string, number> = {};
+  const now = () => performance.now();
+  const measure = async <T,>(key: string, fn: () => Promise<T>): Promise<T> => {
+    const startedAt = now();
+    try {
+      return await fn();
+    } finally {
+      timings[key] = Math.round(now() - startedAt);
+    }
+  };
   if (!Number.isFinite(jobId) || jobId <= 0) {
     throw Object.assign(new Error("Invalid job id"), { statusCode: 400 });
   }
@@ -109,7 +122,8 @@ export async function runSingleMatchCheck(opts: {
     throw Object.assign(new Error("Invalid candidate id"), { statusCode: 400 });
   }
 
-  const jobRes = await query(
+  const jobRes = await measure<Awaited<ReturnType<typeof query>>>("job_query_ms", () =>
+    query(
     `
     SELECT
       j.id,
@@ -125,7 +139,7 @@ export async function runSingleMatchCheck(opts: {
     LIMIT 1
     `,
     [jobId]
-  );
+  ));
   const jobRow = jobRes.rows[0] as JobRow | undefined;
   if (!jobRow) {
     throw Object.assign(new Error("Job not found"), { statusCode: 404 });
@@ -138,7 +152,8 @@ export async function runSingleMatchCheck(opts: {
     });
   }
 
-  const candRes = await query(
+  const candRes = await measure<Awaited<ReturnType<typeof query>>>("candidate_query_ms", () =>
+    query(
     `
     SELECT
       c.id,
@@ -156,28 +171,31 @@ export async function runSingleMatchCheck(opts: {
     LIMIT 1
     `,
     [candidateId]
-  );
+  ));
   const candRow = candRes.rows[0] as CandidateDbRow | undefined;
   if (!candRow) {
     throw Object.assign(new Error("Candidate not found"), { statusCode: 404 });
   }
 
   const resumeCache = new Map<string, Promise<string>>();
-  const resolvedResume = await resolveCandidateResumeForMatchDetailed(
-    {
-      id: candRow.id,
-      full_name: candRow.full_name,
-      email: candRow.email,
-      skills: candRow.skills,
-      skillset: candRow.skillset,
-      location: candRow.location,
-      created_by_user_id: candRow.created_by_user_id,
-      resume_url: candRow.resume_url,
-      resume_text: candRow.resume_text,
-      experience_summary: candRow.experience_summary,
-    },
-    resumeCache,
-    { preferUploadedFile: true }
+  const shouldPreferUploadedFile = !candRow.resume_text || candRow.resume_text.trim().length < 100;
+  const resolvedResume = await measure("resume_resolve_ms", () =>
+    resolveCandidateResumeForMatchDetailed(
+      {
+        id: candRow.id,
+        full_name: candRow.full_name,
+        email: candRow.email,
+        skills: candRow.skills,
+        skillset: candRow.skillset,
+        location: candRow.location,
+        created_by_user_id: candRow.created_by_user_id,
+        resume_url: candRow.resume_url,
+        resume_text: candRow.resume_text,
+        experience_summary: candRow.experience_summary,
+      },
+      resumeCache,
+      { preferUploadedFile: shouldPreferUploadedFile }
+    )
   );
   const resume = resolvedResume.text;
   const recovery = resolvedResume.recovery ?? null;
@@ -191,7 +209,8 @@ export async function runSingleMatchCheck(opts: {
       candRow.resume_text.trim().length < 100)
   ) {
     try {
-      await query(
+      await measure("resume_persist_ms", () =>
+        query(
         `
         UPDATE candidates
         SET
@@ -201,8 +220,10 @@ export async function runSingleMatchCheck(opts: {
         WHERE id = $1
         `,
         [candidateId, resolvedResume.resolvedResumeUrl ?? candRow.resume_url, resume.slice(0, 500_000)]
-      );
-      await refreshResumeEmbeddingForCandidate(candidateId, candRow.created_by_user_id);
+      ));
+      void refreshResumeEmbeddingForCandidate(candidateId, candRow.created_by_user_id).catch((error) => {
+        console.warn("singleMatchCheck: failed to refresh resume embedding after recovery", error);
+      });
     } catch (error) {
       console.warn("singleMatchCheck: failed to persist recovered resume source", error);
     }
@@ -216,23 +237,25 @@ export async function runSingleMatchCheck(opts: {
     }
 
     const hints = buildSkillHintsForAi(jobRow, jd);
-    const aiMap = await scoreCandidatesBatchWithOpenAI({
-      jobTitle: jobRow.title.trim(),
-      jobDescriptionExcerpt: jd,
-      experienceRequirement: jobRow.experience_requirement?.trim() || null,
-      mustHave: hints.mustHave,
-      niceToHave: hints.niceToHave,
-      keywords: hints.keywords,
-      candidates: [
-        {
-          id: candidateId,
-          full_name: candRow.full_name,
-          skills: candRow.skills,
-          location: candRow.location,
-          resumeText: resume || null,
-        },
-      ],
-    });
+    const aiMap = await measure("ai_score_ms", () =>
+      scoreCandidatesBatchWithOpenAI({
+        jobTitle: jobRow.title.trim(),
+        jobDescriptionExcerpt: jd,
+        experienceRequirement: jobRow.experience_requirement?.trim() || null,
+        mustHave: hints.mustHave,
+        niceToHave: hints.niceToHave,
+        keywords: hints.keywords,
+        candidates: [
+          {
+            id: candidateId,
+            full_name: candRow.full_name,
+            skills: candRow.skills,
+            location: candRow.location,
+            resumeText: resume || null,
+          },
+        ],
+      })
+    );
 
     if (!aiMap || !aiMap.has(candidateId)) {
       throw Object.assign(
@@ -242,19 +265,21 @@ export async function runSingleMatchCheck(opts: {
     }
 
     const ai = aiMap.get(candidateId)!;
-    const advanced = await buildAdvancedPureAiInsights({
-      jobTitle: jobRow.title.trim(),
-      jobDescription: jd,
-      experienceRequirement: jobRow.experience_requirement?.trim() || null,
-      mustHave: hints.mustHave,
-      niceToHave: hints.niceToHave,
-      keywords: hints.keywords,
-      resumeText: resume || "",
-      resumeSource: resolvedResume.source,
-      resumeCharsScored: resolvedResume.charCount,
-      jdCharsScored: jd.length,
-      baseAi: ai,
-    });
+    const advanced = await measure("advanced_insights_ms", () =>
+      buildAdvancedPureAiInsights({
+        jobTitle: jobRow.title.trim(),
+        jobDescription: jd,
+        experienceRequirement: jobRow.experience_requirement?.trim() || null,
+        mustHave: hints.mustHave,
+        niceToHave: hints.niceToHave,
+        keywords: hints.keywords,
+        resumeText: resume || "",
+        resumeSource: resolvedResume.source,
+        resumeCharsScored: resolvedResume.charCount,
+        jdCharsScored: jd.length,
+        baseAi: ai,
+      })
+    );
 
     const result: SingleMatchCheckResultPayload = {
       match_score: advanced.match_score,
@@ -297,13 +322,15 @@ export async function runSingleMatchCheck(opts: {
       debug_requirements: advanced.debug_requirements,
       developer_debug: advanced.developer_debug,
     };
-    return { result };
+    return { result, timings };
   }
 
-  const local = await runLocalNoAiMatcher({
-    jd,
-    candidates: [{ id: String(candidateId), resume: resume || "" }],
-  });
+  const local = await measure("local_match_ms", () =>
+    runLocalNoAiMatcher({
+      jd,
+      candidates: [{ id: String(candidateId), resume: resume || "" }],
+    })
+  );
   const resultMap = validateLocalResults(local.all_results);
   const hit = resultMap.get(String(candidateId));
   if (!hit) {
@@ -335,5 +362,5 @@ export async function runSingleMatchCheck(opts: {
     summary,
   };
 
-  return { result };
+  return { result, timings };
 }

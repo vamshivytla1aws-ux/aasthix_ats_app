@@ -13,6 +13,13 @@ const MAX_SUBJECT = 998;
 const MAX_RECIPIENTS = 15;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function buildServerTiming(timings: Record<string, number>) {
+  return Object.entries(timings)
+    .filter(([, duration]) => Number.isFinite(duration))
+    .map(([key, duration]) => `${key.replace(/[^a-z0-9_]/gi, "_")};dur=${duration}`)
+    .join(", ");
+}
+
 function parseRecipients(raw: unknown, label: string): { ok: true; emails: string[] } | { ok: false; error: string } {
   if (typeof raw !== "string" || !raw.trim()) {
     if (label === "to") return { ok: false, error: "to is required (comma-separated email addresses)." };
@@ -36,6 +43,8 @@ function parseRecipients(raw: unknown, label: string): { ok: true; emails: strin
 }
 
 export async function POST(request: Request, context: { params: { id: string } }) {
+  const requestStartedAt = performance.now();
+  const timings: Record<string, number> = {};
   try {
     const auth = await requirePermission("pipeline.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -71,7 +80,9 @@ export async function POST(request: Request, context: { params: { id: string } }
     if (subject.length > MAX_SUBJECT) return NextResponse.json({ error: "subject is too long." }, { status: 400 });
     if (text.length > MAX_BODY) return NextResponse.json({ error: "body is too long." }, { status: 400 });
 
+    const fetchStartedAt = performance.now();
     const row = await fetchApplicationCardRow(applicationId, user.user_id);
+    timings.fetch_application_ms = Math.round(performance.now() - fetchStartedAt);
     if (!row) {
       return NextResponse.json({ error: "Application not found or not accessible." }, { status: 404 });
     }
@@ -112,6 +123,7 @@ export async function POST(request: Request, context: { params: { id: string } }
     const ccAttendees = parsedCc.emails;
     const internalAttendees = Array.from(new Set([...existingAttendees, ...ccAttendees])).slice(0, MAX_RECIPIENTS);
 
+    const syncStartedAt = performance.now();
     const syncResult = await syncInterviewMeeting({
       action: "upsert",
       applicationId,
@@ -127,10 +139,12 @@ export async function POST(request: Request, context: { params: { id: string } }
       inviteBody: text.trim(),
       inviteMode,
     });
+    timings.calendar_sync_ms = Math.round(performance.now() - syncStartedAt);
 
     const syncStatus = String(syncResult.status || "");
     const syncFailed = syncStatus === "calendar_sync_failed" || syncStatus === "google_not_connected";
 
+    const persistStartedAt = performance.now();
     await query(
       `
       UPDATE applications
@@ -158,6 +172,7 @@ export async function POST(request: Request, context: { params: { id: string } }
         JSON.stringify(syncResult.attendee_emails || []),
       ]
     );
+    timings.persist_application_ms = Math.round(performance.now() - persistStartedAt);
 
     if (syncFailed) {
       return NextResponse.json(
@@ -175,45 +190,47 @@ export async function POST(request: Request, context: { params: { id: string } }
       );
     }
 
-    await writeAuditLog({
-      actorUserId: user.user_id,
-      action: "application_interview_invite.sent",
-      metadata: {
-        application_id: applicationId,
-        recipient_count: parsedTo.emails.length,
-        cc_count: parsedCc.emails.length,
-        subject_preview: subject.slice(0, 120),
-        delivery_channel: "google_calendar_only",
-        invite_mode: inviteMode,
-      },
-    });
+    const postSendStartedAt = performance.now();
+    const followUps: Promise<unknown>[] = [
+      writeAuditLog({
+        actorUserId: user.user_id,
+        action: "application_interview_invite.sent",
+        metadata: {
+          application_id: applicationId,
+          recipient_count: parsedTo.emails.length,
+          cc_count: parsedCc.emails.length,
+          subject_preview: subject.slice(0, 120),
+          delivery_channel: "google_calendar_only",
+          invite_mode: inviteMode,
+        },
+      }),
+    ];
 
     if (Number.isFinite(candidateId) && candidateId > 0) {
-      try {
-        await query(
+      followUps.push(
+        query(
           `
           INSERT INTO candidate_activity (candidate_id, type, description, created_at)
           VALUES ($1, 'Interview', $2, NOW())
           `,
           [candidateId, "Interview invite sent from ATS board"]
-        );
-      } catch {
-        // legacy optional table
-      }
-      try {
-        await query(
+        ).catch(() => null)
+      );
+      followUps.push(
+        query(
           `
           INSERT INTO activity_timeline (user_id, candidate_id, application_id, event_type, message, metadata)
           VALUES ($1, $2, $3, 'Interview', $4, '{}'::jsonb)
           `,
           [user.user_id, candidateId, applicationId, "Interview invite sent from ATS board"]
-        );
-      } catch {
-        // optional table guard
-      }
+        ).catch(() => null)
+      );
     }
+    await Promise.allSettled(followUps);
+    timings.post_send_writes_ms = Math.round(performance.now() - postSendStartedAt);
+    timings.total_ms = Math.round(performance.now() - requestStartedAt);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
       sent: true,
       operation_status: "success",
@@ -225,6 +242,10 @@ export async function POST(request: Request, context: { params: { id: string } }
       external_calendar_event_id: syncResult.external_calendar_event_id,
       next_action_hint: "Track interview progress from Pipeline or Interviews desk.",
     });
+    const serverTiming = buildServerTiming(timings);
+    if (serverTiming) response.headers.set("Server-Timing", serverTiming);
+    console.info("send-interview-invite timing", { applicationId, inviteMode, timings });
+    return response;
   } catch (error) {
     console.error("POST /api/applications/[id]/send-interview-invite", error);
     return NextResponse.json(

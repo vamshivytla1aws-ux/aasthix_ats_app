@@ -654,6 +654,7 @@ export async function PATCH(request: Request) {
       stage_change_reason,
       disposition_reason_id,
       interview_duration_minutes,
+      skip_google_sync,
     } = body as {
       id?: number;
       stage?: Stage;
@@ -674,6 +675,7 @@ export async function PATCH(request: Request) {
       stage_change_reason?: string | null;
       disposition_reason_id?: number;
       interview_duration_minutes?: number;
+      skip_google_sync?: boolean;
     };
 
     const normalizedInterviewDurationMinutes =
@@ -1346,6 +1348,7 @@ export async function PATCH(request: Request) {
     let calendarLastSyncedAt: string | null = null;
 
     const shouldUpsertGoogleMeeting =
+      skip_google_sync !== true &&
       updated.stage === "Interview" &&
       updated.interview_scheduled === true &&
       updated.interview_substatus !== "completed_followup" &&
