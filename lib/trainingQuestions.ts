@@ -184,6 +184,24 @@ function normalizeAnswerAnalyses(items: unknown): TrainingAnswerAnalysis[] {
     .filter((item): item is TrainingAnswerAnalysis => Boolean(item));
 }
 
+function isClearlyNonsensicalAnswer(answerText: string, referenceWords: string[] = []) {
+  const trimmed = answerText.trim();
+  if (!trimmed) return false;
+
+  const alphaOnly = trimmed.toLowerCase().replace(/[^a-z]/g, "");
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  const vowelCount = (alphaOnly.match(/[aeiou]/g) || []).length;
+  const vowelRatio = alphaOnly.length ? vowelCount / alphaOnly.length : 0;
+  const hasReferenceHit = referenceWords.some((word) => alphaOnly.includes(word.toLowerCase()));
+  const hasMeaningfulVerb = /\b(explain|worked|built|used|managed|designed|implemented|handled|improved|learned|created|developed|migrated|optimized)\b/i.test(trimmed);
+  const hasSentenceShape = /[.!?,]/.test(trimmed) || words.length >= 5;
+
+  if (alphaOnly.length <= 5 && words.length <= 2 && !hasReferenceHit) return true;
+  if (words.length <= 3 && alphaOnly.length < 18 && vowelRatio < 0.2 && !hasReferenceHit && !hasMeaningfulVerb) return true;
+  if (!hasSentenceShape && words.length <= 2 && !hasReferenceHit && !hasMeaningfulVerb) return true;
+  return false;
+}
+
 function buildFallbackAnalysisRow(
   question: TrainingQuestion | undefined,
   answer: TrainingAnswer,
@@ -201,14 +219,16 @@ function buildFallbackAnalysisRow(
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((word) => word.length > 4);
+  const clearlyNonsensical = isClearlyNonsensicalAnswer(answerText, referenceWords);
   const hits = referenceWords.filter((word) => answerText.toLowerCase().includes(word));
   score += Math.min(25, hits.length * 6);
   if (!answerText) score = 0;
+  if (clearlyNonsensical) score = 0;
 
   const strengths = [];
-  if (wordCount >= 20) strengths.push("Gives a reasonably detailed response.");
-  if (hits.length >= 2) strengths.push("Touches expected evaluation points.");
-  if (/project|built|implemented|worked|designed|resolved|improved/i.test(answerText)) {
+  if (!clearlyNonsensical && wordCount >= 20) strengths.push("Gives a reasonably detailed response.");
+  if (!clearlyNonsensical && hits.length >= 2) strengths.push("Touches expected evaluation points.");
+  if (!clearlyNonsensical && /project|built|implemented|worked|designed|resolved|improved/i.test(answerText)) {
     strengths.push("Uses practical experience language instead of only theory.");
   }
 
@@ -216,17 +236,20 @@ function buildFallbackAnalysisRow(
   if (wordCount < 12) improvements.push("Needs more detail and a clearer explanation.");
   if (hits.length === 0) improvements.push("Should connect the answer more directly to the question intent.");
   if (!/\b(i|my|we)\b/i.test(answerText)) improvements.push("Should clarify the candidate's own contribution or viewpoint.");
+  if (clearlyNonsensical) improvements.unshift("Answer appears nonsensical or unrelated to the question.");
 
   return {
     category: answer.category,
     question: answer.question,
     answer: answer.answer,
     score: Math.max(0, Math.min(100, score)),
-    summary: answerText
-      ? wordCount >= 20
-        ? "Reasonable answer, but recruiter review is still recommended."
-        : "Short answer with limited evidence."
-      : "No answer was provided.",
+    summary: !answerText
+      ? "No answer was provided."
+      : clearlyNonsensical
+        ? "The answer appears nonsensical and does not address the question."
+        : wordCount >= 20
+          ? "Reasonable answer, but recruiter review is still recommended."
+          : "Short answer with limited evidence.",
     strengths: strengths.slice(0, 3),
     improvements: improvements.slice(0, 3),
     sort_order: answer.sort_order || question?.sort_order || index + 1,
@@ -247,12 +270,25 @@ function completeAnswerAnalyses(
       analyses.find((item) => item.sort_order === answer.sort_order) ||
       analyses.find((item) => item.question === answer.question);
     if (matching) {
+      const fallback = buildFallbackAnalysisRow(question, answer, index);
       return {
         ...matching,
         category: matching.category || answer.category || question?.category || "technical",
         question: matching.question || answer.question || question?.question || `Question ${index + 1}`,
         answer: answer.answer,
         sort_order: answer.sort_order || matching.sort_order || question?.sort_order || index + 1,
+        score: isClearlyNonsensicalAnswer(answer.answer, (question?.reference_answer || "").toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 4))
+          ? 0
+          : matching.score,
+        summary: isClearlyNonsensicalAnswer(answer.answer, (question?.reference_answer || "").toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 4))
+          ? fallback.summary
+          : matching.summary,
+        strengths: isClearlyNonsensicalAnswer(answer.answer, (question?.reference_answer || "").toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 4))
+          ? []
+          : matching.strengths,
+        improvements: isClearlyNonsensicalAnswer(answer.answer, (question?.reference_answer || "").toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 4))
+          ? fallback.improvements
+          : matching.improvements,
       };
     }
     return buildFallbackAnalysisRow(question, answer, index);
@@ -332,7 +368,8 @@ function fallbackAnalysis(input: AnalyzeTrainingAnswersInput): TrainingAnswerAna
   const overallPercent = analyses.length
     ? Math.round(analyses.reduce((sum, item) => sum + item.score, 0) / analyses.length)
     : 0;
-  const overall = Math.max(0, Math.min(15, Math.round((overallPercent / 100) * 15)));
+  const overall =
+    overallPercent < 10 ? 0 : Math.max(0, Math.min(15, Math.round((overallPercent / 100) * 15)));
 
   return {
     analysis_mode: "RULE_BASED",
