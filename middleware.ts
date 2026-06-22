@@ -23,7 +23,8 @@ export async function middleware(req: NextRequest) {
     !pathname.startsWith("/favicon") &&
     !pathname.startsWith("/assets") &&
     !isPublicFile &&
-    !pathname.startsWith("/careers");
+    !pathname.startsWith("/careers") &&
+    !pathname.startsWith("/training");
 
   // Never redirect API routes: APIs must return JSON (e.g. 401) themselves.
   if (pathname.startsWith("/api")) {
@@ -40,7 +41,12 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/careers") || pathname.startsWith("/chat/external/")) {
+  if (
+    PUBLIC_PATHS.has(pathname) ||
+    pathname.startsWith("/careers") ||
+    pathname.startsWith("/training") ||
+    pathname.startsWith("/chat/external/")
+  ) {
     const res = NextResponse.next();
     if (shouldNoIndex) {
       res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
