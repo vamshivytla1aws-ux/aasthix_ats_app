@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { getTrainingSubmissionDetail } from "@/lib/training/service";
+import { deleteTrainingSubmission, getTrainingSubmissionDetail } from "@/lib/training/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,5 +61,25 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   } catch (error) {
     console.error("training submission PATCH", error);
     return NextResponse.json({ error: "Failed to update submission" }, { status: 500 });
+  }
+}
+
+export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+  const auth = await requirePermission("jobs.manage");
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const id = Number(params.id);
+  if (!Number.isFinite(id) || id <= 0) {
+    return NextResponse.json({ error: "Invalid submission id" }, { status: 400 });
+  }
+
+  try {
+    const deleted = await deleteTrainingSubmission(id);
+    if (!deleted) {
+      return NextResponse.json({ error: "Submission not found" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("training submission DELETE", error);
+    return NextResponse.json({ error: "Failed to delete submission" }, { status: 500 });
   }
 }

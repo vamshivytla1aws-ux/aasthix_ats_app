@@ -328,24 +328,17 @@ export async function saveTrainingSubmissionAnswers(input: {
     throw new Error("Please answer at least one question before submitting");
   }
 
-  const analysis = await analyzeTrainingAnswers({
-    fullName: submission.full_name,
-    resumeText: submission.resume_text,
-    questions: submission.generated_questions,
-    answers,
-  });
-
   const updateRes = await query(
     `
     UPDATE training_submissions
     SET
       trainee_answers = $2::jsonb,
-      answer_analyses = $3::jsonb,
-      answer_analysis_mode = $4,
-      answer_analysis_status = $5,
-      answer_analysis_error = $6,
-      overall_answer_score = $7,
-      answer_summary = $8,
+      answer_analyses = '[]'::jsonb,
+      answer_analysis_mode = NULL,
+      answer_analysis_status = 'queued',
+      answer_analysis_error = NULL,
+      overall_answer_score = NULL,
+      answer_summary = NULL,
       answers_submitted_at = NOW(),
       updated_at = NOW()
     WHERE id = $1
@@ -354,17 +347,85 @@ export async function saveTrainingSubmissionAnswers(input: {
     [
       input.id,
       JSON.stringify(answers),
-      JSON.stringify(analysis.answer_analyses),
-      analysis.analysis_mode,
-      analysis.answer_analysis_status,
-      analysis.answer_analysis_error,
-      analysis.overall_answer_score,
-      analysis.answer_summary,
     ]
   );
 
   const updated = updateRes.rows[0] as TrainingSubmissionDbRow | undefined;
   return updated ? mapTrainingSubmission(updated) : null;
+}
+
+export async function analyzeStoredTrainingSubmissionAnswers(id: number) {
+  try {
+    const submission = await getTrainingSubmissionDetail(id);
+    if (!submission || !submission.trainee_answers.length) return null;
+
+    const analysis = await analyzeTrainingAnswers({
+      fullName: submission.full_name,
+      resumeText: submission.resume_text,
+      questions: submission.generated_questions,
+      answers: submission.trainee_answers,
+    });
+
+    const updateRes = await query(
+      `
+      UPDATE training_submissions
+      SET
+        answer_analyses = $2::jsonb,
+        answer_analysis_mode = $3,
+        answer_analysis_status = $4,
+        answer_analysis_error = $5,
+        overall_answer_score = $6,
+        answer_summary = $7,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING ${TRAINING_SUBMISSION_SELECT}
+      `,
+      [
+        id,
+        JSON.stringify(analysis.answer_analyses),
+        analysis.analysis_mode,
+        analysis.answer_analysis_status,
+        analysis.answer_analysis_error,
+        analysis.overall_answer_score,
+        analysis.answer_summary,
+      ]
+    );
+
+    const updated = updateRes.rows[0] as TrainingSubmissionDbRow | undefined;
+    return updated ? mapTrainingSubmission(updated) : null;
+  } catch (error) {
+    await query(
+      `
+      UPDATE training_submissions
+      SET
+        answer_analysis_status = 'failed',
+        answer_analysis_error = $2,
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [id, error instanceof Error ? error.message : "Background answer analysis failed"]
+    ).catch(() => {});
+    throw error;
+  }
+}
+
+export async function deleteTrainingSubmission(id: number) {
+  const result = await query(
+    `
+    DELETE FROM training_submissions
+    WHERE id = $1
+    RETURNING resume_url
+    `,
+    [id]
+  );
+  const row = result.rows[0] as { resume_url?: string | null } | undefined;
+  if (!row) return false;
+
+  const absolutePath = localResumePathFromUrl(row.resume_url ?? null);
+  if (absolutePath) {
+    await fs.unlink(absolutePath).catch(() => {});
+  }
+  return true;
 }
 
 export async function readTrainingResumeForResponse(id: number) {

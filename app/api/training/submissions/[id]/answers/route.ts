@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { saveTrainingSubmissionAnswers } from "@/lib/training/service";
+import { analyzeStoredTrainingSubmissionAnswers, saveTrainingSubmissionAnswers } from "@/lib/training/service";
 import { normalizeTrainingAnswers } from "@/lib/trainingQuestions";
 
 export const runtime = "nodejs";
@@ -25,6 +25,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
       return NextResponse.json({ error: "Training submission not found" }, { status: 404 });
     }
 
+    void analyzeStoredTrainingSubmissionAnswers(id).catch((error) => {
+      console.error("training answers background analysis", error);
+    });
+
     await query(
       `
       INSERT INTO training_funnel_events (publisher_user_id, event_type, session_id, meta)
@@ -37,11 +41,6 @@ export async function POST(request: Request, { params }: { params: { id: string 
       ok: true,
       submission_id: submission.id,
       answer_analysis_status: submission.answer_analysis_status,
-      answer_analysis_error: submission.answer_analysis_error,
-      answer_analysis_mode: submission.answer_analysis_mode,
-      overall_answer_score: submission.overall_answer_score,
-      answer_summary: submission.answer_summary,
-      answer_analyses: submission.answer_analyses,
     });
   } catch (error) {
     console.error("training answers POST", error);

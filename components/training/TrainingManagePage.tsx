@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, RefreshCcw, Save } from "lucide-react";
+import { ExternalLink, RefreshCcw, Save, Trash2 } from "lucide-react";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import ModuleDataTable, { type ModuleDataTableColumn } from "@/components/enterprise/ModuleDataTable";
 import { apiFetchJson } from "@/lib/apiClient";
@@ -61,6 +61,7 @@ export default function TrainingManagePage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewStatus, setReviewStatus] = useState<string>("new");
   const [reviewerNotes, setReviewerNotes] = useState("");
@@ -223,6 +224,33 @@ export default function TrainingManagePage() {
     }
   }
 
+  async function deleteSubmission() {
+    if (!detail) return;
+    const confirmed = window.confirm(
+      `Delete training submission for ${detail.full_name}? This removes the stored trainee attempt so they can submit again.`
+    );
+    if (!confirmed) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await apiFetchJson<{ ok: true }>(`/api/training/submissions/${detail.id}`, {
+        method: "DELETE",
+      });
+      let nextSelectedId: number | null = null;
+      setRows((current) => {
+        const remaining = current.filter((row) => row.id !== detail.id);
+        nextSelectedId = remaining[0]?.id ?? null;
+        return remaining;
+      });
+      setSelectedId((current) => (current === detail.id ? nextSelectedId : current));
+      setDetail(null);
+    } catch (deleteError) {
+      setError((deleteError as Error)?.message || "Failed to delete submission");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <ModulePageFrame
       title="Training Module"
@@ -350,6 +378,10 @@ export default function TrainingManagePage() {
                   <button type="button" onClick={regenerateQuestions} disabled={regenerating} className={UI.secondaryButton}>
                     <RefreshCcw className="h-4 w-4" />
                     {regenerating ? "Regenerating..." : "Regenerate questions"}
+                  </button>
+                  <button type="button" onClick={deleteSubmission} disabled={deleting} className={UI.secondaryButton}>
+                    <Trash2 className="h-4 w-4" />
+                    {deleting ? "Deleting..." : "Delete trainee attempt"}
                   </button>
                 </div>
 
