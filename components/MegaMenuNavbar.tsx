@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -138,6 +138,12 @@ export default function MegaMenuNavbar() {
     () => DASHBOARD_MORE_NAV.filter((item) => isNavItemVisible(item, role, permissions)),
     [role, permissions]
   );
+  const resolvedMoreVisible = useMemo(() => {
+    if (!IA_V2_ENABLED) return moreVisible;
+    const merged = new Map<string, (typeof moreVisible)[number]>();
+    for (const item of [...domainMoreVisible, ...moreVisible]) merged.set(item.href, item);
+    return Array.from(merged.values());
+  }, [domainMoreVisible, moreVisible]);
   const canViewChat = useMemo(
     () => isNavItemVisible({ permissionKey: "chat.view" }, role, permissions),
     [role, permissions]
@@ -160,7 +166,7 @@ export default function MegaMenuNavbar() {
 
   return (
     <header className="sticky top-0 z-50">
-      {/* Top shell — dark gradient */}
+      {/* Top shell â€” dark gradient */}
       <div className={`${UI.enterprise.shellGradient} border-b border-white/10 shadow-md shadow-slate-900/20`}>
         <div className="ats-page-inner flex flex-wrap items-center gap-3 px-4 py-2.5 sm:px-6">
           <Link
@@ -268,7 +274,7 @@ export default function MegaMenuNavbar() {
                         </div>
                       </div>
 
-                      {/* Settings — always visible, top of menu */}
+                      {/* Settings â€” always visible, top of menu */}
                       <div className="border-b border-slate-100 py-1 dark:border-slate-700">
                         <ProfileMenuItem
                           icon={<Settings className="h-4 w-4" />}
@@ -359,7 +365,7 @@ export default function MegaMenuNavbar() {
                           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30"
                         >
                           <LogOut className="h-4 w-4" />
-                          {loading ? "Signing out…" : "Sign Out"}
+                          {loading ? "Signing outâ€¦" : "Sign Out"}
                         </button>
                       </div>
                     </div>
@@ -386,7 +392,7 @@ export default function MegaMenuNavbar() {
         </div>
       </div>
 
-      {/* Secondary navigation — compact horizontal */}
+      {/* Secondary navigation â€” compact horizontal */}
       <nav
         className={`${UI.enterprise.secondaryNavBar} hidden lg:block`}
         aria-label="Workspace modules"
@@ -453,7 +459,7 @@ export default function MegaMenuNavbar() {
                     {usageOpen ? <AIUsageQuickPanel /> : null}
                   </>
                 ) : null}
-                {(IA_V2_ENABLED ? domainMoreVisible : moreVisible).map((item) => (
+                {resolvedMoreVisible.map((item) => (
                   <Link
                     key={item.id}
                     href={item.href}
@@ -638,3 +644,4 @@ function showShortcutsToast() {
   setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity 300ms"; }, 5000);
   setTimeout(() => el.remove(), 5400);
 }
+

@@ -1,5 +1,5 @@
-/**
- * Single source of truth for dashboard primary / “more” navigation.
+﻿/**
+ * Single source of truth for dashboard primary / â€œmoreâ€ navigation.
  * Used by MegaMenuNavbar; SidebarNav maps the same hrefs where applicable.
  */
 
@@ -42,7 +42,7 @@ export const DASHBOARD_MORE_NAV: DashboardNavItem[] = [
   { id: "alerts", label: "Alerts", href: "/alerts", permissionKey: "alerts.view" },
   { id: "activity", label: "Activity Center", href: "/activity-center", permissionKey: "dashboard.view" },
   { id: "screening", label: "Screening", href: "/screening", permissionKey: "pipeline.view" },
-  { id: "audit", label: "Audit trail", href: "/audit", permissionKey: "jobs.view" },
+  { id: "training", label: "Training", href: "/training/manage", permissionKey: "jobs.view" },  { id: "audit", label: "Audit trail", href: "/audit", permissionKey: "jobs.view" },
   { id: "roadmap", label: "Roadmap", href: "/roadmap", permissionKey: "pipeline.view" },
   { id: "copilot", label: "Recruiter Copilot", href: "/recruiter/copilot", permissionKey: "jobs.view" },
   { id: "workload", label: "Recruiter Workload", href: "/recruiter/workload", permissionKey: "jobs.view" },
@@ -193,3 +193,5 @@ export function getDomainForPath(pathname: string): DashboardDomain {
   }
   return "hiring";
 }
+
+
