@@ -131,6 +131,9 @@ export async function POST(request: Request) {
       ok: true,
       submission_id: Number(insertRes.rows[0]?.id),
       generated_mode: generated.generated_mode,
+      question_generation_status: generated.question_generation_status,
+      question_generation_error: generated.question_generation_error,
+      questions: generated.questions,
     });
   } catch (error) {
     console.error("training apply", error);

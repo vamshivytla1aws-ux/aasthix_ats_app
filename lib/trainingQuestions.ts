@@ -131,6 +131,8 @@ function normalizeQuestions(items: unknown): TrainingQuestion[] {
 async function generateWithAi(input: GenerateTrainingQuestionsInput): Promise<TrainingQuestion[] | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
 
   const prompt = `Generate ${QUESTION_TARGET_COUNT} basic trainee interview questions from this resume.
 Return strict JSON in this shape:
@@ -155,30 +157,35 @@ Candidate name: ${input.fullName || "N/A"}
 Resume:
 ${String(input.resumeText || "").slice(0, 18000)}`;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: "You generate structured basic training interview questions from resumes." },
-        { role: "user", content: prompt },
-      ],
-    }),
-  });
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: "You generate structured basic training interview questions from resumes." },
+          { role: "user", content: prompt },
+        ],
+      }),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) throw new Error(`OpenAI request failed (${response.status})`);
-  const json = await response.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("No AI response");
-  const parsed = JSON.parse(content);
-  const questions = normalizeQuestions(parsed?.questions);
-  return questions.length > 0 ? questions : null;
+    if (!response.ok) throw new Error(`OpenAI request failed (${response.status})`);
+    const json = await response.json();
+    const content = json?.choices?.[0]?.message?.content;
+    if (!content) throw new Error("No AI response");
+    const parsed = JSON.parse(content);
+    const questions = normalizeQuestions(parsed?.questions);
+    return questions.length > 0 ? questions : null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function generateTrainingQuestions(

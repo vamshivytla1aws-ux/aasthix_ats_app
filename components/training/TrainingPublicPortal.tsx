@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BookOpenCheck, CheckCircle2, FileText, Send, Sparkles } from "lucide-react";
 import BrandLogo from "@/components/BrandLogo";
+import type { TrainingQuestion } from "@/lib/trainingQuestions";
 
 const EMPTY_FORM = {
   full_name: "",
@@ -34,6 +35,13 @@ export default function TrainingPublicPortal() {
   const [resumeName, setResumeName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    submission_id: number;
+    generated_mode: "AI" | "RULE_BASED";
+    question_generation_status: string;
+    question_generation_error: string | null;
+    questions: TrainingQuestion[];
+  } | null>(null);
 
   const track = useCallback(async (event_type: string, meta?: Record<string, unknown>) => {
     try {
@@ -91,11 +99,81 @@ export default function TrainingPublicPortal() {
         setSubmitting(false);
         return;
       }
-      window.location.href = "/training/success";
+      setResult({
+        submission_id: Number(data.submission_id || 0),
+        generated_mode: data.generated_mode === "AI" ? "AI" : "RULE_BASED",
+        question_generation_status: String(data.question_generation_status || "generated"),
+        question_generation_error: typeof data.question_generation_error === "string" ? data.question_generation_error : null,
+        questions: Array.isArray(data.questions) ? (data.questions as TrainingQuestion[]) : [],
+      });
+      setSubmitting(false);
     } catch {
       setError("Network error. Please try again.");
       setSubmitting(false);
     }
+  }
+
+  if (result) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+        <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
+          <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-8 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400">
+                <CheckCircle2 className="h-7 w-7" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-white">Training profile submitted</h1>
+                <p className="text-sm text-slate-400">
+                  Submission #{result.submission_id} · {result.generated_mode === "AI" ? "AI-generated questions" : "Fallback questions"}
+                </p>
+              </div>
+            </div>
+
+            {result.question_generation_error ? (
+              <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                Question generation note: {result.question_generation_error}
+              </div>
+            ) : null}
+
+            <div className="mt-8">
+              <h2 className="text-lg font-semibold text-white">Your basic training questions</h2>
+              <p className="mt-2 text-sm text-slate-400">
+                These were generated from the resume you uploaded and are also stored in our training module for review.
+              </p>
+              <div className="mt-5 space-y-3">
+                {result.questions.map((question, index) => (
+                  <div key={`${question.category}-${index}`} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-300">
+                      {question.category}
+                    </div>
+                    <p className="mt-1 text-sm font-medium text-white">{question.question}</p>
+                    {question.reference_answer ? (
+                      <p className="mt-2 text-xs leading-5 text-slate-400">{question.reference_answer}</p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-8">
+              <button
+                type="button"
+                onClick={() => {
+                  setResult(null);
+                  setForm(EMPTY_FORM);
+                  setResumeName("");
+                  setError(null);
+                }}
+                className="inline-flex items-center justify-center rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 hover:bg-indigo-400"
+              >
+                Submit another profile
+              </button>
+            </div>
+          </section>
+        </main>
+      </div>
+    );
   }
 
   return (
