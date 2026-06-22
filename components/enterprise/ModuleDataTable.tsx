@@ -30,6 +30,8 @@ export type ModuleDataTableProps<T> = {
   rows: T[];
   rowKey: (row: T) => string | number;
   columns: ModuleDataTableColumn<T>[];
+  onRowClick?: (row: T) => void;
+  selectedRowKey?: string | number | null;
   /** localStorage key for table prefs (visibility, widths, order) */
   storageKey: string;
   density?: Density;
@@ -125,6 +127,8 @@ export default function ModuleDataTable<T>({
   rows,
   rowKey,
   columns,
+  onRowClick,
+  selectedRowKey,
   storageKey,
   density = "compact",
   exportBasename = "export",
@@ -473,11 +477,16 @@ export default function ModuleDataTable<T>({
             {visibleRows.map((row, i) => {
               const globalIdx = doVirtualize ? virtualWindow.start + i : i;
               const striped = globalIdx % 2 === 1;
+              const currentRowKey = rowKey(row);
+              const isSelected = selectedRowKey != null && String(selectedRowKey) === String(currentRowKey);
               return (
                 <tr
-                  key={String(rowKey(row))}
+                  key={String(currentRowKey)}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
                   className={[
+                    onRowClick ? "cursor-pointer" : "",
                     striped ? "bg-slate-50/40 dark:bg-slate-900/30" : "",
+                    isSelected ? "!bg-blue-50/80 dark:!bg-blue-950/30" : "",
                     "hover:bg-slate-100/50 dark:hover:bg-slate-800/40",
                   ].join(" ")}
                 >

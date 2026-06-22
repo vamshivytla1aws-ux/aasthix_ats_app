@@ -127,7 +127,11 @@ export default function TrainingManagePage() {
       defaultWidth: 180,
       csvValue: (row) => row.full_name,
       sortValue: (row) => row.full_name,
-      cell: (row) => <span className="font-medium text-[var(--ats-text)]">{row.full_name}</span>,
+      cell: (row) => (
+        <button type="button" className="text-left font-medium text-[var(--ats-text)] hover:underline" onClick={() => setSelectedId(row.id)}>
+          {row.full_name}
+        </button>
+      ),
     },
     {
       id: "contact",
@@ -283,6 +287,8 @@ export default function TrainingManagePage() {
             rows={rows}
             rowKey={(row) => row.id}
             columns={columns}
+            onRowClick={(row) => setSelectedId(row.id)}
+            selectedRowKey={selectedId}
             storageKey="training-module-table"
             exportBasename="training-submissions"
             emptyMessage="No training submissions yet."

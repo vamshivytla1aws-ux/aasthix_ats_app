@@ -184,6 +184,81 @@ function normalizeAnswerAnalyses(items: unknown): TrainingAnswerAnalysis[] {
     .filter((item): item is TrainingAnswerAnalysis => Boolean(item));
 }
 
+function buildFallbackAnalysisRow(
+  question: TrainingQuestion | undefined,
+  answer: TrainingAnswer,
+  index: number
+): TrainingAnswerAnalysis {
+  const answerText = answer.answer.trim();
+  const wordCount = answerText ? answerText.split(/\s+/).filter(Boolean).length : 0;
+  let score = 20;
+  if (wordCount >= 12) score += 25;
+  if (wordCount >= 30) score += 20;
+  if (wordCount >= 60) score += 10;
+
+  const reference = question?.reference_answer || "";
+  const referenceWords = reference
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 4);
+  const hits = referenceWords.filter((word) => answerText.toLowerCase().includes(word));
+  score += Math.min(25, hits.length * 6);
+  if (!answerText) score = 0;
+
+  const strengths = [];
+  if (wordCount >= 20) strengths.push("Gives a reasonably detailed response.");
+  if (hits.length >= 2) strengths.push("Touches expected evaluation points.");
+  if (/project|built|implemented|worked|designed|resolved|improved/i.test(answerText)) {
+    strengths.push("Uses practical experience language instead of only theory.");
+  }
+
+  const improvements = [];
+  if (wordCount < 12) improvements.push("Needs more detail and a clearer explanation.");
+  if (hits.length === 0) improvements.push("Should connect the answer more directly to the question intent.");
+  if (!/\b(i|my|we)\b/i.test(answerText)) improvements.push("Should clarify the candidate's own contribution or viewpoint.");
+
+  return {
+    category: answer.category,
+    question: answer.question,
+    answer: answer.answer,
+    score: Math.max(0, Math.min(100, score)),
+    summary: answerText
+      ? wordCount >= 20
+        ? "Reasonable answer, but recruiter review is still recommended."
+        : "Short answer with limited evidence."
+      : "No answer was provided.",
+    strengths: strengths.slice(0, 3),
+    improvements: improvements.slice(0, 3),
+    sort_order: answer.sort_order || question?.sort_order || index + 1,
+  };
+}
+
+function completeAnswerAnalyses(
+  questions: TrainingQuestion[],
+  answers: TrainingAnswer[],
+  analyses: TrainingAnswerAnalysis[]
+): TrainingAnswerAnalysis[] {
+  return answers.map((answer, index) => {
+    const question =
+      questions.find((item) => item.sort_order === answer.sort_order) ||
+      questions.find((item) => item.question === answer.question) ||
+      questions[index];
+    const matching =
+      analyses.find((item) => item.sort_order === answer.sort_order) ||
+      analyses.find((item) => item.question === answer.question);
+    if (matching) {
+      return {
+        ...matching,
+        category: matching.category || answer.category || question?.category || "technical",
+        question: matching.question || answer.question || question?.question || `Question ${index + 1}`,
+        answer: answer.answer,
+        sort_order: answer.sort_order || matching.sort_order || question?.sort_order || index + 1,
+      };
+    }
+    return buildFallbackAnalysisRow(question, answer, index);
+  });
+}
+
 async function callOpenAiJson(prompt: string, system: string, timeoutMs: number) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -252,51 +327,7 @@ ${String(input.resumeText || "").slice(0, 18000)}`;
 }
 
 function fallbackAnalysis(input: AnalyzeTrainingAnswersInput): TrainingAnswerAnalysisResult {
-  const analyses = input.answers.map((answer, index) => {
-    const answerText = answer.answer.trim();
-    const wordCount = answerText ? answerText.split(/\s+/).filter(Boolean).length : 0;
-    let score = 20;
-    if (wordCount >= 12) score += 25;
-    if (wordCount >= 30) score += 20;
-    if (wordCount >= 60) score += 10;
-
-    const matchingQuestion = input.questions.find((question) => question.sort_order === answer.sort_order) || input.questions[index];
-    const reference = matchingQuestion?.reference_answer || "";
-    const referenceWords = reference
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((word) => word.length > 4);
-    const hits = referenceWords.filter((word) => answerText.toLowerCase().includes(word));
-    score += Math.min(25, hits.length * 6);
-    if (!answerText) score = 0;
-
-    const strengths = [];
-    if (wordCount >= 20) strengths.push("Gives a reasonably detailed response.");
-    if (hits.length >= 2) strengths.push("Touches expected evaluation points.");
-    if (/project|built|implemented|worked|designed|resolved|improved/i.test(answerText)) {
-      strengths.push("Uses practical experience language instead of only theory.");
-    }
-
-    const improvements = [];
-    if (wordCount < 12) improvements.push("Needs more detail and a clearer explanation.");
-    if (hits.length === 0) improvements.push("Should connect the answer more directly to the question intent.");
-    if (!/\b(i|my|we)\b/i.test(answerText)) improvements.push("Should clarify the candidate's own contribution or viewpoint.");
-
-    return {
-      category: answer.category,
-      question: answer.question,
-      answer: answer.answer,
-      score: Math.max(0, Math.min(100, score)),
-      summary: answerText
-        ? wordCount >= 20
-          ? "Reasonable answer, but recruiter review is still recommended."
-          : "Short answer with limited evidence."
-        : "No answer was provided.",
-      strengths: strengths.slice(0, 3),
-      improvements: improvements.slice(0, 3),
-      sort_order: answer.sort_order,
-    } satisfies TrainingAnswerAnalysis;
-  });
+  const analyses = completeAnswerAnalyses(input.questions, input.answers, []);
 
   const overallPercent = analyses.length
     ? Math.round(analyses.reduce((sum, item) => sum + item.score, 0) / analyses.length)
@@ -377,7 +408,7 @@ ${JSON.stringify(
     "You evaluate trainee interview answers using resume context and internal recruiter guidance.",
     20_000
   );
-  const analyses = normalizeAnswerAnalyses(parsed?.answer_analyses);
+  const analyses = completeAnswerAnalyses(input.questions, input.answers, normalizeAnswerAnalyses(parsed?.answer_analyses));
   if (!analyses.length) return null;
   return {
     analysis_mode: "AI",
@@ -467,7 +498,7 @@ export async function analyzeTrainingAnswers(
 
   try {
     const ai = await analyzeWithAi({ ...input, answers });
-    if (!ai || ai.answer_analyses.length !== answers.length) {
+    if (!ai) {
       return fallbackAnalysis({ ...input, answers });
     }
     return ai;
