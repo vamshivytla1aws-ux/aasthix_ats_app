@@ -7,7 +7,7 @@ import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import ModuleDataTable, { type ModuleDataTableColumn } from "@/components/enterprise/ModuleDataTable";
 import { apiFetchJson } from "@/lib/apiClient";
 import { UI } from "@/lib/ui";
-import type { TrainingQuestion } from "@/lib/trainingQuestions";
+import type { TrainingAnswer, TrainingAnswerAnalysis, TrainingQuestion } from "@/lib/trainingQuestions";
 
 type TrainingSubmissionListRow = {
   id: number;
@@ -18,13 +18,17 @@ type TrainingSubmissionListRow = {
   review_status: string;
   resume_parse_status: string;
   question_generation_status: string;
+  answer_analysis_status: string;
   generated_mode: string;
+  answer_analysis_mode: string | null;
   resume_url: string | null;
   resume_file_name: string | null;
   submitted_at: string;
   created_at: string;
   updated_at: string;
+  answers_submitted_at: string | null;
   question_count: number;
+  answer_count: number;
 };
 
 type TrainingSubmissionDetail = TrainingSubmissionListRow & {
@@ -33,8 +37,13 @@ type TrainingSubmissionDetail = TrainingSubmissionListRow & {
   resume_text: string | null;
   resume_parse_error: string | null;
   question_generation_error: string | null;
+  answer_analysis_error: string | null;
+  overall_answer_score: number | null;
+  answer_summary: string | null;
   reviewer_notes: string | null;
   generated_questions: TrainingQuestion[];
+  trainee_answers: TrainingAnswer[];
+  answer_analyses: TrainingAnswerAnalysis[];
   session_id: string | null;
 };
 
@@ -153,6 +162,18 @@ export default function TrainingManagePage() {
       ),
     },
     {
+      id: "answers",
+      header: "Answers",
+      defaultWidth: 160,
+      csvValue: (row) => `${row.answer_count} ${row.answer_analysis_status}`,
+      cell: (row) => (
+        <div>
+          <div>{row.answer_count} submitted</div>
+          <div className="text-xs text-[var(--ats-text-muted)]">{prettyStatus(row.answer_analysis_status)}</div>
+        </div>
+      ),
+    },
+    {
       id: "review_status",
       header: "Review",
       defaultWidth: 140,
@@ -205,7 +226,7 @@ export default function TrainingManagePage() {
   return (
     <ModulePageFrame
       title="Training Module"
-      subtitle="Review public training submissions, resume parsing quality, and the generated basic question sets."
+      subtitle="Review public training submissions, generated questions, trainee answers, and answer analysis."
       metrics={
         <>
           <span>{rows.length} submissions</span>
@@ -269,6 +290,14 @@ export default function TrainingManagePage() {
                   <InfoCard label="Generation mode" value={`${detail.generated_mode} · ${prettyStatus(detail.question_generation_status)}`} />
                   <InfoCard label="Resume parse" value={prettyStatus(detail.resume_parse_status)} />
                   <InfoCard label="Question count" value={String(detail.generated_questions.length)} />
+                  <InfoCard
+                    label="Answer analysis"
+                    value={`${prettyStatus(detail.answer_analysis_status)}${detail.answer_analysis_mode ? ` · ${detail.answer_analysis_mode}` : ""}`}
+                  />
+                  <InfoCard
+                    label="Overall answer score"
+                    value={detail.overall_answer_score == null ? "Pending" : `${detail.overall_answer_score}/15`}
+                  />
                 </div>
 
                 {detail.resume_parse_error ? (
@@ -279,6 +308,11 @@ export default function TrainingManagePage() {
                 {detail.question_generation_error ? (
                   <div className="rounded-xl border border-amber-300/50 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                     Question generation note: {detail.question_generation_error}
+                  </div>
+                ) : null}
+                {detail.answer_analysis_error ? (
+                  <div className="rounded-xl border border-amber-300/50 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    Answer analysis note: {detail.answer_analysis_error}
                   </div>
                 ) : null}
 
@@ -333,6 +367,71 @@ export default function TrainingManagePage() {
                         ) : null}
                       </div>
                     ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--ats-text)]">Trainee answers</h3>
+                  {detail.answers_submitted_at ? (
+                    <p className="mt-1 text-xs text-[var(--ats-text-muted)]">
+                      Submitted on {new Date(detail.answers_submitted_at).toLocaleString("en-IN")}
+                    </p>
+                  ) : null}
+                  <div className="mt-3 space-y-3">
+                    {detail.trainee_answers.length ? (
+                      detail.trainee_answers.map((answer, index) => (
+                        <div key={`${answer.category}-${index}`} className="rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg)] px-3 py-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ats-primary)]">
+                            {prettyStatus(answer.category)}
+                          </div>
+                          <p className="mt-1 text-sm font-medium text-[var(--ats-text)]">{answer.question}</p>
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--ats-text-muted)]">
+                            {answer.answer?.trim() || "No answer submitted."}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-[var(--ats-border)] px-3 py-4 text-sm text-[var(--ats-text-muted)]">
+                        No trainee answers submitted yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--ats-text)]">Answer analysis</h3>
+                  {detail.answer_summary ? (
+                    <p className="mt-2 text-sm leading-6 text-[var(--ats-text-muted)]">{detail.answer_summary}</p>
+                  ) : null}
+                  <div className="mt-3 space-y-3">
+                    {detail.answer_analyses.length ? (
+                      detail.answer_analyses.map((analysis, index) => (
+                        <div key={`${analysis.category}-${index}`} className="rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg)] px-3 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ats-primary)]">
+                              {prettyStatus(analysis.category)}
+                            </div>
+                            <div className="text-sm font-semibold text-[var(--ats-text)]">{analysis.score}%</div>
+                          </div>
+                          <p className="mt-1 text-sm font-medium text-[var(--ats-text)]">{analysis.question}</p>
+                          <p className="mt-2 text-sm leading-6 text-[var(--ats-text-muted)]">{analysis.summary}</p>
+                          {analysis.strengths.length ? (
+                            <p className="mt-2 text-xs leading-5 text-emerald-700">
+                              Strengths: {analysis.strengths.join(" · ")}
+                            </p>
+                          ) : null}
+                          {analysis.improvements.length ? (
+                            <p className="mt-2 text-xs leading-5 text-amber-700">
+                              Improve: {analysis.improvements.join(" · ")}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-[var(--ats-border)] px-3 py-4 text-sm text-[var(--ats-text-muted)]">
+                        Answer analysis has not been generated yet.
+                      </div>
+                    )}
                   </div>
                 </div>
 

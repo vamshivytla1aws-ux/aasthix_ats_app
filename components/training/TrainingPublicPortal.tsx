@@ -35,6 +35,10 @@ export default function TrainingPublicPortal() {
   const [resumeName, setResumeName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [answerError, setAnswerError] = useState<string | null>(null);
+  const [answerSubmitting, setAnswerSubmitting] = useState(false);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [answersSubmitted, setAnswersSubmitted] = useState(false);
   const [result, setResult] = useState<{
     submission_id: number;
     generated_mode: "AI" | "RULE_BASED";
@@ -122,7 +126,80 @@ export default function TrainingPublicPortal() {
     }
   }
 
+  async function submitAnswers() {
+    if (!result) return;
+    setAnswerSubmitting(true);
+    setAnswerError(null);
+    try {
+      const response = await fetch(`/api/training/submissions/${result.submission_id}/answers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionKey(),
+          answers: result.questions.map((question, index) => ({
+            category: question.category,
+            question: question.question,
+            answer: answers[index] || "",
+            sort_order: question.sort_order || index + 1,
+          })),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setAnswerError(typeof data.error === "string" ? data.error : "Could not analyze your answers");
+        setAnswerSubmitting(false);
+        return;
+      }
+      setAnswersSubmitted(true);
+      setAnswerSubmitting(false);
+    } catch {
+      setAnswerError("Network error while analyzing answers. Please try again.");
+      setAnswerSubmitting(false);
+    }
+  }
+
   if (result) {
+    if (answersSubmitted) {
+      return (
+        <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+          <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
+            <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-8 shadow-xl">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400">
+                  <CheckCircle2 className="h-7 w-7" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-white">Thank you for your submission</h1>
+                  <p className="text-sm text-slate-400">Submission #{result.submission_id}</p>
+                </div>
+              </div>
+              <p className="mt-6 text-sm leading-6 text-slate-300">
+                Your answers have been submitted successfully. Our training team will review your profile and responses,
+                and we will get back to you shortly.
+              </p>
+              <div className="mt-8">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResult(null);
+                    setForm(EMPTY_FORM);
+                    setResumeName("");
+                    setError(null);
+                    setAnswerError(null);
+                    setAnswers({});
+                    setAnswersSubmitted(false);
+                  }}
+                  className="inline-flex items-center justify-center rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 hover:bg-indigo-400"
+                >
+                  Submit another profile
+                </button>
+              </div>
+            </section>
+          </main>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
         <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
@@ -148,8 +225,13 @@ export default function TrainingPublicPortal() {
             <div className="mt-8">
               <h2 className="text-lg font-semibold text-white">Your basic training questions</h2>
               <p className="mt-2 text-sm text-slate-400">
-                These were generated from the resume you uploaded and are also stored in our training module for review.
+                These were generated from the resume you uploaded. Please answer them below so we can analyze your responses.
               </p>
+              {answerError ? (
+                <div className="mt-5 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                  {answerError}
+                </div>
+              ) : null}
               <div className="mt-5 space-y-3">
                 {result.questions.map((question, index) => (
                   <div key={`${question.category}-${index}`} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-4">
@@ -157,11 +239,30 @@ export default function TrainingPublicPortal() {
                       {question.category}
                     </div>
                     <p className="mt-1 text-sm font-medium text-white">{question.question}</p>
-                    {question.reference_answer ? (
-                      <p className="mt-2 text-xs leading-5 text-slate-400">{question.reference_answer}</p>
-                    ) : null}
+                    <textarea
+                      rows={4}
+                      value={answers[index] || ""}
+                      onChange={(event) =>
+                        setAnswers((current) => ({
+                          ...current,
+                          [index]: event.target.value,
+                        }))
+                      }
+                      placeholder="Type your answer here..."
+                      className="mt-3 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-indigo-500/60"
+                    />
                   </div>
                 ))}
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={submitAnswers}
+                  disabled={answerSubmitting}
+                  className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {answerSubmitting ? "Analyzing answers..." : "Submit answers for analysis"}
+                </button>
               </div>
             </div>
 
@@ -173,6 +274,9 @@ export default function TrainingPublicPortal() {
                   setForm(EMPTY_FORM);
                   setResumeName("");
                   setError(null);
+                  setAnswerError(null);
+                  setAnswers({});
+                  setAnswersSubmitted(false);
                 }}
                 className="inline-flex items-center justify-center rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 hover:bg-indigo-400"
               >

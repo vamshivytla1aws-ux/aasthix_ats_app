@@ -7,6 +7,33 @@ export type TrainingQuestion = {
   sort_order: number;
 };
 
+export type TrainingAnswer = {
+  category: TrainingQuestionCategory;
+  question: string;
+  answer: string;
+  sort_order: number;
+};
+
+export type TrainingAnswerAnalysis = {
+  category: TrainingQuestionCategory;
+  question: string;
+  answer: string;
+  score: number;
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  sort_order: number;
+};
+
+export type TrainingAnswerAnalysisResult = {
+  analysis_mode: "AI" | "RULE_BASED";
+  answer_analysis_status: "analyzed" | "fallback";
+  answer_analysis_error: string | null;
+  overall_answer_score: number;
+  answer_summary: string;
+  answer_analyses: TrainingAnswerAnalysis[];
+};
+
 type GenerateTrainingQuestionsInput = {
   fullName?: string | null;
   resumeText?: string | null;
@@ -17,6 +44,13 @@ type GenerateTrainingQuestionsResult = {
   question_generation_status: "generated" | "fallback";
   question_generation_error: string | null;
   questions: TrainingQuestion[];
+};
+
+type AnalyzeTrainingAnswersInput = {
+  fullName?: string | null;
+  resumeText?: string | null;
+  questions: TrainingQuestion[];
+  answers: TrainingAnswer[];
 };
 
 const QUESTION_TARGET_COUNT = 12;
@@ -121,19 +155,70 @@ function normalizeQuestions(items: unknown): TrainingQuestion[] {
         category: normalizeCategory(String(row?.category || "")),
         question,
         reference_answer,
-        sort_order: index + 1,
+        sort_order: Number(row?.sort_order) || index + 1,
       } satisfies TrainingQuestion;
     })
     .filter((item) => item.question)
     .slice(0, 15);
 }
 
-async function generateWithAi(input: GenerateTrainingQuestionsInput): Promise<TrainingQuestion[] | null> {
+function normalizeAnswerAnalyses(items: unknown): TrainingAnswerAnalysis[] {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item, index) => {
+      const row = item as Record<string, unknown>;
+      const question = String(row?.question || "").trim();
+      const answer = String(row?.answer || "").trim();
+      if (!question) return null;
+      return {
+        category: normalizeCategory(String(row?.category || "")),
+        question,
+        answer,
+        score: Math.max(0, Math.min(100, Number(row?.score) || 0)),
+        summary: String(row?.summary || "").trim(),
+        strengths: Array.isArray(row?.strengths) ? row.strengths.map((value) => String(value || "").trim()).filter(Boolean).slice(0, 3) : [],
+        improvements: Array.isArray(row?.improvements) ? row.improvements.map((value) => String(value || "").trim()).filter(Boolean).slice(0, 3) : [],
+        sort_order: Number(row?.sort_order) || index + 1,
+      } satisfies TrainingAnswerAnalysis;
+    })
+    .filter((item): item is TrainingAnswerAnalysis => Boolean(item));
+}
+
+async function callOpenAiJson(prompt: string, system: string, timeoutMs: number) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: prompt },
+        ],
+      }),
+      signal: controller.signal,
+    });
 
+    if (!response.ok) throw new Error(`OpenAI request failed (${response.status})`);
+    const json = await response.json();
+    const content = json?.choices?.[0]?.message?.content;
+    if (!content) throw new Error("No AI response");
+    return JSON.parse(content);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function generateWithAi(input: GenerateTrainingQuestionsInput): Promise<TrainingQuestion[] | null> {
   const prompt = `Generate ${QUESTION_TARGET_COUNT} basic trainee interview questions from this resume.
 Return strict JSON in this shape:
 {
@@ -157,35 +242,173 @@ Candidate name: ${input.fullName || "N/A"}
 Resume:
 ${String(input.resumeText || "").slice(0, 18000)}`;
 
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: "You generate structured basic training interview questions from resumes." },
-          { role: "user", content: prompt },
-        ],
-      }),
-      signal: controller.signal,
-    });
+  const parsed = await callOpenAiJson(
+    prompt,
+    "You generate structured basic training interview questions from resumes.",
+    15_000
+  );
+  const questions = normalizeQuestions(parsed?.questions);
+  return questions.length > 0 ? questions : null;
+}
 
-    if (!response.ok) throw new Error(`OpenAI request failed (${response.status})`);
-    const json = await response.json();
-    const content = json?.choices?.[0]?.message?.content;
-    if (!content) throw new Error("No AI response");
-    const parsed = JSON.parse(content);
-    const questions = normalizeQuestions(parsed?.questions);
-    return questions.length > 0 ? questions : null;
-  } finally {
-    clearTimeout(timeout);
-  }
+function fallbackAnalysis(input: AnalyzeTrainingAnswersInput): TrainingAnswerAnalysisResult {
+  const analyses = input.answers.map((answer, index) => {
+    const answerText = answer.answer.trim();
+    const wordCount = answerText ? answerText.split(/\s+/).filter(Boolean).length : 0;
+    let score = 20;
+    if (wordCount >= 12) score += 25;
+    if (wordCount >= 30) score += 20;
+    if (wordCount >= 60) score += 10;
+
+    const matchingQuestion = input.questions.find((question) => question.sort_order === answer.sort_order) || input.questions[index];
+    const reference = matchingQuestion?.reference_answer || "";
+    const referenceWords = reference
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length > 4);
+    const hits = referenceWords.filter((word) => answerText.toLowerCase().includes(word));
+    score += Math.min(25, hits.length * 6);
+    if (!answerText) score = 0;
+
+    const strengths = [];
+    if (wordCount >= 20) strengths.push("Gives a reasonably detailed response.");
+    if (hits.length >= 2) strengths.push("Touches expected evaluation points.");
+    if (/project|built|implemented|worked|designed|resolved|improved/i.test(answerText)) {
+      strengths.push("Uses practical experience language instead of only theory.");
+    }
+
+    const improvements = [];
+    if (wordCount < 12) improvements.push("Needs more detail and a clearer explanation.");
+    if (hits.length === 0) improvements.push("Should connect the answer more directly to the question intent.");
+    if (!/\b(i|my|we)\b/i.test(answerText)) improvements.push("Should clarify the candidate's own contribution or viewpoint.");
+
+    return {
+      category: answer.category,
+      question: answer.question,
+      answer: answer.answer,
+      score: Math.max(0, Math.min(100, score)),
+      summary: answerText
+        ? wordCount >= 20
+          ? "Reasonable answer, but recruiter review is still recommended."
+          : "Short answer with limited evidence."
+        : "No answer was provided.",
+      strengths: strengths.slice(0, 3),
+      improvements: improvements.slice(0, 3),
+      sort_order: answer.sort_order,
+    } satisfies TrainingAnswerAnalysis;
+  });
+
+  const overallPercent = analyses.length
+    ? Math.round(analyses.reduce((sum, item) => sum + item.score, 0) / analyses.length)
+    : 0;
+  const overall = Math.max(0, Math.min(15, Math.round((overallPercent / 100) * 15)));
+
+  return {
+    analysis_mode: "RULE_BASED",
+    answer_analysis_status: "fallback",
+    answer_analysis_error: "AI answer analysis was unavailable, so a rule-based review summary was used.",
+    overall_answer_score: overall,
+    answer_summary:
+      overall >= 11
+        ? "The trainee responses look solid overall, though a recruiter should still review the details."
+        : overall >= 8
+          ? "The trainee shows partial understanding, with several answers needing deeper explanation."
+          : "The trainee responses are currently weak or incomplete and need follow-up.",
+    answer_analyses: analyses,
+  };
+}
+
+async function analyzeWithAi(input: AnalyzeTrainingAnswersInput): Promise<TrainingAnswerAnalysisResult | null> {
+  const prompt = `Evaluate these trainee answers against the generated questions and the resume context.
+Return strict JSON in this shape:
+{
+  "overall_answer_score": number,
+  "answer_summary": string,
+  "answer_analyses": [
+    {
+      "category": "technical" | "project" | "behavioral" | "learning",
+      "question": string,
+      "answer": string,
+      "score": number,
+      "summary": string,
+      "strengths": string[],
+      "improvements": string[]
+    }
+  ]
+}
+
+Rules:
+- Score each answer from 0 to 100.
+- Set overall_answer_score as a whole-number final mark out of 15.
+- Be strict but fair.
+- Evaluate the actual answer text, not just the resume.
+- Use the reference answer only as internal recruiter guidance, never copy it verbatim.
+- Strengths and improvements must be concise.
+- If an answer is blank or too short, score it low and say why.
+- Keep the overall summary recruiter-friendly.
+
+Candidate name: ${input.fullName || "N/A"}
+Resume context:
+${String(input.resumeText || "").slice(0, 12000)}
+
+Questions and internal guidance:
+${JSON.stringify(
+  input.questions.map((question) => ({
+    category: question.category,
+    question: question.question,
+    reference_answer: question.reference_answer,
+    sort_order: question.sort_order,
+  }))
+)}
+
+Trainee answers:
+${JSON.stringify(
+  input.answers.map((answer) => ({
+    category: answer.category,
+    question: answer.question,
+    answer: answer.answer,
+    sort_order: answer.sort_order,
+  }))
+)}
+`;
+
+  const parsed = await callOpenAiJson(
+    prompt,
+    "You evaluate trainee interview answers using resume context and internal recruiter guidance.",
+    20_000
+  );
+  const analyses = normalizeAnswerAnalyses(parsed?.answer_analyses);
+  if (!analyses.length) return null;
+  return {
+    analysis_mode: "AI",
+    answer_analysis_status: "analyzed",
+    answer_analysis_error: null,
+    overall_answer_score: Math.max(0, Math.min(15, Number(parsed?.overall_answer_score) || 0)),
+    answer_summary: String(parsed?.answer_summary || "").trim(),
+    answer_analyses: analyses,
+  };
+}
+
+export function normalizeTrainingAnswers(raw: unknown): TrainingAnswer[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item, index) => {
+      const row = item as Record<string, unknown>;
+      const question = String(row?.question || "").trim();
+      if (!question) return null;
+      return {
+        category: normalizeCategory(String(row?.category || "")),
+        question,
+        answer: String(row?.answer || "").trim(),
+        sort_order: Number(row?.sort_order) || index + 1,
+      } satisfies TrainingAnswer;
+    })
+    .filter((item): item is TrainingAnswer => Boolean(item))
+    .slice(0, 15);
+}
+
+export function normalizeTrainingAnswerAnalyses(raw: unknown): TrainingAnswerAnalysis[] {
+  return normalizeAnswerAnalyses(raw);
 }
 
 export async function generateTrainingQuestions(
@@ -223,5 +446,32 @@ export async function generateTrainingQuestions(
       question_generation_error: error instanceof Error ? error.message : "Failed to generate questions",
       questions: fallback,
     };
+  }
+}
+
+export async function analyzeTrainingAnswers(
+  input: AnalyzeTrainingAnswersInput
+): Promise<TrainingAnswerAnalysisResult> {
+  const answers = input.answers
+    .map((answer, index) => ({
+      category: normalizeCategory(answer.category),
+      question: String(answer.question || "").trim(),
+      answer: String(answer.answer || "").trim(),
+      sort_order: Number(answer.sort_order) || index + 1,
+    }))
+    .filter((answer) => answer.question);
+
+  if (!answers.length) {
+    return fallbackAnalysis({ ...input, answers: [] });
+  }
+
+  try {
+    const ai = await analyzeWithAi({ ...input, answers });
+    if (!ai || ai.answer_analyses.length !== answers.length) {
+      return fallbackAnalysis({ ...input, answers });
+    }
+    return ai;
+  } catch {
+    return fallbackAnalysis({ ...input, answers });
   }
 }
