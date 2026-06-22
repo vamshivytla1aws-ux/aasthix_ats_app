@@ -82,16 +82,19 @@ export default function TrainingPublicPortal() {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
-    await track("start_training_submit");
+    void track("start_training_submit");
 
     const fd = new FormData(event.currentTarget);
     fd.set("session_id", sessionKey());
     fd.set("consent", form.consent ? "true" : "false");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 25_000);
 
     try {
       const response = await fetch("/api/training/apply", {
         method: "POST",
         body: fd,
+        signal: controller.signal,
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -107,9 +110,15 @@ export default function TrainingPublicPortal() {
         questions: Array.isArray(data.questions) ? (data.questions as TrainingQuestion[]) : [],
       });
       setSubmitting(false);
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (submitError) {
+      if (submitError instanceof DOMException && submitError.name === "AbortError") {
+        setError("Training submit timed out. Please retry with a smaller file or try again in a moment.");
+      } else {
+        setError("Network error. Please try again.");
+      }
       setSubmitting(false);
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
 
