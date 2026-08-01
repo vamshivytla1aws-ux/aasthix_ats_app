@@ -46,7 +46,7 @@ export async function GET(request: Request) {
         ORDER BY ai.created_at DESC LIMIT 250`,
       params
     );
-    return NextResponse.json({ interviews: result.rows, configuration: { enabled: true, recording_enabled: aiInterviewConfig.recordingEnabled } });
+    return NextResponse.json({ interviews: result.rows, configuration: { enabled: true, recording_enabled: aiInterviewConfig.recordingEnabled, can_delete: auth.access.permissions["ai_interviews.delete"] === true } });
   } catch (error) {
     console.error("[ai-interviews] list", error);
     return errorResponse(error);

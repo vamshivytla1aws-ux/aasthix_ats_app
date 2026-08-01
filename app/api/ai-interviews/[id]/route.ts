@@ -30,7 +30,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       query(`SELECT * FROM ai_interview_events WHERE interview_id=$1 ORDER BY occurred_at DESC LIMIT 100`, [id]),
     ]);
     if (!interview.rowCount) return NextResponse.json({ error: "AI interview not found" }, { status: 404 });
-    return NextResponse.json({ interview: interview.rows[0], questions: questions.rows, events: events.rows });
+    return NextResponse.json({ interview: interview.rows[0], questions: questions.rows, events: events.rows, capabilities: { can_delete: auth.access.permissions["ai_interviews.delete"] === true } });
   } catch (error) {
     console.error("[ai-interviews] detail", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to load AI interview" }, { status: 500 });

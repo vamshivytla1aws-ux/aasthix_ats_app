@@ -32,6 +32,8 @@ export async function POST(request:Request){
     await client.query("COMMIT");
   }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
   const queued=await enqueueAiInterview(Number(interview.id)).catch(()=>false);
-  if(!queued) setImmediate(()=>{void processAiInterview(Number(interview.id)).catch(error=>console.error("[ai-interviews] background processing",error));});
+  // Always start processing on the Railway web service. The optional BullMQ
+  // worker is a durability backup; the processor's atomic claim prevents duplicates.
+  setImmediate(()=>{void processAiInterview(Number(interview.id)).catch(error=>console.error("[ai-interviews] background processing",error));});
   return NextResponse.json({submitted:true,status:"PROCESSING",processing_mode:queued?"QUEUED":"BACKGROUND"},{status:202});
 }

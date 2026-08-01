@@ -14,6 +14,7 @@ export const aiInterviewConfig = {
   tabSwitchWarningLimit: Math.max(1, Number(process.env.AI_INTERVIEW_TAB_SWITCH_WARNING_LIMIT || 3)),
   maxChunkBytes: Math.max(256_000, Number(process.env.AI_INTERVIEW_MAX_CHUNK_BYTES || 8_000_000)),
   maxRecordingBytes: Math.max(10_000_000, Number(process.env.AI_INTERVIEW_MAX_RECORDING_BYTES || 1_500_000_000)),
+  maxSnapshotBytes: Math.max(100_000, Number(process.env.AI_INTERVIEW_MAX_SNAPSHOT_BYTES || 3_000_000)),
   storeCandidateIp: process.env.AI_INTERVIEW_STORE_IP === "true",
 };
 

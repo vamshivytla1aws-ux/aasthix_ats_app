@@ -5,8 +5,8 @@ import { requireCandidateInterview } from "@/lib/aiInterviews/access";
 import { aiInterviewConfig } from "@/lib/aiInterviews/config";
 
 export const runtime = "nodejs";
-const CONSENT_VERSION = "2026-08-01";
-const CONSENT_TEXT = "Camera, microphone, recording, optional screen sharing, browser activity monitoring, face presence and approximate head-direction monitoring may be used for this interview. Results are reviewed by authorized recruiters.";
+const CONSENT_VERSION = "2026-08-01-snapshot-v2";
+const CONSENT_TEXT = "Camera, microphone, recording, a camera snapshot, optional screen sharing, browser activity monitoring, face presence and approximate head-direction monitoring may be used for this interview. Results are reviewed by authorized recruiters.";
 
 export async function POST(request: NextRequest) {
   const interview = await requireCandidateInterview();

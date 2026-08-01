@@ -13,7 +13,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (!(await canAccessAiInterview(auth.access, id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const [interview, answers, evaluation, events] = await Promise.all([
     query(`SELECT ai.*,c.full_name AS candidate_name,c.email AS candidate_email,c.phone AS candidate_phone,c.experience_summary,
-                  j.title AS job_title,u.full_name AS recruiter_name
+                  j.title AS job_title,j.experience_requirement,u.full_name AS recruiter_name
              FROM ai_interviews ai JOIN candidates c ON c.id=ai.candidate_id JOIN jobs j ON j.id=ai.job_id
              JOIN users u ON u.id=ai.created_by_user_id WHERE ai.id=$1`, [id]),
     query(`SELECT q.order_number,q.question_text,q.skill_name,q.difficulty,q.expected_points_json,q.max_score,

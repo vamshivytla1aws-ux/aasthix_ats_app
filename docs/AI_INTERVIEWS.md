@@ -9,7 +9,8 @@ AI Interviews is an additive ATS module. Human-led Google Meet scheduling remain
 - PostgreSQL migration `0092_ai_interviews.sql` stores interview metadata, questions, answers, consent, integrity events, evaluations, recording metadata, and audit events.
 - OpenAI calls use the existing server-side API key and configurable AI Interview models. Model responses are JSON validated by Zod; rule-based fallbacks remain available.
 - Browser MediaRecorder chunks are written to the private Railway volume and never under `public/`.
-- BullMQ/Redis processes answer evaluation and the final report asynchronously.
+- One consented JPEG camera snapshot is captured after the interview starts and stored privately beside recordings. Authorized reviewers can view or download it from the completed report.
+- The Railway web service starts answer evaluation immediately after submission. BullMQ/Redis provides an optional durability worker; atomic database claiming prevents duplicate evaluation.
 
 ## Railway deployment
 
@@ -17,14 +18,16 @@ AI Interviews is an additive ATS module. Human-led Google Meet scheduling remain
 2. Add the AI Interview variables from `.env.railway.example`.
 3. Keep `APP_PUBLIC_URL=https://app.aasthix.com`, `JWT_SECRET`, `DATABASE_URL`, `OPENAI_API_KEY`, email configuration, and `REDIS_URL` configured.
 4. Deploy the web service; startup migrations create the new tables.
-5. Add a worker service from the same repository. Set `APP_RUNTIME=ai-interview-worker` and use the normal start command so `railwayStart.mjs` launches `worker:ai-interview`.
+5. Recommended: add a worker service from the same repository. Set `APP_RUNTIME=ai-interview-worker` and use the normal start command so `railwayStart.mjs` launches `worker:ai-interview`. The web service can process interviews without it, but the worker recovers queued jobs after web restarts.
 6. Grant the new permissions in Admin > Access control as needed.
 
 The worker evaluates stored question transcripts and does not need direct volume access. Private recording playback is streamed by the authenticated web service.
 
 ## Recording and retention
 
-Recordings are assembled under `AI_INTERVIEW_RECORDING_ROOT/recordings`. The newest `AI_INTERVIEW_VIDEO_RETENTION_COUNT` completed recordings are retained globally for this single-tenant deployment. Older physical files are deleted while questions, answers, transcripts, evaluations, and integrity events remain.
+Recordings are assembled under `AI_INTERVIEW_RECORDING_ROOT/recordings`, and candidate snapshots are stored under `AI_INTERVIEW_RECORDING_ROOT/snapshots`. The newest `AI_INTERVIEW_VIDEO_RETENTION_COUNT` completed recordings are retained globally for this single-tenant deployment. Older physical recordings are deleted while questions, answers, transcripts, evaluations, snapshots, and integrity events remain.
+
+Permanent AI Interview deletion requires `ai_interviews.delete` and removes the interview, its cascaded report data, recording, snapshot, and unfinished staging files.
 
 Never mount the recording directory inside `public/`. If a volume is missing or read-only, answer submission still completes but recording finalization is marked for recruiter review.
 

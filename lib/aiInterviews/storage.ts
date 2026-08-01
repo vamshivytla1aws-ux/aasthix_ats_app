@@ -79,6 +79,28 @@ export async function finalizeRecording(input: { interviewId: number; uploadId: 
   return { path: finalPath, size: stat.size };
 }
 
+export async function storeInterviewSnapshot(input: { interviewId: number; bytes: Buffer; mimeType: string }) {
+  if (input.mimeType !== "image/jpeg") throw new Error("Only JPEG interview snapshots are supported");
+  if (!input.bytes.byteLength || input.bytes.byteLength > aiInterviewConfig.maxSnapshotBytes) {
+    throw new Error("Interview snapshot exceeds the configured size limit");
+  }
+  const finalDir = ensureInsideRoot(path.join(rootPath(), "snapshots"));
+  await fs.mkdir(finalDir, { recursive: true });
+  const finalPath = ensureInsideRoot(path.join(finalDir, `interview-${input.interviewId}-${crypto.randomUUID()}.jpg`));
+  await fs.writeFile(finalPath, input.bytes, { flag: "wx" });
+  const existing = await query(`SELECT snapshot_path FROM ai_interviews WHERE id=$1`, [input.interviewId]);
+  const previousPath = existing.rows[0]?.snapshot_path ? String(existing.rows[0].snapshot_path) : null;
+  await query(
+    `UPDATE ai_interviews SET snapshot_status='CAPTURED',snapshot_path=$2,snapshot_mime_type=$3,
+       snapshot_size=$4,snapshot_captured_at=NOW(),updated_at=NOW() WHERE id=$1`,
+    [input.interviewId, finalPath, input.mimeType, input.bytes.byteLength]
+  );
+  if (previousPath && previousPath !== finalPath) {
+    await fs.rm(ensureInsideRoot(previousPath), { force: true }).catch(() => undefined);
+  }
+  return { path: finalPath, size: input.bytes.byteLength };
+}
+
 export async function enforceRecordingRetention() {
   const keep = aiInterviewConfig.videoRetentionCount;
   const rows = await query(
@@ -100,4 +122,21 @@ export async function enforceRecordingRetention() {
 export async function getRecordingStat(recordingPath: string) {
   const safePath = ensureInsideRoot(recordingPath);
   return { path: safePath, stat: await fs.stat(safePath) };
+}
+
+export async function getSnapshotStat(snapshotPath: string) {
+  const safePath = ensureInsideRoot(snapshotPath);
+  return { path: safePath, stat: await fs.stat(safePath) };
+}
+
+export async function deleteInterviewMedia(input: { interviewId: number; recordingPath?: string | null; snapshotPath?: string | null }) {
+  const targets = [input.recordingPath, input.snapshotPath].filter((value): value is string => Boolean(value));
+  for (const target of targets) {
+    await fs.rm(ensureInsideRoot(target), { force: true }).catch(error => {
+      console.error("[ai-interviews] media delete failed", error);
+    });
+  }
+  await fs.rm(ensureInsideRoot(path.join(rootPath(), "staging", String(input.interviewId))), { recursive: true, force: true }).catch(error => {
+    console.error("[ai-interviews] staging delete failed", error);
+  });
 }
