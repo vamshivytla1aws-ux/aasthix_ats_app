@@ -49,6 +49,12 @@ export const BOARD_PERMISSION_KEYS = [
   "pipeline.manage",
   "interviews.view",
   "interviews.manage",
+  "ai_interviews.view",
+  "ai_interviews.create",
+  "ai_interviews.update",
+  "ai_interviews.cancel",
+  "ai_interviews.review",
+  "ai_interviews.delete_recording",
   "vendors.view",
   "vendors.manage",
   "alerts.view",
@@ -129,6 +135,11 @@ const BASELINE_RECRUITER = mergeBaseline({
   "pipeline.manage": true,
   "interviews.view": true,
   "interviews.manage": true,
+  "ai_interviews.view": true,
+  "ai_interviews.create": true,
+  "ai_interviews.update": true,
+  "ai_interviews.cancel": true,
+  "ai_interviews.review": true,
   "vendors.view": true,
   "alerts.view": true,
   "recruiter.view": true,
@@ -155,6 +166,8 @@ const BASELINE_HIRING_MANAGER = mergeBaseline({
   "jobs.view": true,
   "pipeline.view": true,
   "interviews.view": true,
+  "ai_interviews.view": true,
+  "ai_interviews.review": true,
   "vendors.view": true,
   "alerts.view": true,
   "hiring_manager.view": true,
@@ -292,6 +305,11 @@ export function getEffectivePermissions(
     }
     const base = baselineForRole(role)[key] ?? false;
     permissions[key] = explicit.has(key) ? Boolean(explicit.get(key)) : base;
+  }
+  if (process.env.AI_INTERVIEW_ENABLED === "false") {
+    for (const key of BOARD_PERMISSION_KEYS) {
+      if (key.startsWith("ai_interviews.")) permissions[key] = false;
+    }
   }
   return permissions;
 }

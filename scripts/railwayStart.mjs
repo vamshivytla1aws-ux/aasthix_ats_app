@@ -71,7 +71,8 @@ async function startWeb() {
 }
 
 async function startWorker() {
-  await run('npm', ['run', 'worker:ai-match']);
+  const script = roleHint.includes('ai-interview') ? 'worker:ai-interview' : 'worker:ai-match';
+  await run('npm', ['run', script]);
 }
 
 async function main() {

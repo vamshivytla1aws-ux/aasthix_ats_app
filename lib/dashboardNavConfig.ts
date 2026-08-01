@@ -32,6 +32,7 @@ export const DASHBOARD_PRIMARY_NAV: DashboardNavItem[] = [
   { id: "pipeline", label: "Pipeline", href: "/pipeline", permissionKey: "pipeline.view" },
   { id: "clients", label: "Clients", href: "/clients", permissionKey: "vendors.view" },
   { id: "interviews", label: "Interviews", href: "/interviews", permissionKey: "interviews.view" },
+  { id: "ai-interviews", label: "AI Interviews", href: "/ai-interviews", permissionKey: "ai_interviews.view" },
   { id: "chat", label: "Chat", href: "/chat", permissionKey: "chat.view" },
   { id: "notes", label: "Notes", href: "/notes", permissionKey: "pipeline.view" },
   { id: "hrms", label: "HRMS", href: "/hrms", permissionKey: "leave.view_self" },
@@ -92,6 +93,7 @@ export const DASHBOARD_DOMAIN_ITEMS: Record<DashboardDomain, DashboardNavItem[]>
     { id: "pipeline", label: "Pipeline", href: "/pipeline", permissionKey: "pipeline.view" },
     { id: "candidates", label: "Candidates", href: "/candidates", permissionKey: "candidates.view" },
     { id: "interviews", label: "Interviews", href: "/interviews", permissionKey: "interviews.view" },
+    { id: "ai-interviews", label: "AI Interviews", href: "/ai-interviews", permissionKey: "ai_interviews.view" },
   ],
   delivery: [
     { id: "clients", label: "Clients", href: "/clients", permissionKey: "vendors.view" },
@@ -121,6 +123,7 @@ export function isNavItemVisible(
   role: string,
   permissions: Record<string, boolean>
 ): boolean {
+  if (item.permissionKey?.startsWith("ai_interviews.") && permissions[item.permissionKey] === false) return false;
   if (role === "admin") return true;
   if (!item.permissionKey) return true;
   return permissions[item.permissionKey] !== false;
@@ -169,6 +172,7 @@ export function getDomainForPath(pathname: string): DashboardDomain {
     pathname.startsWith("/pipeline") ||
     pathname.startsWith("/candidates") ||
     pathname.startsWith("/interviews") ||
+    pathname.startsWith("/ai-interviews") ||
     pathname.startsWith("/screening")
   ) {
     return "hiring";

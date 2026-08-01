@@ -29,13 +29,13 @@ async function installMediaMocks(page: Page) {
       },
       applyConstraints: async () => {},
       clone() {
-        return fakeTrack() as MediaStreamTrack;
+        return fakeTrack() as unknown as MediaStreamTrack;
       },
     });
     const fakeStream = () =>
       ({
-        getTracks: () => [fakeTrack() as MediaStreamTrack],
-        getAudioTracks: () => [fakeTrack() as MediaStreamTrack],
+        getTracks: () => [fakeTrack() as unknown as MediaStreamTrack],
+        getAudioTracks: () => [fakeTrack() as unknown as MediaStreamTrack],
         getVideoTracks: () => [],
       }) as unknown as MediaStream;
 
