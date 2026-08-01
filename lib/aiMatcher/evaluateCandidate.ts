@@ -4,6 +4,7 @@
  */
 
 import { fetchOpenAiChatCompletions, isAbortError, openAiChatTimeoutMs } from "@/lib/openaiChat";
+import { getAiModelConfig } from "@/lib/ai/modelConfig";
 import { getMatchCache, matchCacheKey, setMatchCache } from "@/lib/aiMatcher/matchCache";
 import { isCompleteCategoryScores, reconcileOverallPercentage } from "@/lib/matchPipeline/scorer";
 import type { AiCategoryScores } from "@/lib/matchPipeline/types";
@@ -188,7 +189,7 @@ ${resume.slice(0, 16_000)}`;
       try {
         res = await fetchOpenAiChatCompletions(
           {
-            model: process.env.MATCH_OPENAI_MODEL || "gpt-4o",
+            model: getAiModelConfig().resumeMatchModel,
             temperature: Number(process.env.MATCH_OPENAI_TEMPERATURE ?? 0.18),
             response_format: { type: "json_object" },
             messages: [

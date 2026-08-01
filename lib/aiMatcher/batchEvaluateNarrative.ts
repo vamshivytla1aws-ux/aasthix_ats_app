@@ -7,7 +7,7 @@ import { aiMatchingConfig } from "@/lib/config/aiMatching";
 import type { BatchCandidateIn } from "@/lib/aiMatcher/batchEvaluate";
 
 function batchModel(): string {
-  return process.env.MATCH_NARRATIVE_MODEL || process.env.MATCH_BATCH_OPENAI_MODEL || "gpt-4o";
+  return process.env.MATCH_NARRATIVE_MODEL || process.env.MATCH_BATCH_OPENAI_MODEL || process.env.RESUME_MATCH_MODEL || process.env.MATCH_OPENAI_MODEL || "gpt-5.6-luna";
 }
 
 const JD_MAX = 1_000;

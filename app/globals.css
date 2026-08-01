@@ -123,3 +123,36 @@ html.dark {
     }
   }
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .ai-interview-print-root,
+  .ai-interview-print-root * {
+    visibility: visible !important;
+  }
+
+  .ai-interview-print-root {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    color: #0f172a !important;
+    font-size: 11px;
+  }
+
+  .ai-print-card {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+}

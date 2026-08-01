@@ -314,6 +314,8 @@ export async function runSingleMatchCheck(opts: {
       red_flags: advanced.red_flags,
       recruiter_summary: advanced.recruiter_summary,
       candidate_feedback: advanced.candidate_feedback,
+      model_used: ai.model_used ?? null,
+      fallback_review_used: ai.fallback_review_used ?? false,
       resume_recovery_attempted: recovery?.attempted ?? false,
       resume_recovery_succeeded: recovery?.succeeded ?? false,
       resume_recovery_reason: recovery?.reason ?? null,

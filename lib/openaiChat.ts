@@ -2,6 +2,8 @@
  * Chat completions with hard timeouts so API routes never hang indefinitely on stalled HTTP.
  */
 
+import { withCostControlledModel } from "@/lib/ai/modelConfig";
+
 const DEFAULT_MS = 90_000;
 const MIN_MS = 8_000;
 const MAX_BATCH_MS = 240_000;
@@ -31,16 +33,22 @@ export async function fetchOpenAiChatCompletions(
   const ms = Math.max(MIN_MS, Math.min(MAX_BATCH_MS, timeoutMs));
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
+  const model = typeof body.model === "string" ? body.model : "";
+  const requestBody = model ? withCostControlledModel(body, model) : body;
   try {
     return await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody),
       signal: ctrl.signal,
     });
   } finally {
     clearTimeout(timer);
   }
+}
+
+export function costControlledChatBody(body: Record<string, unknown>, model: string) {
+  return withCostControlledModel(body, model);
 }
 
 export function isAbortError(e: unknown): boolean {

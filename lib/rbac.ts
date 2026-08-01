@@ -142,6 +142,7 @@ const BASELINE_RECRUITER = mergeBaseline({
   "ai_interviews.cancel": true,
   "ai_interviews.delete": true,
   "ai_interviews.review": true,
+  "ai_interviews.delete_recording": true,
   "vendors.view": true,
   "alerts.view": true,
   "recruiter.view": true,

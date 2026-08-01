@@ -1,3 +1,51 @@
 import AccessGate from "@/components/AccessGate";
-const settings=[['Recording retention','Newest 3 completed recordings'],['Supported browsers','Chrome and Edge desktop'],['Default duration','40 minutes'],['Default questions','7'],['Tab-switch warning','3 events'],['Looking-away warning','5 events']];
-export default function AiInterviewSettingsPage(){return <AccessGate permissionKey="ai_interviews.update"><div className="mx-auto max-w-4xl space-y-5"><div><h1 className="text-2xl font-bold text-slate-950">AI Interview Settings</h1><p className="mt-1 text-sm text-slate-600">Deployment-level controls are managed through Railway environment variables.</p></div><div className="grid gap-3 sm:grid-cols-2">{settings.map(([label,value])=><div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-xs font-semibold uppercase text-slate-500">{label}</div><div className="mt-1 font-bold text-slate-900">{value}</div></div>)}</div><div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Gaze and face-presence detection are approximate integrity signals. They must never be treated as proof of misconduct or used for automatic rejection.</div></div></AccessGate>;}
+
+const settings = [
+  ["Default interview mode", "Adaptive"],
+  ["Adaptive coverage", "60% mandatory · 25% projects · 15% scenarios"],
+  ["Difficulty progression", "Two strong raises depth · two weak lowers depth"],
+  ["Recording retention", "Newest 3 completed recordings"],
+  ["Supported browsers", "Chrome and Edge desktop"],
+  ["Default duration", "40 minutes"],
+  ["Default maximum questions", "7"],
+  ["Realtime model policy", "Luna once + one retry, then rule-based fallback"],
+  ["Tab-switch warning", "3 events"],
+  ["Looking-away warning", "5 events"],
+];
+
+export default function AiInterviewSettingsPage() {
+  return (
+    <AccessGate permissionKey="ai_interviews.update">
+      <div className="mx-auto max-w-4xl space-y-5">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-950">
+            AI Interview Settings
+          </h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Interview-specific adaptive controls are selected during creation.
+            Deployment controls are managed through Railway environment
+            variables.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {settings.map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <div className="text-xs font-semibold uppercase text-slate-500">
+                {label}
+              </div>
+              <div className="mt-1 font-bold text-slate-900">{value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Gaze, face-presence, and contradiction signals are approximate review
+          aids. They remain separate from performance scoring and must never
+          automatically reject a candidate.
+        </div>
+      </div>
+    </AccessGate>
+  );
+}

@@ -101,6 +101,29 @@ export async function storeInterviewSnapshot(input: { interviewId: number; bytes
   return { path: finalPath, size: input.bytes.byteLength };
 }
 
+export async function storeAnswerAudio(input: { interviewId: number; questionId: number; bytes: Buffer; mimeType: string }) {
+  if (!input.mimeType.startsWith("audio/") && !input.mimeType.startsWith("video/webm")) throw new Error("Unsupported answer audio type");
+  if (!input.bytes.byteLength || input.bytes.byteLength > aiInterviewConfig.maxAnswerAudioBytes) throw new Error("Answer audio exceeds the configured size limit");
+  const dir = ensureInsideRoot(path.join(rootPath(), "answers", String(input.interviewId)));
+  await fs.mkdir(dir, { recursive: true });
+  const extension = input.mimeType.includes("mp4") ? "mp4" : input.mimeType.includes("mpeg") ? "mp3" : "webm";
+  const target = ensureInsideRoot(path.join(dir, `question-${input.questionId}-${crypto.randomUUID()}.${extension}`));
+  await fs.writeFile(target, input.bytes, { flag: "wx" });
+  const previous = await query(`SELECT answer_audio_path FROM ai_interview_answers WHERE interview_id=$1 AND question_id=$2`, [input.interviewId, input.questionId]);
+  const result = await query(
+    `UPDATE ai_interview_answers SET answer_audio_path=$3,answer_audio_mime_type=$4,answer_audio_size=$5,
+       transcript_status='PENDING',updated_at=NOW() WHERE interview_id=$1 AND question_id=$2 RETURNING id`,
+    [input.interviewId, input.questionId, target, input.mimeType, input.bytes.byteLength]
+  );
+  if (!result.rowCount) {
+    await fs.rm(target, { force: true });
+    throw new Error("Answer record is unavailable");
+  }
+  const previousPath = previous.rows[0]?.answer_audio_path ? String(previous.rows[0].answer_audio_path) : null;
+  if (previousPath && previousPath !== target) await fs.rm(ensureInsideRoot(previousPath), { force: true }).catch(() => undefined);
+  return { path: target, size: input.bytes.byteLength };
+}
+
 export async function enforceRecordingRetention() {
   const keep = aiInterviewConfig.videoRetentionCount;
   const rows = await query(
@@ -129,6 +152,15 @@ export async function getSnapshotStat(snapshotPath: string) {
   return { path: safePath, stat: await fs.stat(safePath) };
 }
 
+export async function getAnswerAudioStat(audioPath: string) {
+  const safePath = ensureInsideRoot(audioPath);
+  return { path: safePath, stat: await fs.stat(safePath) };
+}
+
+export async function removeAnswerAudio(audioPath: string) {
+  await fs.rm(ensureInsideRoot(audioPath), { force: true });
+}
+
 export async function deleteInterviewMedia(input: { interviewId: number; recordingPath?: string | null; snapshotPath?: string | null }) {
   const targets = [input.recordingPath, input.snapshotPath].filter((value): value is string => Boolean(value));
   for (const target of targets) {
@@ -138,5 +170,8 @@ export async function deleteInterviewMedia(input: { interviewId: number; recordi
   }
   await fs.rm(ensureInsideRoot(path.join(rootPath(), "staging", String(input.interviewId))), { recursive: true, force: true }).catch(error => {
     console.error("[ai-interviews] staging delete failed", error);
+  });
+  await fs.rm(ensureInsideRoot(path.join(rootPath(), "answers", String(input.interviewId))), { recursive: true, force: true }).catch(error => {
+    console.error("[ai-interviews] answer audio delete failed", error);
   });
 }

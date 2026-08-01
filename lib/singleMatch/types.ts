@@ -92,6 +92,8 @@ export type SingleMatchCheckResultPayload = {
   red_flags?: string[];
   recruiter_summary?: string | null;
   candidate_feedback?: string | null;
+  model_used?: string | null;
+  fallback_review_used?: boolean;
   resume_recovery_attempted?: boolean;
   resume_recovery_succeeded?: boolean;
   resume_recovery_reason?: string | null;
@@ -173,6 +175,8 @@ export type SingleMatchHistoryRun = {
   red_flags?: string[];
   recruiter_summary?: string | null;
   candidate_feedback?: string | null;
+  model_used?: string | null;
+  fallback_review_used?: boolean;
   resume_recovery_attempted?: boolean;
   resume_recovery_succeeded?: boolean;
   resume_recovery_reason?: string | null;

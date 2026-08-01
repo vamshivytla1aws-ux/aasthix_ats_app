@@ -13,7 +13,7 @@ const RESUME_MAX = 800;
 
 /** Default: full GPT-4o for matching quality. Override with MATCH_BATCH_OPENAI_MODEL only if needed. */
 function batchModel(): string {
-  return process.env.MATCH_BATCH_OPENAI_MODEL || "gpt-4o";
+  return process.env.MATCH_BATCH_OPENAI_MODEL || process.env.RESUME_MATCH_MODEL || process.env.MATCH_OPENAI_MODEL || "gpt-5.6-luna";
 }
 
 export type BatchCandidateIn = {

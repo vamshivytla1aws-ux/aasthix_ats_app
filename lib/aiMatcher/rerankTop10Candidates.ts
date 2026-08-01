@@ -2,8 +2,8 @@ import { TOP10_RERANK_JSON_SCHEMA, type Top10RerankAiRow, type Top10RerankParsed
 import { TOP10_RERANK_PROMPT_VERSION, TOP10_RERANK_SYSTEM_PROMPT } from "@/lib/aiMatcher/top10RerankPrompt";
 import type { Top10RerankPayload } from "@/lib/aiMatcher/buildTop10RerankPayload";
 
-const DEFAULT_MODEL = process.env.MATCH_HYBRID_RERANK_MODEL ?? "gpt-4o";
-const ESCALATION_MODEL = process.env.MATCH_HYBRID_RERANK_MODEL_ESCALATION ?? "gpt-4o";
+const DEFAULT_MODEL = process.env.MATCH_HYBRID_RERANK_MODEL ?? process.env.RESUME_MATCH_MODEL ?? process.env.MATCH_OPENAI_MODEL ?? "gpt-5.6-luna";
+const ESCALATION_MODEL = process.env.MATCH_HYBRID_RERANK_MODEL_ESCALATION ?? process.env.FALLBACK_REVIEW_MODEL ?? "gpt-5.6-terra";
 const RERANK_TIMEOUT_MS = Math.min(
   120_000,
   Math.max(15_000, Number(process.env.MATCH_HYBRID_RERANK_TIMEOUT_MS ?? 90_000))

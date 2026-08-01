@@ -6,8 +6,10 @@ AI Interviews is an additive ATS module. Human-led Google Meet scheduling remain
 
 - Recruiter pages live under `/ai-interviews` and use the existing JWT/RBAC system.
 - Candidate links use `/ai-interview/{secureToken}`. The raw token is exchanged for an HttpOnly, interview-scoped session; PostgreSQL stores only its SHA-256 hash.
-- PostgreSQL migration `0092_ai_interviews.sql` stores interview metadata, questions, answers, consent, integrity events, evaluations, recording metadata, and audit events.
+- PostgreSQL migrations `0092_ai_interviews.sql`, `0094_ai_model_routing_and_answer_audio.sql`, and `0095_adaptive_ai_interviews.sql` store interview metadata, adaptive state/provenance, questions, answers, consent, integrity events, evaluations, recording metadata, and audit events.
 - OpenAI calls use the existing server-side API key and configurable AI Interview models. Model responses are JSON validated by Zod; rule-based fallbacks remain available.
+- Cost-controlled defaults use `gpt-5.6-luna` with reasoning disabled. `gpt-5.6-terra` is limited to one final fallback review when the Luna result is invalid or materially conflicts with explicit resume evidence.
+- Per-question audio uses `gpt-4o-mini-transcribe` only when the browser/typed transcript is missing or shorter than `INTERVIEW_TRANSCRIPTION_MIN_CHARS`. Set `INTERVIEW_TRANSCRIPTION_MODE=off` for zero transcription API spend or `always` for maximum transcription coverage.
 - Browser MediaRecorder chunks are written to the private Railway volume and never under `public/`.
 - One consented JPEG camera snapshot is captured after the interview starts and stored privately beside recordings. Authorized reviewers can view or download it from the completed report.
 - The Railway web service starts answer evaluation immediately after submission. BullMQ/Redis provides an optional durability worker; atomic database claiming prevents duplicate evaluation.
@@ -23,11 +25,19 @@ AI Interviews is an additive ATS module. Human-led Google Meet scheduling remain
 
 The worker evaluates stored question transcripts and does not need direct volume access. Private recording playback is streamed by the authenticated web service.
 
+## Adaptive interviews
+
+New interviews default to adaptive mode; historical records remain fixed. Adaptive interviews generate only an opening question before activation, then use one structured Luna request per completed answer to evaluate evidence and prepare exactly one next question. The server controls duration, maximum questions, skill/project/scenario coverage, follow-up limits, and difficulty. A failed realtime request is retried once and then uses a current-skill rule-based fallback rather than Terra.
+
+Recruiters can configure mandatory skills, maximum questions, project coverage, follow-up limits, scenario coverage, experience override, and coding/behavioural options during creation. Reports retain question source, reason, expected signals, answer evidence, missing points, skill coverage, projects discussed, and neutral claims requiring human review.
+
 ## Recording and retention
 
 Recordings are assembled under `AI_INTERVIEW_RECORDING_ROOT/recordings`, and candidate snapshots are stored under `AI_INTERVIEW_RECORDING_ROOT/snapshots`. The newest `AI_INTERVIEW_VIDEO_RETENTION_COUNT` completed recordings are retained globally for this single-tenant deployment. Older physical recordings are deleted while questions, answers, transcripts, evaluations, snapshots, and integrity events remain.
 
-Permanent AI Interview deletion requires `ai_interviews.delete` and removes the interview, its cascaded report data, recording, snapshot, and unfinished staging files.
+Recording download is available through the authorized recording endpoint with `?download=1`. Recording-only deletion requires `ai_interviews.delete_recording`; it removes the physical video and clears video metadata while preserving the transcript, answers, evaluation, snapshot, and report. It is safe to retry if the file is already missing.
+
+Permanent AI Interview deletion requires `ai_interviews.delete` and remains unchanged: it removes the interview, its cascaded report data, recording, snapshot, and unfinished staging files.
 
 Never mount the recording directory inside `public/`. If a volume is missing or read-only, answer submission still completes but recording finalization is marked for recruiter review.
 

@@ -5,6 +5,7 @@
 
 import type { CompactJobForRerank } from "@/lib/aiMatcher/buildTop10RerankPayload";
 import { fetchOpenAiChatCompletions, isAbortError, openAiChatTimeoutMs } from "@/lib/openaiChat";
+import { getAiModelConfig } from "@/lib/ai/modelConfig";
 import { parseCandidateSkillsNormalized } from "@/lib/skillNormalization";
 
 export const TECH_LEXICON = new Set(
@@ -337,7 +338,7 @@ ${(description || "").slice(0, 12000)}`;
   try {
     res = await fetchOpenAiChatCompletions(
       {
-        model: process.env.MATCH_OPENAI_MODEL || "gpt-4o",
+        model: getAiModelConfig().resumeMatchModel,
         temperature: 0.1,
         response_format: { type: "json_object" },
         messages: [

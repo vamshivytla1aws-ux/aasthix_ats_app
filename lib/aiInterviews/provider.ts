@@ -6,6 +6,7 @@ import {
   generatedQuestionsSchema,
 } from "@/lib/aiInterviews/schemas";
 import type { GeneratedInterviewQuestion } from "@/lib/aiInterviews/types";
+import { withCostControlledModel } from "@/lib/ai/modelConfig";
 
 async function openAiJson<T>(model: string, system: string, prompt: string, schema: z.ZodType<T>): Promise<T | null> {
   const key = process.env.OPENAI_API_KEY;
@@ -17,12 +18,11 @@ async function openAiJson<T>(model: string, system: string, prompt: string, sche
       method: "POST",
       signal: controller.signal,
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
+      body: JSON.stringify(withCostControlledModel({
         temperature: 0.1,
         response_format: { type: "json_object" },
         messages: [{ role: "system", content: system }, { role: "user", content: prompt }],
-      }),
+      }, model)),
     });
     if (!response.ok) throw new Error(`OpenAI request failed (${response.status})`);
     const payload = await response.json();
@@ -97,7 +97,7 @@ export async function evaluateAnswer(input: { question: string; expectedPoints: 
 Question: ${input.question}\nExpected points: ${input.expectedPoints.join("; ")}\nCandidate answer: ${input.transcript.slice(0, 10000)}`,
       answerEvaluationSchema
     );
-    if (evaluated) return evaluated;
+    if (evaluated) return { ...evaluated, model: aiInterviewConfig.evaluationModel, fallbackReviewUsed: false };
   } catch (error) {
     console.error("[ai-interviews] answer evaluation failed", error instanceof Error ? error.message : String(error));
   }
@@ -108,7 +108,7 @@ Question: ${input.question}\nExpected points: ${input.expectedPoints.join("; ")}
     strengths: words.length >= 20 ? ["Answer contains reviewable detail"] : [],
     missingPoints: words.length < 20 ? ["Answer is too brief for reliable evaluation"] : input.expectedPoints,
     technicalAccuracy: "AI evaluation unavailable; provisional length-based score.",
-    feedback: "Recruiter review is required.",
+    feedback: "Recruiter review is required.", model: "rule_based", fallbackReviewUsed: false,
   };
 }
 
@@ -121,9 +121,22 @@ export async function generateFinalEvaluation(input: { title: string; answers: A
 Role: ${input.title}\nQuestion results:\n${JSON.stringify(input.answers).slice(0, 30000)}`,
       finalEvaluationSchema
     );
-    if (evaluated) return { ...evaluated, model: aiInterviewConfig.evaluationModel };
+    if (evaluated) return { ...evaluated, model: aiInterviewConfig.evaluationModel, fallbackReviewUsed: false };
   } catch (error) {
     console.error("[ai-interviews] final evaluation failed", error instanceof Error ? error.message : String(error));
+  }
+  if (aiInterviewConfig.fallbackReviewEnabled && aiInterviewConfig.fallbackReviewModel !== aiInterviewConfig.evaluationModel) {
+    try {
+      const reviewed = await openAiJson(
+        aiInterviewConfig.fallbackReviewModel,
+        "Review a failed primary interview evaluation fairly. Integrity events are excluded from performance scoring. Return only JSON.",
+        `Return {"technicalScore":0,"communicationScore":0,"experienceRelevanceScore":0,"overallScore":0,"strengths":[],"concerns":[],"summary":"","recommendation":"PROCEED|HOLD_FOR_REVIEW|HUMAN_INTERVIEW_RECOMMENDED|NOT_RECOMMENDED"}.\nRole: ${input.title}\nQuestion results:\n${JSON.stringify(input.answers).slice(0, 30000)}`,
+        finalEvaluationSchema
+      );
+      if (reviewed) return { ...reviewed, model: aiInterviewConfig.fallbackReviewModel, fallbackReviewUsed: true };
+    } catch (error) {
+      console.error("[ai-interviews] bounded fallback review failed", error instanceof Error ? error.message : String(error));
+    }
   }
   const scores = input.answers.map((a) => Number(a.percentage || 0)).filter(Number.isFinite);
   const overall = scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : 0;
@@ -132,6 +145,6 @@ Role: ${input.title}\nQuestion results:\n${JSON.stringify(input.answers).slice(0
     strengths: [], concerns: ["Automated final narrative was unavailable; recruiter review required."],
     summary: "A provisional score was calculated from question-level results.",
     recommendation: overall >= 70 ? "HUMAN_INTERVIEW_RECOMMENDED" as const : "HOLD_FOR_REVIEW" as const,
-    model: "rule_based",
+    model: "rule_based", fallbackReviewUsed: false,
   };
 }

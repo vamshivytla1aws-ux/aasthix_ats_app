@@ -4,6 +4,7 @@
  */
 
 import { fetchOpenAiChatCompletions, isAbortError, openAiChatTimeoutMs } from "@/lib/openaiChat";
+import { getAiModelConfig } from "@/lib/ai/modelConfig";
 import { buildFullRecruiterBatchPrompt } from "@/lib/matchPipeline/recruiterBatchPrompt";
 import {
   jobLooksLikeMarketingInsightsRole,
@@ -33,6 +34,8 @@ export type AiMatchResult = {
   recruiter_decision?: "Proceed to Interview" | "Hold" | "Reject";
   /** Step 1 structured parse from the recruiter pipeline. */
   parsed_profile?: ParsedMatchProfile;
+  model_used?: string;
+  fallback_review_used?: boolean;
 };
 
 type CandidateSnippet = {
@@ -315,10 +318,11 @@ CANDIDATES:
 ${candBlock}`
     : buildFullRecruiterBatchPrompt(jdBlock, candBlock, marketingExtra);
 
-  try {
+  const modelConfig = getAiModelConfig();
+  const requestRows = async (model: string) => {
     const res = await fetchOpenAiChatCompletions(
       {
-        model: process.env.MATCH_OPENAI_MODEL || "gpt-4o",
+        model,
         temperature: Number(process.env.MATCH_OPENAI_TEMPERATURE ?? 0.12),
         response_format: { type: "json_object" },
         messages: [
@@ -332,25 +336,49 @@ ${candBlock}`
       },
       openAiChatTimeoutMs("match_batch")
     );
-    if (!res.ok) return null;
+    if (!res.ok) throw new Error(`OpenAI matching request failed (${res.status})`);
 
-    let json: unknown;
-    try {
-      json = await res.json();
-    } catch {
-      return null;
-    }
+    const json: unknown = await res.json();
     const text = (json as { choices?: { message?: { content?: string } }[] })?.choices?.[0]?.message?.content;
-    if (!text) return null;
+    if (!text) throw new Error("OpenAI matching returned no content");
 
-    let parsed: { results?: unknown[] };
+    const parsed = JSON.parse(text) as { results?: unknown[] };
+    const rows = Array.isArray(parsed.results) ? parsed.results : [];
+    if (!rows.length) throw new Error("OpenAI matching returned no candidate results");
+    return rows;
+  };
+
+  try {
+    let modelUsed = modelConfig.resumeMatchModel;
+    let fallbackReviewUsed = false;
+    let rows: unknown[];
     try {
-      parsed = JSON.parse(text) as { results?: unknown[] };
-    } catch {
-      return null;
+      rows = await requestRows(modelUsed);
+    } catch (primaryError) {
+      const canFallback = modelConfig.fallbackReviewEnabled && modelConfig.maxFallbackReviewsPerRequest > 0 && modelConfig.fallbackReviewModel !== modelUsed;
+      if (!canFallback) throw primaryError;
+      console.warn("matchScoreAi: primary model failed; using one bounded fallback review", primaryError);
+      modelUsed = modelConfig.fallbackReviewModel;
+      fallbackReviewUsed = true;
+      rows = await requestRows(modelUsed);
+    }
+    if (!fallbackReviewUsed && singleCandidateMode && modelConfig.fallbackReviewEnabled && modelConfig.maxFallbackReviewsPerRequest > 0 && modelConfig.fallbackReviewModel !== modelUsed) {
+      const raw = rows[0] && typeof rows[0] === "object" ? rows[0] as Record<string, unknown> : null;
+      const candidate = input.candidates[0];
+      const resumeText = String(candidate?.resumeText || candidate?.skills || "");
+      const provenKeys = detectRuleMatches(resumeText, relevantEvidenceRules);
+      const provenRules = relevantEvidenceRules.filter(rule => provenKeys.has(rule.key));
+      const rawGaps = [...strList(raw?.missing_skills), ...strList(raw?.gaps)];
+      const contradictedGaps = rawGaps.filter(gap => provenRules.some(rule => gapMatchesRule(gap, rule))).length;
+      const rawScore = raw ? scoreFromOverallOrLegacy(raw) : 0;
+      if (rawScore < 70 && contradictedGaps >= 2) {
+        console.info("matchScoreAi: escalating one evidence-conflicted result to bounded fallback review", { contradictedGaps, rawScore });
+        modelUsed = modelConfig.fallbackReviewModel;
+        fallbackReviewUsed = true;
+        rows = await requestRows(modelUsed);
+      }
     }
 
-    const rows = Array.isArray(parsed.results) ? parsed.results : [];
     const map = new Map<number, AiMatchResult>();
     for (const r of rows as Record<string, unknown>[]) {
       const id = Number(r.candidate_id);
@@ -471,6 +499,8 @@ ${candBlock}`
         risk_flags: risk_flags.length ? risk_flags : undefined,
         recruiter_decision,
         parsed_profile,
+        model_used: modelUsed,
+        fallback_review_used: fallbackReviewUsed,
       });
     }
     return map.size ? map : null;

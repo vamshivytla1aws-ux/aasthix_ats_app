@@ -27,21 +27,26 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   );
   if (!result.rowCount) return NextResponse.json({ error: "AI interview not found" }, { status: 404 });
   const row = result.rows[0];
-  if (!row.email) return NextResponse.json({ error: "Candidate email is missing" }, { status: 400 });
+  const recipient = String(row.email || "").trim().toLowerCase();
+  if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) return NextResponse.json({ error: "Candidate email is missing or invalid" }, { status: 400 });
   if (["COMPLETED","CANCELLED","EXPIRED"].includes(row.status) || new Date(row.expires_at).getTime() <= Date.now()) {
     return NextResponse.json({ error: "This interview can no longer be sent" }, { status: 409 });
   }
   const token = createSecureInterviewToken();
   const publicUrl = buildPublicUrl(`/ai-interview/${token}`);
   await query(`UPDATE ai_interviews SET status='READY',secure_token_hash=$2,token_revoked_at=NULL,updated_at=NOW() WHERE id=$1`, [id,hashInterviewToken(token)]);
-  const subject = `AI Interview Invitation - ${row.job_title}`;
-  const text = `Dear ${row.full_name},\n\nYou are invited to complete an AI interview for ${row.job_title}.\nDuration: ${row.duration_minutes} minutes\nComplete by: ${formatIst(row.expires_at)} IST\n\nUse Chrome or Edge on a laptop or desktop with a working camera and microphone. The interview may record audio/video and monitor browser integrity events after you provide consent.\n\nStart interview: ${publicUrl}\n\nThis private link is intended only for you.`;
+  const expiry = `${formatIst(row.expires_at)} IST`;
+  const subject = `Complete your AASTHIX AI Interview - ${row.job_title}`;
+  const text = `Dear ${row.full_name},\n\nYou are invited to complete an AASTHIX AI Interview for ${row.job_title}.\n\nInterview duration: ${row.duration_minutes} minutes\nLink expires: ${expiry}\n\nPlease complete the interview independently and answer genuinely based on your own knowledge and experience. Do not share this private link, use impersonation, or rely on unauthorized external assistance.\n\nUse Chrome or Edge on a laptop or desktop with a working camera, microphone, and stable internet connection. Recording and browser integrity monitoring begin only after you review and provide consent.\n\nStart your secure AI Interview: ${publicUrl}\n\nPlease complete the interview before the expiry shown above. After expiry, this link will no longer work.\n\nRegards,\nAASTHIX Talent Team`;
   const email = await sendTransactionalEmail({
-    to: [String(row.email)], subject, text,
-    html: `<p>Dear ${escapeHtml(row.full_name)},</p><p>You are invited to complete an AI interview for <strong>${escapeHtml(row.job_title)}</strong>.</p><p>Duration: ${Number(row.duration_minutes)} minutes<br/>Complete by: ${escapeHtml(formatIst(row.expires_at))} IST</p><p>Use Chrome or Edge on a laptop or desktop with a working camera and microphone. Recording and browser integrity monitoring begin only after consent.</p><p><a href="${escapeHtml(publicUrl)}">Start secure AI interview</a></p><p>This private link is intended only for you.</p>`,
+    to: [recipient], subject, text,
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033;max-width:640px"><h2 style="color:#153e75">AASTHIX AI Interview</h2><p>Dear ${escapeHtml(row.full_name)},</p><p>You are invited to complete an AI Interview for <strong>${escapeHtml(row.job_title)}</strong>.</p><div style="background:#f3f7fd;border:1px solid #d7e3f4;border-radius:10px;padding:14px 16px"><strong>Interview duration:</strong> ${Number(row.duration_minutes)} minutes<br/><strong>Link expires:</strong> ${escapeHtml(expiry)}</div><p>Please complete the interview independently and answer genuinely based on your own knowledge and experience. Do not share this private link, use impersonation, or rely on unauthorized external assistance.</p><p>Use Chrome or Edge on a laptop or desktop with a working camera, microphone, and stable internet connection. Recording and browser integrity monitoring begin only after you review and provide consent.</p><p style="margin:24px 0"><a href="${escapeHtml(publicUrl)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:700">Start AI Interview</a></p><p style="font-size:13px;color:#52627a">If the button does not work, open this link:<br/><a href="${escapeHtml(publicUrl)}">${escapeHtml(publicUrl)}</a></p><p>Please complete the interview before the expiry shown above. After expiry, this link will no longer work.</p><p>Regards,<br/>AASTHIX Talent Team</p></div>`,
   });
-  if (!email.sent) return NextResponse.json({ error: "Invitation email could not be sent", detail: email.detail, public_url: publicUrl }, { status: 503 });
+  if (!email.sent) {
+    await query(`INSERT INTO ai_interview_audit_events (interview_id,actor_user_id,event_type,metadata_json) VALUES ($1,$2,'INVITATION_SEND_FAILED',$3::jsonb)`, [id,auth.access.user_id,JSON.stringify({ recipient, reason: email.reason, detail: email.detail || null })]);
+    return NextResponse.json({ error: "Invitation email could not be sent", detail: email.detail, recipient, public_url: publicUrl }, { status: 503 });
+  }
   await query(`UPDATE ai_interviews SET invitation_sent_at=NOW(),updated_at=NOW() WHERE id=$1`, [id]);
-  await query(`INSERT INTO ai_interview_audit_events (interview_id,actor_user_id,event_type) VALUES ($1,$2,'INVITATION_SENT')`, [id,auth.access.user_id]);
-  return NextResponse.json({ sent: true, public_url: publicUrl });
+  await query(`INSERT INTO ai_interview_audit_events (interview_id,actor_user_id,event_type,metadata_json) VALUES ($1,$2,'INVITATION_SENT',$3::jsonb)`, [id,auth.access.user_id,JSON.stringify({ recipient, provider: email.provider, message_id: email.messageId || null, expires_at: row.expires_at })]);
+  return NextResponse.json({ sent: true, public_url: publicUrl, recipient, expires_at: row.expires_at, provider: email.provider, message_id: email.messageId || null });
 }

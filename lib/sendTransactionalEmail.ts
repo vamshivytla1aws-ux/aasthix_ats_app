@@ -1,6 +1,6 @@
 import { sendEmailMessage } from "@/lib/sendEmail";
 
-export type SendEmailResult = { sent: true } | { sent: false; reason: "smtp_not_configured" | "send_failed"; detail?: string };
+export type SendEmailResult = { sent: true; provider: "resend" | "smtp"; messageId?: string } | { sent: false; reason: "smtp_not_configured" | "send_failed"; detail?: string };
 
 /** Shared SMTP transport for transactional mail (careers, screening, pipeline email). */
 export async function sendTransactionalEmail(opts: {
@@ -11,7 +11,7 @@ export async function sendTransactionalEmail(opts: {
   html?: string;
 }): Promise<SendEmailResult> {
   const result = await sendEmailMessage(opts);
-  if (result.sent) return { sent: true };
+  if (result.sent) return result;
   if (result.reason === "email_not_configured") {
     return { sent: false, reason: "smtp_not_configured", detail: result.detail };
   }

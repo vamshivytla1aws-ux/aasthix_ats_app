@@ -49,6 +49,8 @@ const PRICE_BOOK: Record<string, OpenAiPrice> = {
   "gpt-4.1-nano": { inputPer1M: 0.1, outputPer1M: 0.4 },
   "gpt-5.4": { inputPer1M: 10, outputPer1M: 30 },
   "gpt-5.4-mini": { inputPer1M: 2, outputPer1M: 8 },
+  "gpt-5.6-luna": { inputPer1M: 0.2, outputPer1M: 1.2 },
+  "gpt-5.6-terra": { inputPer1M: 2, outputPer1M: 12 },
   "gpt-5-mini": { inputPer1M: 0.25, outputPer1M: 2 },
   "gpt-5-nano": { inputPer1M: 0.05, outputPer1M: 0.4 },
 };

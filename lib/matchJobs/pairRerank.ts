@@ -9,7 +9,7 @@ const JD_MAX = 1_400;
 const SNIP_MAX = 450;
 
 function batchModel(): string {
-  return process.env.MATCH_PAIR_RERANK_MODEL || process.env.MATCH_BATCH_OPENAI_MODEL || "gpt-4o";
+  return process.env.MATCH_PAIR_RERANK_MODEL || process.env.MATCH_BATCH_OPENAI_MODEL || process.env.RESUME_MATCH_MODEL || process.env.MATCH_OPENAI_MODEL || "gpt-5.6-luna";
 }
 
 export type PairRerankIn = { id: number; name: string; snippet: string };

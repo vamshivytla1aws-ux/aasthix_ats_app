@@ -19,6 +19,15 @@ export const createInterviewSchema = z.object({
   fullscreen_required: z.boolean().default(true),
   face_monitoring_enabled: z.boolean().default(true),
   gaze_monitoring_enabled: z.boolean().default(true),
+  interview_mode: z.enum(["ADAPTIVE", "FIXED"]).default("ADAPTIVE"),
+  project_questions_enabled: z.boolean().default(true),
+  min_project_questions: z.coerce.number().int().min(0).max(10).default(2),
+  max_followups_per_topic: z.coerce.number().int().min(0).max(5).default(2),
+  scenario_percentage: z.coerce.number().int().min(0).max(50).default(15),
+  recruiter_experience_override: z.coerce.number().min(0).max(50).nullable().optional(),
+  coding_enabled: z.boolean().default(false),
+  behavioral_enabled: z.boolean().default(false),
+  allow_fundamentals_for_senior: z.boolean().default(false),
 });
 
 export const generatedQuestionSchema = z.object({
