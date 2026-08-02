@@ -5,6 +5,7 @@ import { refreshResumeEmbeddingForCandidate } from "@/lib/candidates/refreshResu
 import { persistCandidateDerivedProfile } from "@/lib/candidateDerivedProfileDb";
 import { parseResumeBuffer } from "@/lib/resumeParser";
 import { buildResumeBlobRecord } from "@/lib/resumeStorage";
+import { candidateAccessPredicate } from "@/lib/dataScope";
 
 async function parseCandidatePayload(request: Request) {
   const contentType = request.headers.get("content-type") || "";
@@ -73,8 +74,8 @@ export async function GET(request: Request) {
       if (Number.isFinite(n) && n > 0) limitValue = Math.min(200, Math.floor(n));
     }
 
-    const where: string[] = [];
-    const params: any[] = [];
+    const where: string[] = [candidateAccessPredicate("c", "$1")];
+    const params: any[] = [auth.access.user_id];
 
     if (q.length > 0) {
       // Google-like search: split query into keywords and require *all* keywords to match

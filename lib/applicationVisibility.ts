@@ -9,17 +9,22 @@ export async function hasJobTeamTable(): Promise<boolean> {
   }
 }
 
-/**
- * Single-tenant ATS visibility:
- * once a user has the relevant pipeline permission, row-level application access
- * should not be restricted by creator or job team membership.
- *
- * We keep the helper signature intact so existing callers do not need to change.
- */
 export function applicationAccessPredicate(alias: string, userParam: string, hasTeam: boolean): string {
-  void alias;
-  void hasTeam;
-  // Keep the caller's parameter numbering stable even though row-level filtering is disabled.
-  // Several queries still pass the user id as a bound parameter alongside this predicate.
-  return `(${userParam}::bigint IS NULL OR TRUE)`;
+  const teamClause = hasTeam
+    ? `OR EXISTS (SELECT 1 FROM job_team scope_jt WHERE scope_jt.job_id = ${alias}.job_id AND scope_jt.user_id = ${userParam}::bigint)`
+    : "";
+  return `(
+    ${userParam}::bigint IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM users scope_user
+      WHERE scope_user.id = ${userParam}::bigint
+        AND (
+          lower(scope_user.role) IN ('workspace_owner', 'owner')
+          OR COALESCE(scope_user.access_scope, 'own') = 'all'
+          OR ${alias}.created_by_user_id = ${userParam}::bigint
+          OR ${alias}.assigned_recruiter_user_id = ${userParam}::bigint
+          ${teamClause}
+        )
+    )
+  )`;
 }

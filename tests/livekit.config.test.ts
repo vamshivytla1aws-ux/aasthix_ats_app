@@ -5,6 +5,8 @@ describe("livekit config helpers", () => {
   it("parses valid ICE server JSON and detects TURN", () => {
     const raw = JSON.stringify([
       {
+        username: "turn-user",
+        credential: "turn-secret",
         urls: [
           "turn:turn.aasthix.com:3478?transport=udp",
           "turns:turn.aasthix.com:443?transport=tcp",
@@ -15,6 +17,8 @@ describe("livekit config helpers", () => {
     expect(parsed.parseError).toBeNull();
     expect(parsed.hasTurn).toBe(true);
     expect(parsed.servers?.[0]?.urls?.length).toBe(2);
+    expect(parsed.servers?.[0]?.username).toBe("turn-user");
+    expect(parsed.servers?.[0]?.credential).toBe("turn-secret");
   });
 
   it("fails safely on invalid JSON", () => {
@@ -31,4 +35,3 @@ describe("livekit config helpers", () => {
     expect(a.startsWith("u-1-r-39-s-")).toBe(true);
   });
 });
-

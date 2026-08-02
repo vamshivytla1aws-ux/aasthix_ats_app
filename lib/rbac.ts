@@ -66,6 +66,12 @@ export const BOARD_PERMISSION_KEYS = [
   "chat.view",
   "finance.view",
   "finance.manage",
+  "analytics.view",
+  "settings.view",
+  "settings.manage",
+  "access_control.view",
+  "access_control.manage",
+  "audit.view",
 ] as const;
 
 export type BoardPermissionKey = (typeof BOARD_PERMISSION_KEYS)[number];
@@ -148,6 +154,7 @@ const BASELINE_RECRUITER = mergeBaseline({
   "alerts.view": true,
   "recruiter.view": true,
   "chat.view": true,
+  "analytics.view": true,
 });
 
 const BASELINE_HIRING_MANAGER = mergeBaseline({
@@ -256,14 +263,22 @@ const BASELINE_HR = mergeBaseline({
   "performance.manage": true,
   "alerts.view": true,
   "chat.view": true,
+  "analytics.view": true,
 });
 
 export function baselineForRole(role: string): Record<BoardPermissionKey, boolean> {
   switch (role) {
-    case "workspace_owner":
+    case "workspace_owner": {
+      const b = allFalse();
+      for (const k of BOARD_PERMISSION_KEYS) b[k] = true;
+      return b;
+    }
     case "admin": {
       const b = allFalse();
       for (const k of BOARD_PERMISSION_KEYS) b[k] = true;
+      b["access_control.view"] = false;
+      b["access_control.manage"] = false;
+      b["audit.view"] = false;
       return b;
     }
     case "hr":

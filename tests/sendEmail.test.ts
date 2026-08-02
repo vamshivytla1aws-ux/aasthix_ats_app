@@ -32,7 +32,11 @@ describe("sendEmailMessage Resend delivery acknowledgement", () => {
 
     const result = await sendEmailMessage({ to: ["candidate@example.com"], subject: "Interview", text: "Test" });
 
-    expect(result).toEqual({ sent: false, reason: "send_failed", detail: "Sender domain is not verified" });
+    expect(result).toEqual({
+      sent: false,
+      reason: "send_failed",
+      detail: "Resend rejected the sender because its domain is not verified. Verify SPF and DKIM in Resend, then retry.",
+    });
   });
 
   it("returns the provider message id after Resend accepts the email", async () => {

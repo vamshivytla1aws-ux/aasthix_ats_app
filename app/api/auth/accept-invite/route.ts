@@ -4,6 +4,7 @@ import { pool, query } from "@/lib/db";
 import { signAuthToken, tokenCookieName } from "@/lib/auth";
 import { hashInviteToken } from "@/lib/inviteToken";
 import { writeAuditLog } from "@/lib/auditLog";
+import { BOARD_PERMISSION_KEYS } from "@/lib/rbac";
 
 export const runtime = "nodejs";
 
@@ -29,7 +30,8 @@ export async function POST(request: Request) {
 
     const tokenHash = hashInviteToken(token.trim());
     const invRes = await query(
-      `SELECT id, email, role, access_scope, expires_at, accepted_at, revoked_at, created_by_user_id
+      `SELECT id, email, role, access_scope, expires_at, accepted_at, revoked_at, created_by_user_id,
+              COALESCE(permission_overrides, '{}'::jsonb) AS permission_overrides
        FROM user_invites
        WHERE token_hash = $1`,
       [tokenHash]
@@ -48,6 +50,7 @@ export async function POST(request: Request) {
       revoked_at: Date | null;
       access_scope: "own" | "team" | "all";
       created_by_user_id: number | null;
+      permission_overrides: Record<string, boolean>;
     };
 
     if (inv.accepted_at) {
@@ -79,6 +82,16 @@ export async function POST(request: Request) {
         [full_name.trim(), email, password_hash, inv.role, inv.access_scope, inv.created_by_user_id]
       );
       user = userRes.rows[0] as { id: number; email: string; full_name: string };
+
+      for (const [permissionKey, allowed] of Object.entries(inv.permission_overrides || {})) {
+        if (!BOARD_PERMISSION_KEYS.includes(permissionKey as (typeof BOARD_PERMISSION_KEYS)[number])) continue;
+        await client.query(
+          `INSERT INTO user_permissions (user_id, permission_key, allowed)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id, permission_key) DO UPDATE SET allowed = EXCLUDED.allowed, updated_at = NOW()`,
+          [user.id, permissionKey, Boolean(allowed)],
+        );
+      }
 
       await client.query(`UPDATE user_invites SET accepted_at = NOW() WHERE id = $1`, [inv.id]);
       await client.query("COMMIT");

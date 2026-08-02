@@ -125,11 +125,13 @@ export default function MegaMenuNavbar() {
   const domainVisible = useMemo(
     () =>
       DASHBOARD_DOMAIN_NAV.filter((domain) => {
-        if (domain.id === "admin" && role !== "admin") return false;
+        if (domain.id === "admin" && permissions["access_control.manage"] !== true && permissions["settings.view"] !== true) return false;
         return true;
       }),
-    [role]
+    [permissions]
   );
+  const canAdministerWorkspace = permissions["access_control.manage"] === true;
+  const canViewUsage = permissions["analytics.view"] === true;
   const domainMoreVisible = useMemo(() => {
     const activeDomain = getDomainForPath(pathname);
     return getDashboardDomainItemsForRole(activeDomain, role, permissions);
@@ -268,7 +270,7 @@ export default function MegaMenuNavbar() {
                             <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{userName}</div>
                             {userEmail && <div className="truncate text-xs text-slate-500">{userEmail}</div>}
                             <span className="mt-0.5 inline-block rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-                              {role === "admin" ? "Administrator" : "Team Member"}
+                              {role === "workspace_owner" ? "Workspace Owner" : role === "admin" ? "Administrator" : "Team Member"}
                             </span>
                           </div>
                         </div>
@@ -323,7 +325,7 @@ export default function MegaMenuNavbar() {
                       </div>
 
                       {/* Admin section */}
-                      {role === "admin" && (
+                      {canAdministerWorkspace && (
                         <div className="border-b border-slate-100 py-1 dark:border-slate-700">
                           <div className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Admin</div>
                           <ProfileMenuItem
@@ -443,7 +445,7 @@ export default function MegaMenuNavbar() {
             </button>
             {moreOpen ? (
               <div className="absolute left-0 top-full z-50 mt-1 min-w-[280px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-900">
-                {role === "admin" ? (
+                {canViewUsage ? (
                   <>
                     <button
                       type="button"
@@ -472,7 +474,7 @@ export default function MegaMenuNavbar() {
                     {item.label}
                   </Link>
                 ))}
-                {role === "admin" ? (
+                {canAdministerWorkspace ? (
                   <>
                     <Link
                       href="/usage"
@@ -555,7 +557,7 @@ export default function MegaMenuNavbar() {
                     {item.label}
                   </Link>
                 ))}
-                {role === "admin" ? (
+                {canViewUsage ? (
                   <Link
                     href="/usage"
                     className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800"
@@ -564,7 +566,7 @@ export default function MegaMenuNavbar() {
                     AI Usage
                   </Link>
                 ) : null}
-                {role === "admin"
+                {canAdministerWorkspace
                   ? ADMIN_LINKS.map((al) => (
                       <Link
                         key={al.href}

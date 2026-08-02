@@ -74,5 +74,22 @@ for (const file of files) {
   await client.query(sql);
   await client.query(`INSERT INTO schema_migrations (file_name) VALUES ($1)`, [file]);
 }
+
+const ownerEmail = process.env.WORKSPACE_OWNER_EMAIL?.trim().toLowerCase();
+if (ownerEmail) {
+  const ownerResult = await client.query(
+    `UPDATE users
+     SET role = 'workspace_owner', access_scope = 'all', is_active = TRUE,
+         deactivated_at = NULL, updated_at = NOW()
+     WHERE lower(email) = $1
+     RETURNING id, email`,
+    [ownerEmail],
+  );
+  if (ownerResult.rowCount === 0) {
+    process.stdout.write(`[owner-bootstrap] user not found for ${ownerEmail}; create or invite the account, then redeploy\n`);
+  } else {
+    process.stdout.write(`[owner-bootstrap] workspace owner confirmed: ${ownerEmail}\n`);
+  }
+}
 await client.end();
 process.stdout.write('[migrate] complete\n');

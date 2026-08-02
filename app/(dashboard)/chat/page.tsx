@@ -215,7 +215,9 @@ type LiveKitSessionToken = {
   user_message?: string;
   hint?: string;
   media_health_hint?: string;
-  turn_ready?: boolean;
+  turn_ready?: boolean | null;
+  turn_expected?: boolean;
+  turn_configuration_source?: "livekit_server" | "external_ice_fallback";
 };
 
 type PrejoinStatus = "checking" | "ready" | "warning" | "failed";
@@ -2649,9 +2651,6 @@ function ChatWorkspace({
           throw new ApiError(tokenData.user_message || "Missing LiveKit token.", 503);
         }
         liveKitIdentityRef.current = tokenData.livekit_identity || null;
-        if (tokenData.turn_ready === false) {
-          setMediaError("TURN check did not pass, using LiveKit server ICE configuration.");
-        }
         const livekit = await import("livekit-client");
         const room = new livekit.Room({
           adaptiveStream: true,

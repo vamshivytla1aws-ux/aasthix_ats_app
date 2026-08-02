@@ -1,37 +1,10 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
-import { isLiveKitConfigured } from "@/lib/livekit";
+import { createLiveKitToken, isLiveKitConfigured, liveKitUrl, parseRtcIceServers, probeLiveKitEndpoint, redactRtcIceServers } from "@/lib/livekit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type TurnEndpointInfo = {
-  value: string;
-  transport: "udp" | "tcp" | "tls" | "unknown";
-};
-
-function parseTurnEndpoints(raw: string): TurnEndpointInfo[] {
-  const parsed: TurnEndpointInfo[] = [];
-  const candidates = raw
-    .split(/[\n,]+/)
-    .map((x) => x.trim())
-    .filter(Boolean);
-  for (const value of candidates) {
-    if (!/^turns?:/i.test(value)) continue;
-    const lower = value.toLowerCase();
-    let transport: TurnEndpointInfo["transport"] = "unknown";
-    if (lower.startsWith("turns:")) {
-      transport = "tls";
-    } else if (lower.includes("transport=tcp")) {
-      transport = "tcp";
-    } else if (lower.includes("transport=udp")) {
-      transport = "udp";
-    }
-    parsed.push({ value, transport });
-  }
-  return parsed;
-}
 
 async function getSignalSchemaHealth() {
   const requiredTypes = [
@@ -71,22 +44,35 @@ export async function GET() {
 
     const livekitConfigured = isLiveKitConfigured();
     const iceRaw = String(process.env.NEXT_PUBLIC_CHAT_ICE_SERVERS || "");
-    const turnEndpoints = parseTurnEndpoints(iceRaw);
-    const hasTurn = turnEndpoints.length > 0;
-    const hasUdpOrTls = turnEndpoints.some((e) => e.transport === "udp" || e.transport === "tls");
-    const hasTcpOrTls = turnEndpoints.some((e) => e.transport === "tcp" || e.transport === "tls");
+    const ice = parseRtcIceServers(iceRaw);
+    const turnExpected = process.env.LIVEKIT_TURN_EXPECTED !== "false";
+    const endpoint = livekitConfigured ? await probeLiveKitEndpoint() : { reachable: false, tls_ready: false, error: "livekit_not_configured" };
+    let tokenReady = false;
+    if (livekitConfigured) {
+      tokenReady = await createLiveKitToken({ identity: "health-check", name: "Health check", roomName: "health-check", canPublish: false })
+        .then(Boolean)
+        .catch(() => false);
+    }
     const schema = await getSignalSchemaHealth().catch(() => ({
       schema_ready: false,
       missing_types: [] as string[],
       required_types: [] as string[],
     }));
+    const failures = await query(
+      `SELECT
+         COUNT(*) FILTER (WHERE event_type IN ('join_fail','media_fail','drop'))::int AS total_failures,
+         COUNT(*) FILTER (WHERE event_type = 'join_fail')::int AS connection_failures,
+         COUNT(*) FILTER (WHERE event_type = 'media_fail' AND COALESCE(metadata->>'publish_state','') <> 'published')::int AS publish_failures,
+         COUNT(*) FILTER (WHERE event_type = 'media_fail' AND COALESCE(metadata->>'subscribe_state','') <> 'subscribed')::int AS subscribe_failures
+       FROM chat_call_events WHERE created_at >= NOW() - INTERVAL '24 hours'`,
+    ).then((result: { rows: unknown[] }) => result.rows[0] || null).catch(() => null);
 
-    const ready = livekitConfigured && hasTurn && schema.schema_ready;
+    const ready = livekitConfigured && endpoint.reachable && tokenReady && schema.schema_ready;
     const issues: string[] = [];
     if (!livekitConfigured) issues.push("livekit_not_configured");
-    if (!hasTurn) issues.push("turn_missing");
-    if (hasTurn && !hasUdpOrTls) issues.push("turn_no_udp_or_tls_candidate");
-    if (hasTurn && !hasTcpOrTls) issues.push("turn_no_tcp_or_tls_candidate");
+    if (livekitConfigured && !endpoint.reachable) issues.push(String(endpoint.error || "livekit_unreachable"));
+    if (livekitConfigured && !tokenReady) issues.push("livekit_token_issuance_failed");
+    if (ice.parseError) issues.push(ice.parseError);
     if (!schema.schema_ready) issues.push("chat_call_signal_schema_not_ready");
 
     return NextResponse.json({
@@ -95,19 +81,25 @@ export async function GET() {
       checks: {
         livekit: {
           configured: livekitConfigured,
+          url_scheme_valid: /^wss:\/\//i.test(liveKitUrl()),
+          endpoint,
+          token_issuance_ready: tokenReady,
         },
         turn: {
-          configured: hasTurn,
-          endpoints: turnEndpoints,
-          has_udp_or_tls: hasUdpOrTls,
-          has_tcp_or_tls: hasTcpOrTls,
+          expected_on_livekit_server: turnExpected,
+          configuration_source: ice.servers?.length ? "external_ice_fallback" : "livekit_server",
+          external_ice_configured: Boolean(ice.servers?.length),
+          external_ice_servers: redactRtcIceServers(ice.servers),
+          external_ice_has_turn: ice.hasTurn,
+          parse_error: ice.parseError,
         },
         schema,
+        recent_failures_24h: failures,
       },
       issues,
       hint: ready
         ? "Chat call voice prerequisites are healthy."
-        : "Fix LiveKit/TURN/schema issues before two-user voice smoke tests.",
+        : "Fix LiveKit endpoint, credentials, TLS, or schema issues before two-user voice smoke tests. TURN is validated on the LiveKit server, not from browser fallback ICE variables.",
     });
   } catch (error) {
     return NextResponse.json(
@@ -119,4 +111,3 @@ export async function GET() {
     );
   }
 }
-

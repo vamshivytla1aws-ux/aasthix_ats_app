@@ -2,10 +2,11 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { KeyRound, Shield, Mail, ScrollText } from "lucide-react";
+import { Activity, KeyRound, Shield, Mail, ScrollText } from "lucide-react";
 import { apiFetchJson } from "@/lib/apiClient";
 import { UI } from "@/lib/ui";
 import { INVITE_ROLES } from "@/lib/rbacConstants";
+import { PERMISSION_CATALOG } from "@/lib/permissionCatalog";
 
 type UserRow = {
   id: number;
@@ -15,7 +16,9 @@ type UserRow = {
   permissions: Record<string, boolean>;
   access_scope: "own" | "team" | "all";
   is_active: boolean;
+  permission_sources?: Record<string, "owner" | "override" | "role_template">;
 };
+type EmailHealth = { configuration: { provider_order: string[]; resend_configured: boolean; smtp_configured: boolean; sender: string | null; sender_domain_valid: boolean }; recent_events: Array<{ provider: string; status: string; error_category?: string; error_detail?: string; created_at: string }> };
 type HrmsSchemaDiagnostics = {
   status: "healthy" | "warning";
   missing_tables: string[];
@@ -40,6 +43,8 @@ export default function AdminPermissionsPage() {
   const [advancedUserId, setAdvancedUserId] = useState<number | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<string | null>(null);
+  const [emailHealth, setEmailHealth] = useState<EmailHealth | null>(null);
+  const [emailTestBusy, setEmailTestBusy] = useState(false);
 
   const [pwUser, setPwUser] = useState<UserRow | null>(null);
   const [pwNew, setPwNew] = useState("");
@@ -63,11 +68,27 @@ export default function AdminPermissionsPage() {
       setUsers(data.users || []);
       setKeys(data.permission_keys || []);
       if (Array.isArray(data.roles) && data.roles.length) setRoles(data.roles);
+      const health = await apiFetchJson<EmailHealth>("/api/admin/email-health").catch(() => null);
+      setEmailHealth(health);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to load permissions";
       setError(msg);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function sendEmailTest() {
+    setEmailTestBusy(true);
+    setInviteMessage(null);
+    try {
+      const data = await apiFetchJson<{ result: { sent: boolean; provider?: string; detail?: string } }>("/api/admin/email-health", { method: "POST" });
+      setInviteMessage(data.result.sent ? `Test email sent via ${data.result.provider}.` : data.result.detail || "Test email failed.");
+      await load();
+    } catch (err) {
+      setInviteMessage(err instanceof Error ? err.message : "Test email failed.");
+    } finally {
+      setEmailTestBusy(false);
     }
   }
 
@@ -166,6 +187,7 @@ export default function AdminPermissionsPage() {
             <ScrollText className="h-3.5 w-3.5" />
             Audit log →
           </Link>
+          <Link href="/admin/call-health" className={UI.secondaryButton + " inline-flex items-center gap-1 py-1.5 text-xs"}><Activity className="h-3.5 w-3.5" />Call health</Link>
         </div>
       </div>
 
@@ -232,6 +254,18 @@ export default function AdminPermissionsPage() {
         </form>
         {inviteMessage ? <p className="mt-3 break-all text-xs text-slate-700">{inviteMessage}</p> : null}
       </div>
+
+      <section className={UI.card}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><h2 className="text-lg font-semibold text-[var(--ats-text)]">Email health</h2><p className="text-sm text-[var(--ats-text-muted)]">Transactional invitations use the first healthy configured provider.</p></div>
+          <button type="button" className={UI.secondaryButton} disabled={emailTestBusy} onClick={sendEmailTest}>{emailTestBusy ? "Sending test..." : "Send test to owner"}</button>
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-[var(--ats-border)] p-3 text-sm"><span className="block text-xs text-[var(--ats-text-muted)]">Provider order</span>{emailHealth?.configuration.provider_order.join(" -> ") || "Not available"}</div>
+          <div className="rounded-xl border border-[var(--ats-border)] p-3 text-sm"><span className="block text-xs text-[var(--ats-text-muted)]">Resend sender</span>{emailHealth?.configuration.sender || "Not configured"}</div>
+          <div className="rounded-xl border border-[var(--ats-border)] p-3 text-sm"><span className="block text-xs text-[var(--ats-text-muted)]">Last delivery</span>{emailHealth?.recent_events[0] ? `${emailHealth.recent_events[0].status} via ${emailHealth.recent_events[0].provider}` : "No delivery history"}</div>
+        </div>
+      </section>
 
       {pwUser ? (
         <div className="rounded-2xl border border-amber-200/90 bg-amber-50/50 p-5 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/20">
@@ -307,7 +341,7 @@ export default function AdminPermissionsPage() {
               <div className="flex flex-wrap gap-2"><button type="button" className={UI.secondaryButton} onClick={()=>setAdvancedUserId(advancedUserId===u.id?null:u.id)}>Advanced access</button><button type="button" className={UI.secondaryButton} onClick={()=>{setPwUser(u);setPwNew("");setPwConfirm("");}}>Password</button><button type="button" className={UI.secondaryButton} disabled={u.role==="workspace_owner"} onClick={async()=>{await saveUser(u.id,{is_active:!u.is_active});setUsers((prev)=>prev.map((item)=>item.id===u.id?{...item,is_active:!u.is_active}:item));}}>{u.is_active?"Deactivate":"Reactivate"}</button></div>
             </div>
             <div className="mt-3 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-xs text-[var(--ats-text-muted)]"><strong className="text-[var(--ats-text)]">Effective access:</strong> {Object.values(u.permissions || {}).filter(Boolean).length} capabilities · {u.access_scope || "own"} data scope</div>
-            {advancedUserId===u.id?<div className="mt-3 border-t border-[var(--ats-border)] pt-3"><div className="mb-2 flex items-center justify-between"><span className="text-sm font-semibold">Per-user overrides</span><button className={UI.secondaryButton} onClick={()=>void saveUser(u.id,{revoke_sessions:true})}>Revoke active sessions</button></div><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{keys.map((key)=><label key={key} className="flex items-center gap-2 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-3 py-2 text-xs"><input type="checkbox" checked={Boolean(u.permissions?.[key])} disabled={saving===u.id||u.role==="workspace_owner"} onChange={async(event)=>{const allowed=event.target.checked;setUsers((prev)=>prev.map((item)=>item.id===u.id?{...item,permissions:{...item.permissions,[key]:allowed}}:item));await saveUser(u.id,{permissions:{[key]:allowed}});}}/><span>{key}</span></label>)}</div></div>:null}
+            {advancedUserId===u.id?<div className="mt-3 border-t border-[var(--ats-border)] pt-3"><div className="mb-3 flex items-center justify-between"><div><span className="text-sm font-semibold">Module and action access</span><p className="text-xs text-[var(--ats-text-muted)]">Each item shows its effective source: role template, explicit override, or owner.</p></div><button className={UI.secondaryButton} onClick={()=>void saveUser(u.id,{revoke_sessions:true})}>Revoke active sessions</button></div><div className="grid gap-3 lg:grid-cols-2">{PERMISSION_CATALOG.map((module)=><section key={module.id} className="rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-3"><div className="mb-2"><div className="text-sm font-semibold text-[var(--ats-text)]">{module.label}</div><div className="text-xs text-[var(--ats-text-muted)]">{module.description}</div></div><div className="space-y-1.5">{[...module.view,...module.manage,...(module.advanced||[])].map((key)=><label key={key} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--ats-bg-panel)] px-2.5 py-2 text-xs"><span className="flex items-center gap-2"><input type="checkbox" checked={Boolean(u.permissions?.[key])} disabled={saving===u.id||u.role==="workspace_owner"} onChange={async(event)=>{const allowed=event.target.checked;setUsers((prev)=>prev.map((item)=>item.id===u.id?{...item,permissions:{...item.permissions,[key]:allowed},permission_sources:{...item.permission_sources,[key]:"override"}}:item));await saveUser(u.id,{permissions:{[key]:allowed}});}}/><span>{key.split(".").slice(1).join(" ").replace(/_/g," ")}</span></span><span className="rounded-full border border-[var(--ats-border)] px-2 py-0.5 text-[10px] text-[var(--ats-text-muted)]">{u.permission_sources?.[key]?.replace("_"," ") || "role template"}</span></label>)}</div></section>)}</div></div>:null}
           </article>
         ))}</div>}
       </section>

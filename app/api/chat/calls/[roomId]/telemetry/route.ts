@@ -105,6 +105,12 @@ export async function POST(request: Request, { params }: { params: { roomId: str
         body?.prejoin_summary && typeof body.prejoin_summary === "object"
           ? body.prejoin_summary
           : null,
+      selected_candidate_pair_type: String(body?.selected_candidate_pair_type || "").slice(0, 30) || null,
+      selected_candidate_pair_protocol: String(body?.selected_candidate_pair_protocol || "").slice(0, 20) || null,
+      selected_candidate_pair_rtt_ms: Math.max(0, toFiniteNumber(body?.selected_candidate_pair_rtt_ms, 0)),
+      packet_loss_percent: Math.max(0, Math.min(100, toFiniteNumber(body?.packet_loss_percent, 0))),
+      jitter_ms: Math.max(0, toFiniteNumber(body?.jitter_ms, 0)),
+      reconnect_count: Math.max(0, toFiniteNumber(body?.reconnect_count, 0)),
     };
 
     await query(

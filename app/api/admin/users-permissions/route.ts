@@ -8,6 +8,8 @@ import {
   requireWorkspaceOwner,
 } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/auditLog";
+import { baselineForRole } from "@/lib/rbac";
+import { PERMISSION_CATALOG } from "@/lib/permissionCatalog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,14 +43,22 @@ export async function GET() {
       const explicit = explicitByUser.get(u.id) ?? new Map<string, boolean>();
       const role = normalizeRole(u.role);
       const permissions = getEffectivePermissions(u.role, explicit);
+      const baseline = baselineForRole(role);
+      const explicitPermissions = Object.fromEntries(explicit);
+      const permissionSources = Object.fromEntries(
+        BOARD_PERMISSION_KEYS.map((key) => [key, role === "workspace_owner" ? "owner" : explicit.has(key) ? "override" : "role_template"]),
+      );
       return {
         ...u,
         role,
         permissions,
+        explicit_permissions: explicitPermissions,
+        baseline_permissions: baseline,
+        permission_sources: permissionSources,
       };
     });
 
-    return NextResponse.json({ users, permission_keys: BOARD_PERMISSION_KEYS, roles: APP_ROLES });
+    return NextResponse.json({ users, permission_keys: BOARD_PERMISSION_KEYS, permission_catalog: PERMISSION_CATALOG, roles: APP_ROLES });
   } catch (error) {
     console.error("Error fetching user permissions", error);
     return NextResponse.json({ error: "Failed to fetch user permissions" }, { status: 500 });

@@ -34,8 +34,7 @@ export default function AccessGate({
     async function run() {
       try {
         const me = await apiFetchJson<MePayload>("/api/auth/me");
-        const role = (me.user?.role || "user").toLowerCase();
-        const ok = role === "admin" || me.permissions?.[permissionKey] !== false;
+        const ok = me.permissions?.[permissionKey] === true;
         if (!cancelled) setAllowed(ok);
       } catch {
         if (!cancelled) setAllowed(false);
@@ -74,7 +73,7 @@ export default function AccessGate({
             <p className="mt-1 text-sm leading-relaxed text-amber-900/90 dark:text-amber-200/90">
               Your account is signed in, but this workspace requires the{" "}
               <span className="font-semibold text-amber-950 dark:text-amber-50">{permissionLabel}</span> permission (or an
-              administrator role).
+              workspace permission.
             </p>
             <p className="mt-3 text-xs text-amber-900/75 dark:text-amber-200/70">
               If you believe this is a mistake, contact your ATS administrator or IT help desk and reference the permission

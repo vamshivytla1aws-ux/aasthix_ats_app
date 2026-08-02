@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
+import { jobAccessPredicate } from "@/lib/dataScope";
 
 export async function GET() {
   try {
     const auth = await requirePermission("jobs.view");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-    // Single-tenant org: anyone with jobs.view sees all jobs (team membership still used elsewhere for edits).
     const result = await query(
       `
       SELECT
@@ -25,9 +25,10 @@ export async function GET() {
         v.name AS vendor_name
       FROM jobs j
       LEFT JOIN vendors v ON v.id = j.vendor_id
+      WHERE ${jobAccessPredicate("j", "$1")}
       ORDER BY j.created_at DESC NULLS LAST, j.id DESC
       `,
-      []
+      [auth.access.user_id]
     );
 
     return NextResponse.json(result.rows);

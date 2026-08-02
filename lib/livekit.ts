@@ -26,7 +26,8 @@ export function buildLiveKitIdentity(input: {
 
 export function parseRtcIceServers(raw: string) {
   const trimmed = String(raw || "").trim();
-  if (!trimmed) return { servers: null as Array<{ urls: string[] }> | null, hasTurn: false, parseError: null as string | null };
+  type IceServer = { urls: string[]; username?: string; credential?: string };
+  if (!trimmed) return { servers: null as IceServer[] | null, hasTurn: false, parseError: null as string | null };
   try {
     const parsed = JSON.parse(trimmed);
     if (!Array.isArray(parsed)) {
@@ -39,9 +40,13 @@ export function parseRtcIceServers(raw: string) {
           .map((u: unknown) => String(u || "").trim())
           .filter(Boolean);
         if (!normalized.length) return null;
-        return { urls: normalized };
+        return {
+          urls: normalized,
+          ...(entry?.username ? { username: String(entry.username) } : {}),
+          ...(entry?.credential ? { credential: String(entry.credential) } : {}),
+        };
       })
-      .filter(Boolean) as Array<{ urls: string[] }>;
+      .filter(Boolean) as IceServer[];
     if (!servers.length) {
       return { servers: null, hasTurn: false, parseError: "ice_servers_empty" };
     }
@@ -49,6 +54,30 @@ export function parseRtcIceServers(raw: string) {
     return { servers, hasTurn, parseError: null };
   } catch {
     return { servers: null, hasTurn: false, parseError: "ice_servers_invalid_json" };
+  }
+}
+
+export function redactRtcIceServers(servers: ReturnType<typeof parseRtcIceServers>["servers"]) {
+  return (servers || []).map((server) => ({
+    urls: server.urls,
+    username_configured: Boolean(server.username),
+    credential_configured: Boolean(server.credential),
+  }));
+}
+
+export async function probeLiveKitEndpoint(timeoutMs = 4000) {
+  const configuredUrl = liveKitUrl();
+  if (!configuredUrl) return { reachable: false, tls_ready: false, error: "livekit_url_missing" };
+  if (!/^wss:\/\//i.test(configuredUrl)) return { reachable: false, tls_ready: false, error: "livekit_url_must_use_wss" };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(configuredUrl.replace(/^wss:/i, "https:"), { method: "HEAD", cache: "no-store", signal: controller.signal });
+    return { reachable: true, tls_ready: true, http_status: response.status, error: null };
+  } catch (error) {
+    return { reachable: false, tls_ready: false, error: error instanceof Error && error.name === "AbortError" ? "probe_timeout" : "dns_or_tls_failure" };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

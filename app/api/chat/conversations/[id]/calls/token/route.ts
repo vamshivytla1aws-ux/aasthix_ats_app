@@ -136,10 +136,13 @@ export async function POST(_request: Request, { params }: { params: { id: string
       livekit_url: liveKitUrl(),
       token,
       media_state: "ready",
-      turn_ready: iceConfig.hasTurn,
+      turn_ready: null,
+      turn_expected: process.env.LIVEKIT_TURN_EXPECTED !== "false",
+      turn_configuration_source: iceConfig.servers?.length ? "external_ice_fallback" : "livekit_server",
+      external_ice_configured: Boolean(iceConfig.servers?.length),
       ice_parse_error: iceConfig.parseError,
       correlation_id: correlationId,
-      media_health_hint: iceConfig.hasTurn ? "ok" : "manual_turn_config_missing",
+      media_health_hint: "livekit_server_ice",
     });
   } catch (error) {
     const requestId = randomUUID();

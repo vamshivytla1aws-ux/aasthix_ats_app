@@ -39,11 +39,12 @@ export const DASHBOARD_PRIMARY_NAV: DashboardNavItem[] = [
 ];
 
 export const DASHBOARD_MORE_NAV: DashboardNavItem[] = [
-  { id: "analytics", label: "Analytics", href: "/analytics", permissionKey: "jobs.view" },
+  { id: "analytics", label: "Analytics", href: "/analytics", permissionKey: "analytics.view" },
   { id: "alerts", label: "Alerts", href: "/alerts", permissionKey: "alerts.view" },
   { id: "activity", label: "Activity Center", href: "/activity-center", permissionKey: "dashboard.view" },
   { id: "screening", label: "Screening", href: "/screening", permissionKey: "pipeline.view" },
-  { id: "training", label: "Training", href: "/training/manage", permissionKey: "jobs.view" },  { id: "audit", label: "Audit trail", href: "/audit", permissionKey: "jobs.view" },
+  { id: "training", label: "Training", href: "/training/manage", permissionKey: "jobs.view" },
+  { id: "audit", label: "Audit trail", href: "/audit", permissionKey: "audit.view" },
   { id: "roadmap", label: "Roadmap", href: "/roadmap", permissionKey: "pipeline.view" },
   { id: "copilot", label: "Recruiter Copilot", href: "/recruiter/copilot", permissionKey: "jobs.view" },
   { id: "workload", label: "Recruiter Workload", href: "/recruiter/workload", permissionKey: "jobs.view" },
@@ -106,15 +107,15 @@ export const DASHBOARD_DOMAIN_ITEMS: Record<DashboardDomain, DashboardNavItem[]>
     { id: "alerts", label: "Alerts", href: "/alerts", permissionKey: "alerts.view" },
   ],
   reporting: [
-    { id: "analytics", label: "Analytics", href: "/analytics", permissionKey: "jobs.view" },
+    { id: "analytics", label: "Analytics", href: "/analytics", permissionKey: "analytics.view" },
     { id: "usage", label: "AI Usage", href: "/usage", permissionKey: "jobs.view" },
-    { id: "audit", label: "Audit trail", href: "/audit", permissionKey: "jobs.view" },
+    { id: "audit", label: "Audit trail", href: "/audit", permissionKey: "audit.view" },
   ],
   workforce: WORKFORCE_SELF_SERVICE_ITEMS,
   admin: [
-    { id: "permissions", label: "Access control", href: "/admin/permissions", permissionKey: "jobs.view" },
+    { id: "permissions", label: "Access control", href: "/admin/permissions", permissionKey: "access_control.manage" },
     { id: "disposition", label: "Disposition reasons", href: "/admin/disposition-reasons", permissionKey: "jobs.view" },
-    { id: "settings", label: "Settings", href: "/settings", permissionKey: "dashboard.view" },
+    { id: "settings", label: "Settings", href: "/settings", permissionKey: "settings.view" },
   ],
 };
 
@@ -123,8 +124,7 @@ export function isNavItemVisible(
   role: string,
   permissions: Record<string, boolean>
 ): boolean {
-  if (item.permissionKey?.startsWith("ai_interviews.") && permissions[item.permissionKey] === false) return false;
-  if (role === "admin") return true;
+  void role;
   if (!item.permissionKey) return true;
   return permissions[item.permissionKey] !== false;
 }
@@ -135,7 +135,9 @@ export function getDashboardDomainItemsForRole(
   permissions: Record<string, boolean>
 ): DashboardNavItem[] {
   const items =
-    domain === "workforce" ? (role === "admin" ? WORKFORCE_ADMIN_ITEMS : WORKFORCE_SELF_SERVICE_ITEMS) : DASHBOARD_DOMAIN_ITEMS[domain] ?? [];
+    domain === "workforce"
+      ? (permissions["employee_directory.view_all"] ? WORKFORCE_ADMIN_ITEMS : WORKFORCE_SELF_SERVICE_ITEMS)
+      : DASHBOARD_DOMAIN_ITEMS[domain] ?? [];
   return items.filter((item) => isNavItemVisible(item, role, permissions));
 }
 

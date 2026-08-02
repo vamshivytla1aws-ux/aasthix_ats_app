@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { requireWorkspaceOwner } from "@/lib/rbac";
+import { BOARD_PERMISSION_KEYS, requireWorkspaceOwner } from "@/lib/rbac";
 import { generateInviteToken, hashInviteToken } from "@/lib/inviteToken";
 import { writeAuditLog } from "@/lib/auditLog";
 import { INVITE_ROLES } from "@/lib/rbacConstants";
@@ -19,7 +19,8 @@ export async function GET() {
 
     const res = await query(
       `SELECT id, email, role, access_scope, expires_at, created_at, accepted_at,
-              sent_at, send_provider, message_id, delivery_error, revoked_at, updated_at
+              sent_at, send_provider, message_id, delivery_error, revoked_at, updated_at,
+              permission_overrides
        FROM user_invites
        ORDER BY created_at DESC
        LIMIT 100`
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await request.json();
-    const { email, role, access_scope } = body as { email?: string; role?: string; access_scope?: string };
+    const { email, role, access_scope, permission_overrides } = body as { email?: string; role?: string; access_scope?: string; permission_overrides?: Record<string, boolean> };
 
     if (!email?.trim()) {
       return NextResponse.json({ error: "email is required" }, { status: 400 });
@@ -55,6 +56,11 @@ export async function POST(request: Request) {
     }
 
     const emailNorm = email.trim().toLowerCase();
+    const safeOverrides = Object.fromEntries(
+      Object.entries(permission_overrides || {})
+        .filter(([key]) => BOARD_PERMISSION_KEYS.includes(key as (typeof BOARD_PERMISSION_KEYS)[number]))
+        .map(([key, allowed]) => [key, Boolean(allowed)]),
+    );
     const existing = await query(`SELECT 1 FROM users WHERE email = $1`, [emailNorm]);
     if (existing.rowCount && existing.rowCount > 0) {
       return NextResponse.json({ error: "User with this email already exists" }, { status: 409 });
@@ -69,9 +75,9 @@ export async function POST(request: Request) {
     ]);
 
     await query(
-      `INSERT INTO user_invites (email, token_hash, role, access_scope, expires_at, created_by_user_id, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [emailNorm, tokenHash, r, scope, expiresAt, auth.access.user_id]
+      `INSERT INTO user_invites (email, token_hash, role, access_scope, expires_at, created_by_user_id, permission_overrides, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())`,
+      [emailNorm, tokenHash, r, scope, expiresAt, auth.access.user_id, JSON.stringify(safeOverrides)]
     );
 
     const inviteUrl = buildPublicUrl(`/invite/accept?token=${encodeURIComponent(raw)}`);
@@ -87,7 +93,7 @@ export async function POST(request: Request) {
     await writeAuditLog({
       actorUserId: auth.access.user_id,
       action: "auth.invite.created",
-      metadata: { email: emailNorm, role: r, access_scope: scope, delivery_sent: delivery.sent },
+      metadata: { email: emailNorm, role: r, access_scope: scope, override_keys: Object.keys(safeOverrides), delivery_sent: delivery.sent },
     });
 
     if (process.env.NODE_ENV === "development") {
