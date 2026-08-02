@@ -1825,6 +1825,13 @@ export async function PATCH(request: Request) {
         { status: 200 }
       );
     }
-    return NextResponse.json({ error: "Failed to update application" }, { status: 500 });
+    // Surface the real DB/runtime error so it can be diagnosed without server log access.
+    const errorDetail =
+      error instanceof Error
+        ? (error as Error & { code?: string }).code
+          ? `[${(error as Error & { code?: string }).code}] ${error.message}`
+          : error.message
+        : String(error);
+    return NextResponse.json({ error: `Failed to update application: ${errorDetail}` }, { status: 500 });
   }
 }
