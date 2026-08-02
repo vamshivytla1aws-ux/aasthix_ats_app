@@ -28,6 +28,7 @@ export const createInterviewSchema = z.object({
   coding_enabled: z.boolean().default(false),
   behavioral_enabled: z.boolean().default(false),
   allow_fundamentals_for_senior: z.boolean().default(false),
+  send_email: z.boolean().default(true),
 });
 
 export const generatedQuestionSchema = z.object({

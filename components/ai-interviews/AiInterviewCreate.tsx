@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { DateTimePicker } from "@/components/ui/DateTimeFields";
 
@@ -11,15 +11,33 @@ type Option = {
   full_name?: string;
   email?: string;
 };
+
+function getDefaultExpiry() {
+  const date = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  date.setHours(18, 0, 0, 0);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 export default function AiInterviewCreate() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const paramJobId = searchParams.get("job_id") || "";
+  const paramCandidateId = searchParams.get("candidate_id") || "";
+  const paramApplicationId = searchParams.get("application_id") || "";
+
   const [jobs, setJobs] = useState<Option[]>([]);
   const [candidates, setCandidates] = useState<Option[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
-    job_id: "",
-    candidate_id: "",
+    job_id: paramJobId,
+    candidate_id: paramCandidateId,
+    application_id: paramApplicationId,
     title: "AASTHIX - AI Interview",
     instructions:
       "Answer each question clearly using examples from your experience.",
@@ -27,7 +45,8 @@ export default function AiInterviewCreate() {
     skills: "",
     question_count: 7,
     duration_minutes: 40,
-    expires_at: "",
+    expires_at: getDefaultExpiry(),
+    send_email: true,
     interview_mode: "ADAPTIVE",
     project_questions_enabled: true,
     min_project_questions: 2,
@@ -43,29 +62,49 @@ export default function AiInterviewCreate() {
     face_monitoring_enabled: true,
     gaze_monitoring_enabled: true,
   });
+
   useEffect(() => {
     void Promise.all([
       fetch("/api/jobs").then((r) => r.json()),
       fetch("/api/candidates").then((r) => r.json()),
     ]).then(([j, c]) => {
-      setJobs(Array.isArray(j) ? j : j.jobs || j.data || []);
-      setCandidates(Array.isArray(c) ? c : c.candidates || c.data || []);
+      const jobList: Option[] = Array.isArray(j) ? j : j.jobs || j.data || [];
+      const candidateList: Option[] = Array.isArray(c) ? c : c.candidates || c.data || [];
+      setJobs(jobList);
+      setCandidates(candidateList);
+
+      if (paramJobId) {
+        const foundJob = jobList.find((item) => String(item.id) === paramJobId);
+        if (foundJob?.title) {
+          setForm((prev) => ({
+            ...prev,
+            job_id: paramJobId,
+            title: `AASTHIX - AI Interview - ${foundJob.title}`,
+          }));
+        }
+      }
+      if (paramCandidateId) {
+        setForm((prev) => ({ ...prev, candidate_id: paramCandidateId }));
+      }
     });
-  }, []);
+  }, [paramJobId, paramCandidateId]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError("");
     try {
+      const expiryIso = form.expires_at ? new Date(form.expires_at).toISOString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const payload = {
         ...form,
         job_id: Number(form.job_id),
         candidate_id: Number(form.candidate_id),
+        application_id: form.application_id ? Number(form.application_id) : null,
         skills: form.skills
           .split(",")
           .map((x) => x.trim())
           .filter(Boolean),
-        expires_at: new Date(form.expires_at).toISOString(),
+        expires_at: expiryIso,
         recruiter_experience_override:
           form.recruiter_experience_override === ""
             ? null
@@ -384,6 +423,26 @@ export default function AiInterviewCreate() {
           ))}
         </div>
       </section>
+      <section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm">
+        <h2 className="font-bold text-slate-900 flex items-center gap-2">
+          Candidate invitation
+        </h2>
+        <p className="mt-1 text-xs text-slate-600">
+          Automatically send an email to the candidate with the AI generated interview link, instructions, and duration.
+        </p>
+        <div className="mt-3">
+          <label className="flex items-center gap-3 rounded-xl border border-blue-200 bg-white p-3.5 text-sm font-semibold text-slate-800 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.send_email}
+              onChange={(e) => setForm({ ...form, send_email: e.target.checked })}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            Send invitation email with AI link to candidate immediately
+          </label>
+        </div>
+      </section>
+
       <div className="flex justify-end">
         <button
           disabled={saving}
@@ -391,7 +450,9 @@ export default function AiInterviewCreate() {
         >
           {saving
             ? "Creating and generating questions..."
-            : "Create and generate questions"}
+            : form.send_email
+              ? "Create and send interview email to candidate"
+              : "Create and generate questions"}
         </button>
       </div>
     </form>

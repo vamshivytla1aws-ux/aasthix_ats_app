@@ -18,6 +18,7 @@ import {
 } from "@/lib/aiInterviews/adaptive";
 import { buildPublicUrl } from "@/lib/publicUrl";
 import { resolveAiInterviewResumeContext } from "@/lib/aiInterviews/resumeContext";
+import { sendAiInterviewInviteEmail } from "@/lib/aiInterviews/inviteEmail";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,10 +48,14 @@ export async function GET(request: Request) {
       .trim()
       .toUpperCase();
     const search = String(url.searchParams.get("search") || "").trim();
+    const hasFullAccess =
+      auth.access.role === "admin" ||
+      auth.access.role === "workspace_owner" ||
+      auth.access.access_scope === "all";
     const params: unknown[] =
-      auth.access.role === "admin" ? [] : [auth.access.user_id];
+      hasFullAccess ? [] : [auth.access.user_id];
     const where = [
-      auth.access.role === "admin"
+      hasFullAccess
         ? "TRUE"
         : `(
       ai.created_by_user_id=$1 OR j.created_by_user_id=$1 OR a.assigned_recruiter_user_id=$1 OR
@@ -124,11 +129,14 @@ export async function POST(request: Request) {
         { error: "Application does not match the selected candidate and job." },
         { status: 400 },
       );
-    if (
-      auth.access.role !== "admin" &&
-      Number(row.created_by_user_id) !== auth.access.user_id &&
-      Number(row.assigned_recruiter_user_id) !== auth.access.user_id
-    ) {
+    const hasFullJobAccess =
+      auth.access.role === "admin" ||
+      auth.access.role === "workspace_owner" ||
+      auth.access.access_scope === "all" ||
+      Number(row.created_by_user_id) === auth.access.user_id ||
+      Number(row.assigned_recruiter_user_id) === auth.access.user_id;
+
+    if (!hasFullJobAccess) {
       const team = await query(
         `SELECT 1 FROM job_team WHERE job_id=$1 AND user_id=$2 LIMIT 1`,
         [parsed.job_id, auth.access.user_id],
@@ -285,12 +293,25 @@ export async function POST(request: Request) {
         ],
       );
       await client.query("COMMIT");
+
+      let emailResult: Record<string, unknown> | null = null;
+      if (parsed.send_email) {
+        try {
+          const invite = await sendAiInterviewInviteEmail(interviewId, auth.access.user_id);
+          emailResult = invite;
+        } catch (e) {
+          console.error("Auto send AI interview invite email failed:", e);
+        }
+      }
+
       return NextResponse.json(
         {
           interview: inserted.rows[0],
           questions: generated.questions,
           generation_mode: generated.mode,
-          public_url: buildPublicUrl(`/ai-interview/${token}`),
+          public_url: (emailResult as any)?.public_url || buildPublicUrl(`/ai-interview/${token}`),
+          email_sent: Boolean((emailResult as any)?.ok),
+          recipient: (emailResult as any)?.recipient,
         },
         { status: 201 },
       );

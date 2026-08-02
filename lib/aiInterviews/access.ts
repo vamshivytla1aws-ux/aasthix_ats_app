@@ -3,7 +3,13 @@ import type { AuthAccess } from "@/lib/rbac";
 import { readCandidateSession } from "@/lib/aiInterviews/token";
 
 export async function canAccessAiInterview(access: AuthAccess, interviewId: number) {
-  if (access.role === "admin") return true;
+  if (
+    access.role === "admin" ||
+    access.role === "workspace_owner" ||
+    access.access_scope === "all"
+  ) {
+    return true;
+  }
   const result = await query(
     `SELECT 1
        FROM ai_interviews ai
