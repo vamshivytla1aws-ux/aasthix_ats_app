@@ -28,7 +28,8 @@ export async function POST(request: Request) {
     }
 
     const result = await query(
-      `SELECT id, email, full_name, password_hash FROM users WHERE email = $1`,
+      `SELECT id, email, full_name, password_hash, COALESCE(is_active, true) AS is_active,
+              COALESCE(token_version, 1) AS token_version FROM users WHERE email = $1`,
       [email.trim().toLowerCase()]
     );
 
@@ -41,7 +42,13 @@ export async function POST(request: Request) {
       email: string;
       full_name: string;
       password_hash: string | null;
+      is_active: boolean;
+      token_version: number;
     };
+
+    if (!user.is_active) {
+      return NextResponse.json({ error: "This account has been deactivated" }, { status: 403 });
+    }
 
     if (!user.password_hash) {
       return NextResponse.json({ error: "Account not configured for password login" }, { status: 400 });
@@ -52,7 +59,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    const token = await signAuthToken({ user_id: user.id, email: user.email });
+    const token = await signAuthToken({ user_id: user.id, email: user.email, token_version: user.token_version });
 
     await writeAuditLog({
       actorUserId: user.id,
@@ -78,4 +85,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to login" }, { status: 500 });
   }
 }
-

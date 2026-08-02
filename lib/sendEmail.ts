@@ -26,12 +26,10 @@ export async function sendEmailMessage(opts: {
     process.env.SMTP_FROM?.trim() ||
     process.env.SMTP_USER?.trim() ||
     "";
+  const smtpConfig = getSmtpConfig();
+  let resendFailure: string | undefined;
 
-  if (resendKey) {
-    if (!resendFrom) {
-      return { sent: false, reason: "email_not_configured", detail: "RESEND_FROM_EMAIL is required." };
-    }
-
+  if (resendKey && resendFrom) {
     try {
       const resend = new Resend(resendKey);
       const payload: Record<string, unknown> = {
@@ -47,17 +45,23 @@ export async function sendEmailMessage(opts: {
       if (result.error) {
         const detail = result.error.message || "Resend rejected the email request.";
         console.error("sendEmailMessage resend rejected", result.error);
-        return { sent: false, reason: "send_failed", detail };
+        if (!smtpConfig) return { sent: false, reason: "send_failed", detail };
+        resendFailure = detail;
+      } else {
+        return { sent: true, provider: "resend", messageId: result.data?.id };
       }
-      return { sent: true, provider: "resend", messageId: result.data?.id };
     } catch (e) {
       console.error("sendEmailMessage resend", e);
       const detail = e instanceof Error ? e.message : String(e);
-      return { sent: false, reason: "send_failed", detail };
+      if (!smtpConfig) return { sent: false, reason: "send_failed", detail };
+      resendFailure = detail;
     }
   }
+  if (resendKey && !resendFrom) {
+    if (!smtpConfig) return { sent: false, reason: "email_not_configured", detail: "A sender address is required." };
+    resendFailure = "Resend sender address is not configured.";
+  }
 
-  const smtpConfig = getSmtpConfig();
   if (!smtpConfig) {
     return { sent: false, reason: "email_not_configured", detail: "Neither RESEND_API_KEY nor SMTP credentials are configured." };
   }
@@ -86,6 +90,6 @@ export async function sendEmailMessage(opts: {
   } catch (e) {
     console.error("sendEmailMessage smtp", e);
     const detail = e instanceof Error ? e.message : String(e);
-    return { sent: false, reason: "send_failed", detail };
+    return { sent: false, reason: "send_failed", detail: resendFailure ? `Email providers failed. SMTP: ${detail}; Resend: ${resendFailure}` : detail };
   }
 }

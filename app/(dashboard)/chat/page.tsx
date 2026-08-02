@@ -648,7 +648,7 @@ export default function ChatPage() {
   const { data: convData, mutate: mutateConvs } = useSWR<{ conversations: Conversation[] }>(
     "/api/chat/conversations",
     dashboardFetcher,
-    { refreshInterval: 15_000 }
+    { refreshInterval: 30_000 }
   );
 
   const conversations = useMemo(
@@ -1270,7 +1270,8 @@ function ChatWorkspace({
     textareaRef.current.style.height = `${Math.min(Math.max(scrollHeight, 56), 220)}px`;
   }, []);
 
-  const messageRefreshInterval = threadParent ? 2500 : 3000;
+  // SSE is the primary transport; polling is only a bounded recovery path.
+  const messageRefreshInterval = threadParent ? 15_000 : 30_000;
   const { data: messageData, mutate: mutateMessages } = useSWR<{ messages: Message[] }>(
     `/api/chat/conversations/${conversation.id}/messages?limit=100`,
     dashboardFetcher,
@@ -1333,9 +1334,30 @@ function ChatWorkspace({
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.EventSource === "undefined") return;
     const stream = new EventSource(`/api/chat/realtime?conversation_id=${conversation.id}`);
-    const onMessageEvent = () => {
-      void mutateMessages();
-      onMutateConversations(350);
+    const onMessageEvent = (event: Event) => {
+      const messageEvent = event as MessageEvent<string>;
+      let incoming: Message | null = null;
+      try {
+        incoming = JSON.parse(messageEvent.data) as Message;
+      } catch {
+        void mutateMessages();
+        return;
+      }
+      if (!incoming || Number(incoming.conversation_id) !== Number(conversation.id)) return;
+      void mutateMessages((current) => {
+        const rows = current?.messages ?? [];
+        const index = rows.findIndex((item) => Number(item.id) === Number(incoming!.id));
+        const normalized = {
+          ...incoming!,
+          sender_name: incoming!.sender_name || (Number(incoming!.sender_id) === Number(currentUserId) ? "You" : "Team member"),
+          reactions: incoming!.reactions || [],
+          mentions: incoming!.mentions || [],
+          delivery_state: incoming!.delivery_state || "delivered",
+        } as Message;
+        if (index >= 0) return { ...(current || { messages: [] }), messages: rows.map((item, itemIndex) => itemIndex === index ? { ...item, ...normalized } : item) };
+        return { ...(current || { messages: [] }), messages: [...rows, normalized] };
+      }, { revalidate: false });
+      onMutateConversations(1200);
     };
     const onCallEvent = () => {
       void mutateCallState();
@@ -1374,7 +1396,7 @@ function ChatWorkspace({
       stream.removeEventListener("call.timeout", onCallEvent);
       stream.close();
     };
-  }, [conversation.id, mutateMessages, mutateCallState, mutateCalendar, onMutateConversations]);
+  }, [conversation.id, currentUserId, mutateMessages, mutateCallState, mutateCalendar, onMutateConversations]);
 
   useEffect(() => {
     if (conversation.unread_count > 0) {
@@ -1393,8 +1415,15 @@ function ChatWorkspace({
 
   useEffect(() => {
     textareaRef.current?.focus();
+    setMessageInput(window.localStorage.getItem(`ats_chat_draft:${conversation.id}`) || "");
     resizeComposer();
   }, [conversation.id, resizeComposer]);
+
+  useEffect(() => {
+    const key = `ats_chat_draft:${conversation.id}`;
+    if (messageInput.trim()) window.localStorage.setItem(key, messageInput);
+    else window.localStorage.removeItem(key);
+  }, [conversation.id, messageInput]);
 
   useEffect(() => {
     resizeComposer();

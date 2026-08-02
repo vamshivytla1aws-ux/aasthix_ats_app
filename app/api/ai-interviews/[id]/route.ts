@@ -29,7 +29,7 @@ export async function GET(
     const auth = await authorize(id, "ai_interviews.view");
     if (!auth.ok)
       return NextResponse.json({ error: auth.error }, { status: auth.status });
-    const [interview, questions, events] = await Promise.all([
+    const [interview, questions, recruiterQuestions, events] = await Promise.all([
       query(
         `SELECT ai.*, c.full_name AS candidate_name,c.email AS candidate_email,c.phone AS candidate_phone,c.resume_text,
                     j.title AS job_title,j.description AS job_description,j.experience_requirement,
@@ -40,6 +40,11 @@ export async function GET(
       ),
       query(
         `SELECT * FROM ai_interview_questions WHERE interview_id=$1 ORDER BY order_number,id`,
+        [id],
+      ),
+      query(
+        `SELECT id,sort_order AS order_number,question_text,skill_name,difficulty,expected_signals_json AS expected_points_json,scoring_rubric_json,max_score,required
+         FROM ai_interview_recruiter_questions WHERE interview_id=$1 ORDER BY sort_order,id`,
         [id],
       ),
       query(
@@ -55,6 +60,7 @@ export async function GET(
     return NextResponse.json({
       interview: interview.rows[0],
       questions: questions.rows,
+      recruiter_questions: recruiterQuestions.rows,
       events: events.rows,
       capabilities: {
         can_delete: auth.access.permissions["ai_interviews.delete"] === true,

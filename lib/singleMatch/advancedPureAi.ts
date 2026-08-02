@@ -12,6 +12,11 @@ import type {
   SingleMatchScoreBreakdown,
   SingleMatchScoreBreakdownDetail,
 } from "@/lib/singleMatch/types";
+import {
+  MATCH_RUBRIC_VERSION,
+  MATCH_SCORING_POLICY_VERSION,
+  evaluatePrimaryDomainGate,
+} from "@/lib/singleMatch/domainGate";
 
 type ResumeSource = NonNullable<SingleMatchCheckResultPayload["resume_source"]>;
 
@@ -93,7 +98,8 @@ type ScoreCap = {
     | "must_have_missing_cap"
     | "experience_cap"
     | "role_family_cap"
-    | "mandatory_requirement_cap";
+    | "mandatory_requirement_cap"
+    | "primary_domain_cap";
   limit: number;
   reason: string;
 };
@@ -1271,6 +1277,13 @@ export async function buildAdvancedPureAiInsights(
     );
   }
 
+  const domainGate = evaluatePrimaryDomainGate({
+    jobTitle: input.jobTitle,
+    jobDescription: input.jobDescription,
+    mustHave: input.mustHave,
+    resumeText: input.resumeText,
+  });
+
   const scoreBreakdown: SingleMatchScoreBreakdown = {
     must_have_skills: buildScoreBucket(groupEvaluations(evaluations, "must_have_skills"), SCORE_WEIGHTS.must_have_skills),
     experience: buildScoreBucket(groupEvaluations(evaluations, "experience"), SCORE_WEIGHTS.experience),
@@ -1297,6 +1310,9 @@ export async function buildAdvancedPureAiInsights(
     scoreBreakdown.resume_evidence_quality.score;
 
   const caps = deriveScoreCaps(evaluations, scoreBreakdown.experience, input.jobTitle, input.resumeText);
+  if (domainGate?.cap != null) {
+    caps.push({ code: "primary_domain_cap", limit: domainGate.cap, reason: domainGate.reason });
+  }
   const cappedScore = caps.reduce((score, cap) => Math.min(score, cap.limit), rawScore);
   const overallScore = clamp(Math.round(cappedScore), 0, 100);
   const fitLevel = deriveFitLevel(overallScore);
@@ -1392,6 +1408,10 @@ export async function buildAdvancedPureAiInsights(
     red_flags: riskFlags,
     recruiter_summary: summary,
     candidate_feedback: candidateFeedback,
+    scoring_policy_version: MATCH_SCORING_POLICY_VERSION,
+    rubric_version: MATCH_RUBRIC_VERSION,
+    domain_gate: domainGate,
+    applied_caps: caps,
     debug_requirements: requirementBreakdown.map((item) => ({
       requirement: item.label,
       category: item.bucket,
@@ -1404,6 +1424,12 @@ export async function buildAdvancedPureAiInsights(
       similarity_score: item.similarity_score ?? 0,
       confidence: item.confidence ?? 0,
     })),
-    developer_debug: developerDebug,
+    developer_debug: {
+      ...developerDebug,
+      scoring_policy_version: MATCH_SCORING_POLICY_VERSION,
+      rubric_version: MATCH_RUBRIC_VERSION,
+      model_used: input.baseAi.model_used ?? null,
+      domain_gate: domainGate,
+    },
   };
 }

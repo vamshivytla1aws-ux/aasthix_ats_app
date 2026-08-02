@@ -18,8 +18,10 @@ function ttlMs() {
  * Stable cache key from JD + resume text (SHA-256; in-process TTL via MATCH_AI_CACHE_TTL_MS).
  * For multi-instance Redis, add a shared layer later — single-node deploys use this store.
  */
-export function matchCacheKey(jd: string, resume: string): string {
+export function matchCacheKey(jd: string, resume: string, policyNamespace = "legacy"): string {
   const h = crypto.createHash("sha256");
+  h.update(policyNamespace);
+  h.update("\n---\n");
   h.update(jd.slice(0, 12_000));
   h.update("\n---\n");
   h.update(resume.slice(0, 16_000));

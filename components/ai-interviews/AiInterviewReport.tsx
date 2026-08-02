@@ -170,6 +170,13 @@ export default function AiInterviewReport({ id }: { id: number }) {
         </div>
       )}
 
+      {interview.video_status === "UPLOADED" && data.recording_available && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold">Interview recording</h2><p className="text-sm text-slate-500">Review the candidate alongside the evidence and evaluation below.</p></div><div className="flex gap-2"><a href={`/api/ai-interviews/${id}/recording?download=1`} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"><Download className="h-4 w-4" /> Download</a>{data.capabilities?.can_delete_recording && <button disabled={saving} onClick={() => void deleteRecording()} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-700"><Trash2 className="h-4 w-4" /> Delete recording</button>}</div></div>
+          <video ref={videoRef} controls className="mt-3 max-h-[520px] w-full rounded-xl bg-black" src={`/api/ai-interviews/${id}/recording`} />
+        </section>
+      )}
+
       <section className="ai-print-card grid gap-5 rounded-2xl border border-slate-200 bg-white p-5 md:grid-cols-[1fr_220px] print:grid-cols-[1fr_160px] print:p-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-950">
@@ -357,6 +364,7 @@ export default function AiInterviewReport({ id }: { id: number }) {
                 </div>
               </div>
               <div className="mt-2 text-xs font-semibold uppercase text-slate-500">
+                {answer.generated_by_ai ? "AI-generated" : "Recruiter-authored"} ·{" "}
                 {answer.skill_name} ·{" "}
                 {answer.adaptive_depth || answer.difficulty}
                 {answer.adaptive_strategy
@@ -478,7 +486,7 @@ export default function AiInterviewReport({ id }: { id: number }) {
         </section>
       )}
 
-      {interview.video_status === "UPLOADED" && (
+      {false && interview.video_status === "UPLOADED" && data.recording_available && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -514,6 +522,9 @@ export default function AiInterviewReport({ id }: { id: number }) {
             src={`/api/ai-interviews/${id}/recording`}
           />
         </section>
+      )}
+      {interview.video_status === "UPLOADED" && data.recording_available === false && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 print:hidden"><strong>Recording storage needs attention.</strong><p className="mt-1">{data.recording_availability_reason || "The physical recording cannot be read from this web service."}</p></div>
       )}
       {interview.video_status === "DELETED_BY_RECRUITER" && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 print:hidden">

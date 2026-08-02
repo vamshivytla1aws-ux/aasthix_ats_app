@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requirePermission } from "@/lib/rbac";
 import { canAccessAiInterview } from "@/lib/aiInterviews/access";
+import { getRecordingStat } from "@/lib/aiInterviews/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET(
       [id],
     ),
     query(
-      `SELECT q.order_number,q.question_text,q.skill_name,q.difficulty,q.expected_points_json,q.max_score,
+      `SELECT q.order_number,q.question_text,q.skill_name,q.difficulty,q.expected_points_json,q.max_score,q.generated_by_ai,
                   q.adaptive_strategy,q.source_type,q.source_reference,q.reason_for_asking,q.project_name,
                   q.expected_signals_json,q.adaptive_depth,q.runtime_generated,q.triggering_answer_id,
                   a.transcript,a.duration_seconds,a.score,a.strengths_json,a.missing_points_json,a.evaluator_feedback,a.adaptive_analysis_json
@@ -55,12 +56,25 @@ export async function GET(
     },
     {},
   );
+  const interviewRow = interview.rows[0] as Record<string, unknown>;
+  let recordingAvailable = false;
+  let recordingAvailabilityReason: string | null = null;
+  if (interviewRow.video_status === "UPLOADED" && interviewRow.recording_path) {
+    try {
+      await getRecordingStat(String(interviewRow.recording_path));
+      recordingAvailable = true;
+    } catch {
+      recordingAvailabilityReason = "The database says the recording was uploaded, but this web service cannot read the physical file. Check the Railway volume mount and storage-owner service.";
+    }
+  }
   return NextResponse.json({
-    interview: interview.rows[0],
+    interview: interviewRow,
     answers: answers.rows,
     evaluation: evaluation.rows[0] || null,
     events: events.rows,
     integrity_counts: counts,
+    recording_available: recordingAvailable,
+    recording_availability_reason: recordingAvailabilityReason,
     capabilities: {
       can_delete_recording:
         auth.access.permissions["ai_interviews.delete_recording"] === true,

@@ -7,6 +7,12 @@ import { matchCacheKey } from "@/lib/aiMatcher/matchCache";
 import { getRedisJson, setRedisJson } from "@/lib/services/cacheService";
 import { aiMatchingConfig } from "@/lib/config/aiMatching";
 import type { AiEvaluationResult } from "@/lib/aiMatcher/evaluateCandidate";
+import {
+  applyPrimaryDomainGate,
+  evaluatePrimaryDomainGate,
+  MATCH_RUBRIC_VERSION,
+  MATCH_SCORING_POLICY_VERSION,
+} from "@/lib/singleMatch/domainGate";
 
 const JD_MAX = 1000;
 const RESUME_MAX = 800;
@@ -27,6 +33,7 @@ export type BatchCandidateOut = {
   match_score: number;
   decision: string;
   summary?: string;
+  scoring_unavailable?: boolean;
 };
 
 function sleep(ms: number): Promise<void> {
@@ -35,20 +42,22 @@ function sleep(ms: number): Promise<void> {
 
 function clampScore(n: unknown): number {
   const x = Number(n);
-  if (!Number.isFinite(x)) return 60;
+  if (!Number.isFinite(x)) return 0;
   return Math.max(0, Math.min(100, Math.round(x)));
 }
 
 function fallbackForAll(inputs: BatchCandidateIn[]): BatchCandidateOut[] {
   return inputs.map((c) => ({
     id: String(c.id),
-    match_score: 60,
-    decision: "Hold",
+    match_score: 0,
+    decision: "Reject",
+    summary: "Scoring unavailable. No hiring score was produced.",
+    scoring_unavailable: true,
   }));
 }
 
 function redisKeyForCandidate(jd: string, resumeFull: string): string {
-  return `ai:match:${matchCacheKey(jd, resumeFull)}`;
+  return `ai:match:${matchCacheKey(jd, resumeFull, `${batchModel()}:${MATCH_SCORING_POLICY_VERSION}:${MATCH_RUBRIC_VERSION}`)}`;
 }
 
 /**
@@ -139,7 +148,7 @@ async function callOpenAiBatch(jdTrim: string, inputs: BatchCandidateIn[]): Prom
       const sid = String(c.id);
       const hit = byId.get(sid);
       if (hit) out.push(hit);
-      else out.push({ id: sid, match_score: 60, decision: "Hold" });
+      else out.push({ id: sid, match_score: 0, decision: "Reject", summary: "Scoring unavailable. No hiring score was produced.", scoring_unavailable: true });
     }
     return out;
   };
@@ -184,14 +193,27 @@ export async function evaluateBatch(jdFull: string, candidates: BatchCandidateIn
   for (let i = 0; i < uncached.length; i++) {
     const c = uncached[i]!;
     const sid = String(c.id);
-    const b = fresh[i] ?? { id: sid, match_score: 60, decision: "Hold" };
+    const b = fresh[i] ?? { id: sid, match_score: 0, decision: "Reject", summary: "Scoring unavailable. No hiring score was produced.", scoring_unavailable: true };
+    const domainGate = evaluatePrimaryDomainGate({ jobTitle: "", jobDescription: jdFull, mustHave: [], resumeText: c.resumeText });
+    const gatedScore = b.scoring_unavailable ? 0 : applyPrimaryDomainGate(b.match_score, domainGate);
+    const gatedDecision = b.scoring_unavailable
+      ? "Reject"
+      : domainGate?.decision_ceiling === "Reject"
+        ? "Reject"
+        : domainGate?.decision_ceiling === "Hold" && b.decision === "Proceed to Interview"
+          ? "Hold"
+          : b.decision;
+    fresh[i] = { ...b, match_score: gatedScore, decision: gatedDecision };
     const ev: AiEvaluationResult = {
       candidate_name: String(c.name || "Unknown").trim() || "Unknown",
-      match_score: b.match_score,
-      decision: b.decision,
+      match_score: gatedScore,
+      decision: gatedDecision,
       strengths: [],
       gaps: [],
       risks: [],
+      scoring_unavailable: b.scoring_unavailable,
+      scoring_policy_version: MATCH_SCORING_POLICY_VERSION,
+      rubric_version: MATCH_RUBRIC_VERSION,
       summary: b.summary || "—",
     };
     await setRedisJson(redisKeyForCandidate(jdFull, c.resumeText), ev, aiMatchingConfig.cacheTtlSec);
@@ -203,6 +225,6 @@ export async function evaluateBatch(jdFull: string, candidates: BatchCandidateIn
     if (mem) return batchOutToCandidateOut(mem, sid);
     const idx = uncached.findIndex((u) => String(u.id) === sid);
     if (idx >= 0 && fresh[idx]) return fresh[idx]!;
-    return { id: sid, match_score: 60, decision: "Hold" };
+    return { id: sid, match_score: 0, decision: "Reject", summary: "Scoring unavailable. No hiring score was produced.", scoring_unavailable: true };
   });
 }

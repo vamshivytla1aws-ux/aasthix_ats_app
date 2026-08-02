@@ -20,6 +20,8 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search")?.trim() || "";
+    const limit = Math.min(200, Math.max(20, Number(searchParams.get("limit") || 100)));
+    const cursor = searchParams.get("cursor");
 
     const res = await query(
       `WITH member_conversations AS (
@@ -110,8 +112,10 @@ export async function GET(request: Request) {
        LEFT JOIN pin_counts pc ON pc.conversation_id = mc.id
        LEFT JOIN last_messages lm ON lm.conversation_id = mc.id
        LEFT JOIN member_lists ml ON ml.conversation_id = mc.id
-       ORDER BY mc.updated_at DESC`,
-      [access.user_id]
+       WHERE ($2::timestamptz IS NULL OR mc.updated_at < $2::timestamptz)
+       ORDER BY mc.updated_at DESC
+       LIMIT $3`,
+      [access.user_id, cursor || null, search ? 200 : limit]
     );
 
     let conversations: Array<Record<string, unknown>> = (res.rows as Array<Record<string, unknown>>).map((row) => {
@@ -137,7 +141,8 @@ export async function GET(request: Request) {
       });
     }
 
-    return NextResponse.json({ conversations });
+    const nextCursor = conversations.length >= limit ? String(conversations[conversations.length - 1]?.updated_at || "") || null : null;
+    return NextResponse.json({ conversations, next_cursor: nextCursor });
   } catch (error) {
     console.error("chat/conversations GET", error);
     return NextResponse.json({ error: "Failed to load conversations" }, { status: 500 });

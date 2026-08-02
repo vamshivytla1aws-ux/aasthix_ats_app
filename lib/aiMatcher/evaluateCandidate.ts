@@ -8,6 +8,12 @@ import { getAiModelConfig } from "@/lib/ai/modelConfig";
 import { getMatchCache, matchCacheKey, setMatchCache } from "@/lib/aiMatcher/matchCache";
 import { isCompleteCategoryScores, reconcileOverallPercentage } from "@/lib/matchPipeline/scorer";
 import type { AiCategoryScores } from "@/lib/matchPipeline/types";
+import {
+  applyPrimaryDomainGate,
+  evaluatePrimaryDomainGate,
+  MATCH_RUBRIC_VERSION,
+  MATCH_SCORING_POLICY_VERSION,
+} from "@/lib/singleMatch/domainGate";
 
 export type AiEvaluationResult = {
   candidate_name: string;
@@ -18,6 +24,9 @@ export type AiEvaluationResult = {
   risks: string[];
   summary: string;
   category_scores?: AiCategoryScores;
+  scoring_unavailable?: boolean;
+  scoring_policy_version?: string;
+  rubric_version?: string;
 };
 
 function clampInt(n: unknown, fallback: number): number {
@@ -69,12 +78,15 @@ function normalizeDecision(
 function aiTemporarilyUnavailable(candidateNameHint?: string, debugNote?: string): AiEvaluationResult {
   return {
     candidate_name: String(candidateNameHint || "Unknown").trim() || "Unknown",
-    match_score: 60,
-    decision: "Hold",
+    match_score: 0,
+    decision: "Reject",
     strengths: [],
     gaps: [],
     risks: process.env.MATCH_DEBUG === "1" && debugNote ? [debugNote] : [],
-    summary: "AI temporarily unavailable",
+    summary: "Scoring unavailable. No hiring score was produced.",
+    scoring_unavailable: true,
+    scoring_policy_version: MATCH_SCORING_POLICY_VERSION,
+    rubric_version: MATCH_RUBRIC_VERSION,
   };
 }
 
@@ -92,26 +104,30 @@ function applyEvidenceBoost(
   resume: string,
   jd: string
 ): number {
-  const t = `${resume}\n${jd}`.toLowerCase();
-  const marketingSignals =
+  const resumeText = resume.toLowerCase();
+  const jdText = jd.toLowerCase();
+  const marketingResume =
     /campaign\s*analytics|marketing\s*analytics|marketing\s*insights|funnel|customer\s*journey|attribution|\broas\b|\bcac\b|marketing\s*performance|revenue.{0,40}marketing|marketing.{0,40}revenue|growth\s*marketing/.test(
-      t
+      resumeText
     );
-  const aiSignals =
+  const marketingJd = /marketing\s*analytics|marketing\s*insights|funnel|customer\s*journey|attribution|\broas\b|\bcac\b/.test(jdText);
+  const aiResume =
     /\b(llm|large language model|langgraph|rag|agent(?:ic)?|multi[-\s]?llm|model\s*orchestration|prompt engineering|vector database|openai|anthropic|gemini|perplexity)\b/.test(
-      t
+      resumeText
     );
-  if (!marketingSignals && !aiSignals) return score;
+  const aiJd = /\b(llm|large language model|langgraph|rag|agent(?:ic)?|vector database|prompt engineering)\b/.test(jdText);
+  if (!(marketingResume && marketingJd) && !(aiResume && aiJd)) return score;
   const domain = categories?.domain_relevance ?? 0;
   if (domain < 55 && score < 55) return score;
-  return Math.min(100, score + 12);
+  return Math.min(100, score + 4);
 }
 
 /**
  * Evaluate one resume against one JD. Results are cached by hash(JD + resume) unless MATCH_AI_CACHE_DISABLED=1.
  */
 export async function evaluateCandidate(jd: string, resume: string, candidateNameHint?: string): Promise<AiEvaluationResult> {
-  const key = matchCacheKey(jd, resume);
+  const model = getAiModelConfig().resumeMatchModel;
+  const key = matchCacheKey(jd, resume, `${model}:${MATCH_SCORING_POLICY_VERSION}:${MATCH_RUBRIC_VERSION}`);
   const hit = getMatchCache<AiEvaluationResult>(key);
   if (hit) return hit;
 
@@ -231,15 +247,24 @@ ${resume.slice(0, 16_000)}`;
           match_score = reconcileOverallPercentage(match_score, category_scores);
         }
         match_score = applyEvidenceBoost(match_score, category_scores, resume, jd);
+        const domainGate = evaluatePrimaryDomainGate({ jobTitle: "", jobDescription: jd, mustHave: [], resumeText: resume });
+        match_score = applyPrimaryDomainGate(match_score, domainGate);
 
         const out: AiEvaluationResult = {
           candidate_name: String(parsed.candidate_name || candidateNameHint || "Unknown").trim() || "Unknown",
           match_score,
-          decision: normalizeDecision(String(parsed.decision || ""), match_score),
+          decision:
+            domainGate?.decision_ceiling === "Reject"
+              ? "Reject"
+              : domainGate?.decision_ceiling === "Hold"
+                ? "Hold"
+                : normalizeDecision(String(parsed.decision || ""), match_score),
           strengths: strArr(parsed.strengths).slice(0, 12),
           gaps: strArr(parsed.gaps).slice(0, 12),
           risks: strArr(parsed.risks).slice(0, 10),
           summary: String(parsed.summary || "").trim() || "—",
+          scoring_policy_version: MATCH_SCORING_POLICY_VERSION,
+          rubric_version: MATCH_RUBRIC_VERSION,
           ...(category_scores && isCompleteCategoryScores(category_scores) ? { category_scores } : {}),
         };
 

@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
     const tokenHash = hashInviteToken(token.trim());
     const invRes = await query(
-      `SELECT id, email, role, expires_at, accepted_at
+      `SELECT id, email, role, access_scope, expires_at, accepted_at, revoked_at, created_by_user_id
        FROM user_invites
        WHERE token_hash = $1`,
       [tokenHash]
@@ -45,10 +45,16 @@ export async function POST(request: Request) {
       role: string;
       expires_at: Date;
       accepted_at: Date | null;
+      revoked_at: Date | null;
+      access_scope: "own" | "team" | "all";
+      created_by_user_id: number | null;
     };
 
     if (inv.accepted_at) {
       return NextResponse.json({ error: "Invite already used" }, { status: 400 });
+    }
+    if (inv.revoked_at) {
+      return NextResponse.json({ error: "Invite has been revoked" }, { status: 400 });
     }
     if (new Date(inv.expires_at) < new Date()) {
       return NextResponse.json({ error: "Invite expired" }, { status: 400 });
@@ -67,10 +73,10 @@ export async function POST(request: Request) {
     try {
       await client.query("BEGIN");
       const userRes = await client.query(
-        `INSERT INTO users (full_name, email, password_hash, role)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO users (full_name, email, password_hash, role, access_scope, invited_by_user_id, first_login_completed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
          RETURNING id, email, full_name`,
-        [full_name.trim(), email, password_hash, inv.role]
+        [full_name.trim(), email, password_hash, inv.role, inv.access_scope, inv.created_by_user_id]
       );
       user = userRes.rows[0] as { id: number; email: string; full_name: string };
 

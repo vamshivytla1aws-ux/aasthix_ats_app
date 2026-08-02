@@ -1,6 +1,7 @@
 "use client";
 
 import React, { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { X, RefreshCw, Users, Sparkles, TrendingUp, Loader2, UserRound } from "lucide-react";
@@ -228,6 +229,8 @@ export default function JobMatchHubModal({
 
   useEffect(() => {
     if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (singleCheckOpen) {
@@ -237,7 +240,10 @@ export default function JobMatchHubModal({
       onClose();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
   }, [open, onClose, singleCheckOpen]);
 
   useEffect(() => {
@@ -489,7 +495,7 @@ function selectAiShortlisted() {
 
   const jd = fullJob?.description || job.description || "";
 
-  return (
+  return createPortal(
     <>
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6">
       <button
@@ -1275,6 +1281,7 @@ function selectAiShortlisted() {
       onClose={() => setSingleCheckOpen(false)}
       onHistorySaved={loadSingleMatchHistoryOnly}
     />
-    </>
+    </>,
+    document.body,
   );
 }

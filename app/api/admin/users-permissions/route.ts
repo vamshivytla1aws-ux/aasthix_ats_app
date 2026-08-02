@@ -5,7 +5,7 @@ import {
   BOARD_PERMISSION_KEYS,
   getEffectivePermissions,
   normalizeRole,
-  requireAdmin,
+  requireWorkspaceOwner,
 } from "@/lib/rbac";
 import { writeAuditLog } from "@/lib/auditLog";
 
@@ -14,11 +14,13 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const auth = await requireAdmin();
+    const auth = await requireWorkspaceOwner();
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const usersRes = await query(
-      `SELECT id, full_name, email, role FROM users ORDER BY created_at ASC, id ASC`
+      `SELECT id, full_name, email, role, COALESCE(access_scope, 'own') AS access_scope,
+              COALESCE(is_active, true) AS is_active, deactivated_at
+       FROM users ORDER BY created_at ASC, id ASC`
     );
     const permsRes = await query(
       `SELECT user_id, permission_key, allowed FROM user_permissions
@@ -55,14 +57,17 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const auth = await requireAdmin();
+    const auth = await requireWorkspaceOwner();
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await request.json();
-    const { user_id, role, permissions } = body as {
+    const { user_id, role, permissions, access_scope, is_active, revoke_sessions } = body as {
       user_id?: number;
       role?: string;
       permissions?: Record<string, boolean>;
+      access_scope?: "own" | "team" | "all";
+      is_active?: boolean;
+      revoke_sessions?: boolean;
     };
 
     if (!user_id || !Number.isFinite(Number(user_id))) {
@@ -70,6 +75,12 @@ export async function PATCH(request: Request) {
     }
 
     const uid = Number(user_id);
+    const targetRes = await query(`SELECT id, role, email, COALESCE(is_active, true) AS is_active FROM users WHERE id=$1`, [uid]);
+    if (!targetRes.rowCount) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    const target = targetRes.rows[0] as { role: string; email: string; is_active: boolean };
+    if (uid === auth.access.user_id && is_active === false) {
+      return NextResponse.json({ error: "You cannot deactivate your own owner account" }, { status: 409 });
+    }
 
     if (role !== undefined) {
       const r = String(role).toLowerCase();
@@ -79,12 +90,34 @@ export async function PATCH(request: Request) {
           { status: 400 }
         );
       }
+      if (r === "workspace_owner" && uid !== auth.access.user_id) {
+        return NextResponse.json({ error: "Use the protected owner-transfer workflow to assign workspace ownership" }, { status: 409 });
+      }
+      if (target.role === "workspace_owner" && r !== "workspace_owner") {
+        return NextResponse.json({ error: "The final workspace owner cannot be demoted" }, { status: 409 });
+      }
       await query(`UPDATE users SET role = $2 WHERE id = $1`, [uid, r]);
       await writeAuditLog({
         actorUserId: auth.access.user_id,
         action: "rbac.role_updated",
         metadata: { target_user_id: uid, role: r },
       });
+    }
+
+    if (access_scope !== undefined) {
+      if (!["own", "team", "all"].includes(access_scope)) return NextResponse.json({ error: "Invalid access scope" }, { status: 400 });
+      await query(`UPDATE users SET access_scope=$2 WHERE id=$1`, [uid, access_scope]);
+      await writeAuditLog({ actorUserId: auth.access.user_id, action: "rbac.scope_updated", metadata: { target_user_id: uid, access_scope } });
+    }
+
+    if (is_active !== undefined) {
+      await query(`UPDATE users SET is_active=$2, deactivated_at=CASE WHEN $2 THEN NULL ELSE NOW() END, token_version=CASE WHEN $2 THEN token_version ELSE token_version+1 END WHERE id=$1`, [uid, Boolean(is_active)]);
+      await writeAuditLog({ actorUserId: auth.access.user_id, action: is_active ? "rbac.user_reactivated" : "rbac.user_deactivated", metadata: { target_user_id: uid } });
+    }
+
+    if (revoke_sessions) {
+      await query(`UPDATE users SET token_version=token_version+1 WHERE id=$1`, [uid]);
+      await writeAuditLog({ actorUserId: auth.access.user_id, action: "rbac.sessions_revoked", metadata: { target_user_id: uid } });
     }
 
     if (permissions && typeof permissions === "object") {

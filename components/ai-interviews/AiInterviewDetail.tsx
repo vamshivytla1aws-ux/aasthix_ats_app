@@ -11,6 +11,7 @@ import {
   Mail,
   RefreshCw,
   Save,
+  Plus,
   ShieldCheck,
   Trash2,
 } from "lucide-react";
@@ -29,6 +30,7 @@ export default function AiInterviewDetail({ id }: { id: number }) {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [recruiterQuestions, setRecruiterQuestions] = useState<Question[]>([]);
   const [link, setLink] = useState("");
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
@@ -39,6 +41,7 @@ export default function AiInterviewDetail({ id }: { id: number }) {
     if (!r.ok) throw new Error(d.error || "Failed to load");
     setData(d);
     setQuestions(d.questions || []);
+    setRecruiterQuestions(d.recruiter_questions || []);
   }, [id]);
   useEffect(() => {
     setLink(sessionStorage.getItem(`ai-interview-link:${id}`) || "");
@@ -92,6 +95,16 @@ export default function AiInterviewDetail({ id }: { id: number }) {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ questions: payload }),
+    });
+  }
+  function blankQuestion(): Question {
+    return { question_text: "", skill_name: "General", difficulty: "INTERMEDIATE", expected_points_json: ["Relevant and accurate explanation"], scoring_rubric_json: [{ criterion: "Accuracy and relevance", weight: 100 }], max_score: 10 };
+  }
+  async function saveRecruiterQuestions() {
+    await action("manual-save", `/api/ai-interviews/${id}/recruiter-questions`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questions: recruiterQuestions.map((q) => ({ question: q.question_text, skill: q.skill_name, difficulty: q.difficulty, expectedPoints: q.expected_points_json, scoringRubric: q.scoring_rubric_json, maxScore: q.max_score })) }),
     });
   }
   async function deleteInterview() {
@@ -326,6 +339,11 @@ export default function AiInterviewDetail({ id }: { id: number }) {
           </div>
           {editable && (
             <div className="flex gap-2">
+              {interview.interview_mode !== "ADAPTIVE" && (
+                <button type="button" onClick={() => setQuestions((prev) => [...prev, blankQuestion()])} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold">
+                  <Plus className="h-4 w-4" /> Add manual question
+                </button>
+              )}
               <button
                 disabled={!!busy}
                 onClick={() =>
@@ -434,6 +452,15 @@ export default function AiInterviewDetail({ id }: { id: number }) {
           ))}
         </div>
       </section>
+      {interview.interview_mode === "ADAPTIVE" && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h2 className="font-bold text-slate-950">Required recruiter questions</h2><p className="text-sm text-slate-500">These are queued into the adaptive interview and remain recruiter-authored in the report.</p></div>
+            {editable && <div className="flex gap-2"><button type="button" onClick={() => setRecruiterQuestions((prev) => [...prev, blankQuestion()])} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"><Plus className="h-4 w-4" /> Add question</button><button type="button" disabled={!!busy} onClick={() => void saveRecruiterQuestions()} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white"><Save className="h-4 w-4" /> Save manual questions</button></div>}
+          </div>
+          <div className="mt-4 space-y-3">{recruiterQuestions.map((q, index) => <article key={q.id || index} className="rounded-xl border border-slate-200 p-4"><div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-blue-700"><span>Recruiter question {index + 1}</span>{editable && <button type="button" onClick={() => setRecruiterQuestions((prev) => prev.filter((_, i) => i !== index))} className="rounded-lg border border-rose-200 p-1.5 text-rose-600"><Trash2 className="h-4 w-4" /></button>}</div><textarea disabled={!editable} rows={3} value={q.question_text} onChange={(e) => setRecruiterQuestions((prev) => prev.map((item, i) => i === index ? { ...item, question_text: e.target.value } : item))} className="w-full rounded-xl border border-slate-200 p-3 text-sm disabled:bg-slate-50" /></article>)}</div>
+        </section>
+      )}
       <div className="flex flex-wrap justify-end gap-2">
         {["FAILED", "PROCESSING"].includes(interview.status) &&
           interview.evaluation_status !== "COMPLETED" && (

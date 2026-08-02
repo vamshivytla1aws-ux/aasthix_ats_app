@@ -210,7 +210,26 @@ export async function POST(request: Request) {
     });
   }
 
-  const next = toStoredQuestion(turn.nextQuestion);
+  const pendingRecruiter = await query(
+    `SELECT * FROM ai_interview_recruiter_questions
+     WHERE interview_id=$1 AND consumed_question_id IS NULL ORDER BY sort_order,id LIMIT 1`,
+    [interview.id],
+  );
+  const recruiterRow = pendingRecruiter.rows[0] as any | undefined;
+  const next = recruiterRow
+    ? {
+        question: String(recruiterRow.question_text),
+        skill: String(recruiterRow.skill_name || "General"),
+        dbDifficulty: String(recruiterRow.difficulty || "INTERMEDIATE"),
+        difficulty: "IMPLEMENTATION",
+        expectedSignals: Array.isArray(recruiterRow.expected_points_json) ? recruiterRow.expected_points_json.map(String) : [],
+        strategy: "TEST_MANDATORY_JD_SKILL",
+        sourceType: "RECRUITER",
+        sourceReference: "Recruiter-authored required question",
+        reasonForAsking: "This question was explicitly added by the recruiter.",
+        projectName: null,
+      }
+    : toStoredQuestion(turn.nextQuestion);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -241,7 +260,7 @@ export async function POST(request: Request) {
         next.skill,
         next.dbDifficulty,
         JSON.stringify(next.expectedSignals),
-        turn.mode === "AI",
+        recruiterRow ? false : turn.mode === "AI",
         questionId,
         next.strategy,
         next.sourceType,
@@ -253,6 +272,9 @@ export async function POST(request: Request) {
         result.rows[0].id,
       ],
     );
+    if (recruiterRow) {
+      await client.query(`UPDATE ai_interview_recruiter_questions SET consumed_question_id=$2,updated_at=NOW() WHERE id=$1`, [recruiterRow.id, inserted.rows[0].id]);
+    }
     await client.query(
       `UPDATE ai_interviews SET adaptive_state_json=$2::jsonb,skill_coverage_json=$3::jsonb,updated_at=NOW() WHERE id=$1`,
       [

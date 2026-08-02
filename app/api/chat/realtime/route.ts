@@ -63,9 +63,18 @@ export async function GET(request: Request) {
                m.content,
                m.created_at,
                m.parent_message_id,
+               m.is_system,
+               m.attachment_type,
+               m.attachment_url,
+               m.attachment_name,
+               m.attachment_size,
+               m.delivery_state,
                m.edited_at,
-               m.deleted_at
+               m.deleted_at,
+               u.full_name AS sender_name,
+               u.email AS sender_email
              FROM messages m
+             JOIN users u ON u.id = m.sender_id
              JOIN conversation_members cm
                ON cm.conversation_id = m.conversation_id
               AND cm.user_id = $1

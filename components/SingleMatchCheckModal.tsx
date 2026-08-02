@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { SingleMatchHistoryTable } from "@/components/SingleMatchHistoryTable";
 import { SingleMatchResultDetails } from "@/components/SingleMatchResultDetails";
@@ -62,6 +63,11 @@ function toPayload(run: SingleMatchHistoryRun): SingleMatchCheckResultPayload {
     red_flags: run.red_flags ?? [],
     recruiter_summary: run.recruiter_summary ?? null,
     candidate_feedback: run.candidate_feedback ?? null,
+    model_used: run.model_used ?? null,
+    scoring_policy_version: run.scoring_policy_version ?? null,
+    rubric_version: run.rubric_version ?? null,
+    domain_gate: run.domain_gate ?? null,
+    applied_caps: run.applied_caps ?? [],
     resume_recovery_attempted: run.resume_recovery_attempted ?? false,
     resume_recovery_succeeded: run.resume_recovery_succeeded ?? false,
     resume_recovery_reason: run.resume_recovery_reason ?? null,
@@ -118,6 +124,20 @@ export default function SingleMatchCheckModal({
     if (!open || !jobId) return;
     void loadModalHistory();
   }, [open, jobId, loadModalHistory]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setDebouncedSearch(search.trim()), 320);
@@ -243,7 +263,7 @@ export default function SingleMatchCheckModal({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <>
       <button
         type="button"
@@ -404,6 +424,7 @@ export default function SingleMatchCheckModal({
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

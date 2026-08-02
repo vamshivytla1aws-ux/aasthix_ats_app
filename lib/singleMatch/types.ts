@@ -25,6 +25,7 @@ export type SingleMatchRequirementBucket =
 export type SingleMatchRequirementPriority = "core" | "important" | "nice_to_have";
 
 export type SingleMatchEvidenceQuality = "strong" | "mixed" | "limited" | "insufficient";
+export type SingleMatchDomainEvidenceDepth = "hands_on" | "transferable" | "basics" | "none";
 
 export type SingleMatchFitLevel = "Strong Match" | "Good Match" | "Moderate Match" | "Weak Match" | "Not Recommended";
 
@@ -93,6 +94,18 @@ export type SingleMatchCheckResultPayload = {
   recruiter_summary?: string | null;
   candidate_feedback?: string | null;
   model_used?: string | null;
+  scoring_policy_version?: string | null;
+  rubric_version?: string | null;
+  domain_gate?: {
+    key: string;
+    label: string;
+    evidence_depth: SingleMatchDomainEvidenceDepth;
+    evidence: string[];
+    cap: number | null;
+    decision_ceiling: string;
+    reason: string;
+  } | null;
+  applied_caps?: Array<{ code: string; limit: number; reason: string }>;
   fallback_review_used?: boolean;
   resume_recovery_attempted?: boolean;
   resume_recovery_succeeded?: boolean;
@@ -123,6 +136,10 @@ export type SingleMatchCheckResultPayload = {
     semantic_matches?: Array<{ requirement: string; similarity_score: number; evidence: string[] }>;
     final_gaps_after_gap_audit?: Array<{ requirement: string; status: string; reason: string }>;
     caps_applied?: Array<{ code: string; limit: number; reason: string }>;
+    scoring_policy_version?: string;
+    rubric_version?: string;
+    model_used?: string | null;
+    domain_gate?: SingleMatchCheckResultPayload["domain_gate"];
     final_score?: number;
   };
 };
@@ -176,6 +193,10 @@ export type SingleMatchHistoryRun = {
   recruiter_summary?: string | null;
   candidate_feedback?: string | null;
   model_used?: string | null;
+  scoring_policy_version?: string | null;
+  rubric_version?: string | null;
+  domain_gate?: SingleMatchCheckResultPayload["domain_gate"];
+  applied_caps?: SingleMatchCheckResultPayload["applied_caps"];
   fallback_review_used?: boolean;
   resume_recovery_attempted?: boolean;
   resume_recovery_succeeded?: boolean;

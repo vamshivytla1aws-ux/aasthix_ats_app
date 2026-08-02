@@ -81,6 +81,7 @@ export type AuthAccess = {
   email: string;
   role: string;
   permissions: Record<string, boolean>;
+  access_scope: "own" | "team" | "all";
 };
 
 function allFalse(): Record<BoardPermissionKey, boolean> {
@@ -259,6 +260,7 @@ const BASELINE_HR = mergeBaseline({
 
 export function baselineForRole(role: string): Record<BoardPermissionKey, boolean> {
   switch (role) {
+    case "workspace_owner":
     case "admin": {
       const b = allFalse();
       for (const k of BOARD_PERMISSION_KEYS) b[k] = true;
@@ -282,6 +284,7 @@ export function baselineForRole(role: string): Record<BoardPermissionKey, boolea
 /** Normalize DB role string to canonical role id. */
 export function normalizeRole(role: string | null | undefined): string {
   const r = (role || "user").trim().toLowerCase();
+  if (r === "workspace_owner" || r === "owner") return "workspace_owner";
   if (r === "admin" || r === "administrator") return "admin";
   if (r === "hr") return "hr";
   if (r === "recruiter") return "recruiter";
@@ -302,7 +305,7 @@ export function getEffectivePermissions(
   const role = normalizeRole(roleRaw);
   const permissions: Record<string, boolean> = {};
   for (const key of BOARD_PERMISSION_KEYS) {
-    if (role === "admin") {
+    if (role === "workspace_owner") {
       permissions[key] = true;
       continue;
     }
@@ -322,13 +325,17 @@ export async function getAuthAccess() {
   if (!auth) return null;
 
   const userRes = await query(
-    `SELECT id, email, role FROM users WHERE id = $1 LIMIT 1`,
+    `SELECT id, email, role, COALESCE(is_active, true) AS is_active,
+            COALESCE(access_scope, 'own') AS access_scope, COALESCE(token_version, 1) AS token_version
+     FROM users WHERE id = $1 LIMIT 1`,
     [auth.user_id]
   );
   if (userRes.rowCount === 0) return null;
 
-  const row = userRes.rows[0] as { id: number; email: string; role: string | null };
-  const role = normalizeRole(row.role);
+  const row = userRes.rows[0] as { id: number; email: string; role: string | null; is_active: boolean; access_scope: "own" | "team" | "all"; token_version: number };
+  if (!row.is_active || Number(auth.token_version || 1) !== Number(row.token_version || 1)) return null;
+  const configuredOwner = process.env.WORKSPACE_OWNER_EMAIL?.trim().toLowerCase();
+  const role = configuredOwner && row.email.trim().toLowerCase() === configuredOwner ? "workspace_owner" : normalizeRole(row.role);
 
   const explicit = new Map<string, boolean>();
   try {
@@ -345,27 +352,34 @@ export async function getAuthAccess() {
     console.warn("[rbac] user_permissions table unavailable; falling back to role baseline", error);
   }
 
-  const permissions = getEffectivePermissions(row.role, explicit);
+  const permissions = getEffectivePermissions(role, explicit);
 
   return {
     user_id: row.id,
     email: row.email,
     role,
     permissions,
+    access_scope: role === "workspace_owner" ? "all" : row.access_scope,
   } satisfies AuthAccess;
 }
 
 export async function requireAdmin() {
   const access = await getAuthAccess();
   if (!access) return { ok: false as const, status: 401, error: "Unauthorized" };
-  if (access.role !== "admin") return { ok: false as const, status: 403, error: "Forbidden" };
+  if (access.role !== "admin" && access.role !== "workspace_owner") return { ok: false as const, status: 403, error: "Forbidden" };
+  return { ok: true as const, access };
+}
+
+export async function requireWorkspaceOwner() {
+  const access = await getAuthAccess();
+  if (!access) return { ok: false as const, status: 401, error: "Unauthorized" };
+  if (access.role !== "workspace_owner") return { ok: false as const, status: 403, error: "Workspace owner access required" };
   return { ok: true as const, access };
 }
 
 export async function requirePermission(permissionKey: BoardPermissionKey) {
   const access = await getAuthAccess();
   if (!access) return { ok: false as const, status: 401, error: "Unauthorized" };
-  if (access.role === "admin") return { ok: true as const, access };
   if (!access.permissions[permissionKey]) return { ok: false as const, status: 403, error: "Forbidden" };
   return { ok: true as const, access };
 }

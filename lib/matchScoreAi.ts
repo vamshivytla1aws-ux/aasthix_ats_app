@@ -12,6 +12,13 @@ import {
 } from "@/lib/matchPipeline/marketingInsightsRubric";
 import { reconcileOverallPercentage } from "@/lib/matchPipeline/scorer";
 import type { AiCategoryScores, ParsedMatchProfile } from "@/lib/matchPipeline/types";
+import {
+  applyPrimaryDomainGate,
+  evaluatePrimaryDomainGate,
+  MATCH_RUBRIC_VERSION,
+  MATCH_SCORING_POLICY_VERSION,
+} from "@/lib/singleMatch/domainGate";
+import type { SingleMatchDomainGate } from "@/lib/singleMatch/domainGate";
 
 export type { AiCategoryScores, ParsedMatchProfile } from "@/lib/matchPipeline/types";
 
@@ -36,6 +43,10 @@ export type AiMatchResult = {
   parsed_profile?: ParsedMatchProfile;
   model_used?: string;
   fallback_review_used?: boolean;
+  scoring_policy_version?: string;
+  rubric_version?: string;
+  domain_gate?: SingleMatchDomainGate | null;
+  applied_caps?: Array<{ code: string; limit: number; reason: string }>;
 };
 
 type CandidateSnippet = {
@@ -464,8 +475,24 @@ ${candBlock}`
               matched.push(evidence);
             }
           }
-          const evidenceBonus = Math.min(20, provenRules.length * 3 + (removedFalseGaps > 0 ? 4 : 0));
+          // Reconciliation repairs false gaps but cannot replace requirement-level scoring.
+          const evidenceBonus = Math.min(6, provenRules.length + (removedFalseGaps > 0 ? 2 : 0));
           overallScore = Math.min(100, overallScore + evidenceBonus);
+        }
+      }
+
+      const domainGate = evaluatePrimaryDomainGate({
+        jobTitle: input.jobTitle,
+        jobDescription: input.jobDescriptionExcerpt,
+        mustHave: input.mustHave,
+        resumeText,
+      });
+      overallScore = applyPrimaryDomainGate(overallScore, domainGate);
+      if (domainGate && domainGate.evidence_depth !== "hands_on") {
+        const risk = domainGate.reason;
+        if (!risk_flags.some((item) => item.toLowerCase() === risk.toLowerCase())) risk_flags.unshift(risk);
+        if (domainGate.evidence_depth === "none" && !missing.some((item) => item.toLowerCase().includes(domainGate.label.toLowerCase()))) {
+          missing.unshift(`No direct production evidence for ${domainGate.label}`);
         }
       }
 
@@ -474,6 +501,8 @@ ${candBlock}`
       if (!recruiter_decision && r.recruiter_decision === "Proceed to Interview") recruiter_decision = "Proceed to Interview";
       if (!recruiter_decision && r.recruiter_decision === "Hold") recruiter_decision = "Hold";
       if (!recruiter_decision && r.recruiter_decision === "Reject") recruiter_decision = "Reject";
+      if (domainGate?.decision_ceiling === "Reject") recruiter_decision = "Reject";
+      else if (domainGate?.decision_ceiling === "Hold" && recruiter_decision === "Proceed to Interview") recruiter_decision = "Hold";
       if (!recruiter_decision) {
         if (overallScore >= 80) recruiter_decision = "Proceed to Interview";
         else if (overallScore >= 65) recruiter_decision = "Hold";
@@ -501,6 +530,12 @@ ${candBlock}`
         parsed_profile,
         model_used: modelUsed,
         fallback_review_used: fallbackReviewUsed,
+        scoring_policy_version: MATCH_SCORING_POLICY_VERSION,
+        rubric_version: MATCH_RUBRIC_VERSION,
+        domain_gate: domainGate,
+        applied_caps: domainGate?.cap != null
+          ? [{ code: "primary_domain_cap", limit: domainGate.cap, reason: domainGate.reason }]
+          : [],
       });
     }
     return map.size ? map : null;

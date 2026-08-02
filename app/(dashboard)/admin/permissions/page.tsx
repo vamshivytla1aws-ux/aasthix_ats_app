@@ -13,6 +13,8 @@ type UserRow = {
   email: string;
   role: string;
   permissions: Record<string, boolean>;
+  access_scope: "own" | "team" | "all";
+  is_active: boolean;
 };
 type HrmsSchemaDiagnostics = {
   status: "healthy" | "warning";
@@ -33,6 +35,9 @@ export default function AdminPermissionsPage() {
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<string>(INVITE_ROLES[0] ?? "recruiter");
+  const [inviteScope, setInviteScope] = useState<"own" | "team" | "all">("own");
+  const [userSearch, setUserSearch] = useState("");
+  const [advancedUserId, setAdvancedUserId] = useState<number | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<string | null>(null);
 
@@ -70,7 +75,7 @@ export default function AdminPermissionsPage() {
     load();
   }, []);
 
-  async function saveUser(id: number, patch: { role?: string; permissions?: Record<string, boolean> }) {
+  async function saveUser(id: number, patch: { role?: string; permissions?: Record<string, boolean>; access_scope?: "own" | "team" | "all"; is_active?: boolean; revoke_sessions?: boolean }) {
     setSaving(id);
     setError(null);
     try {
@@ -125,15 +130,12 @@ export default function AdminPermissionsPage() {
     setInviteMessage(null);
     setError(null);
     try {
-      const data = await apiFetchJson<{ inviteUrl?: string }>("/api/admin/invites", {
+      const data = await apiFetchJson<{ inviteUrl?: string; delivery?: { sent?: boolean; provider?: string; detail?: string } }>("/api/admin/invites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole, access_scope: inviteScope }),
       });
-      setInviteMessage("Invite created. Copy the link below and send it to the user.");
-      if (data.inviteUrl) {
-        setInviteMessage(`Invite link (copy): ${data.inviteUrl}`);
-      }
+      setInviteMessage(data.delivery?.sent ? `Invitation email sent via ${data.delivery.provider || "configured provider"}.` : `Invite created, but email delivery needs attention. ${data.delivery?.detail || data.inviteUrl || ""}`);
       setInviteEmail("");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to create invite";
@@ -216,6 +218,14 @@ export default function AdminPermissionsPage() {
               ))}
             </select>
           </div>
+          <div className="w-full sm:w-48">
+            <label className={UI.label}>Data scope</label>
+            <select className={UI.input} value={inviteScope} onChange={(event) => setInviteScope(event.target.value as "own" | "team" | "all")}>
+              <option value="own">Own records</option>
+              <option value="team">Assigned / team</option>
+              <option value="all">All records</option>
+            </select>
+          </div>
           <button type="submit" disabled={inviteBusy} className={UI.primaryButton}>
             {inviteBusy ? "Sending…" : "Create invite"}
           </button>
@@ -287,92 +297,20 @@ export default function AdminPermissionsPage() {
 
       {error ? <div className="text-sm text-red-600">{error}</div> : null}
 
-      {loading ? (
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm text-sm text-slate-600">Loading...</div>
-      ) : (
-        <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-[1100px] w-full text-sm lg:min-w-full">
-            <thead className="bg-slate-50">
-              <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">User</th>
-                <th className="px-4 py-3 w-[9rem]">Password</th>
-                <th className="px-4 py-3">Role</th>
-                {keys.map((k) => (
-                  <th key={k} className="px-4 py-3">
-                    {k}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className="border-b border-slate-100">
-                  <td className="px-4 py-3.5">
-                    <div className="font-semibold text-slate-900">{u.full_name}</div>
-                    <div className="text-xs text-slate-500">{u.email}</div>
-                  </td>
-                  <td className="px-4 py-3.5 align-top">
-                    <button
-                      type="button"
-                      className={UI.secondaryButton + " py-1.5 text-xs whitespace-nowrap"}
-                      onClick={() => {
-                        setPwUser(u);
-                        setPwNew("");
-                        setPwConfirm("");
-                        setPwMessage(null);
-                        setError(null);
-                      }}
-                    >
-                      Set password
-                    </button>
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <select
-                      value={u.role}
-                      disabled={saving === u.id}
-                      onChange={async (e) => {
-                        const role = e.target.value;
-                        setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, role } : x)));
-                        await saveUser(u.id, { role });
-                      }}
-                      className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 max-w-[11rem]"
-                    >
-                      {roles.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  {keys.map((k) => (
-                    <td key={`${u.id}-${k}`} className="px-4 py-3.5">
-                      <label className="inline-flex items-center gap-2 text-xs text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(u.permissions?.[k])}
-                          disabled={saving === u.id || u.role === "admin"}
-                          onChange={async (e) => {
-                            const allowed = e.target.checked;
-                            setUsers((prev) =>
-                              prev.map((x) =>
-                                x.id === u.id
-                                  ? { ...x, permissions: { ...(x.permissions || {}), [k]: allowed } }
-                                  : x
-                              )
-                            );
-                            await saveUser(u.id, { permissions: { [k]: allowed } });
-                          }}
-                        />
-                        Allow
-                      </label>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <section className={UI.card}>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold text-[var(--ats-text)]">Workspace users</h2><p className="text-sm text-[var(--ats-text-muted)]">Assign a role template and data scope. Use advanced access only for exceptions.</p></div><input className={`${UI.input} max-w-sm`} type="search" value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder="Search name or email" /></div>
+        {loading ? <div className="py-10 text-center text-sm text-[var(--ats-text-muted)]">Loading users...</div> : <div className="mt-4 space-y-3">{users.filter((user) => `${user.full_name} ${user.email}`.toLowerCase().includes(userSearch.toLowerCase())).map((u) => (
+          <article key={u.id} className="rounded-[var(--ats-radius-lg)] border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-4">
+            <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_180px_180px_auto] lg:items-center"><div><div className="flex items-center gap-2"><span className="font-semibold text-[var(--ats-text)]">{u.full_name}</span><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${u.is_active ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>{u.is_active ? "Active" : "Deactivated"}</span></div><div className="text-xs text-[var(--ats-text-muted)]">{u.email}</div></div>
+              <div><label className={UI.label}>Role template</label><select className={UI.select} value={u.role} disabled={saving === u.id || u.role === "workspace_owner"} onChange={async (event) => { const role=event.target.value; setUsers((prev)=>prev.map((item)=>item.id===u.id?{...item,role}:item)); await saveUser(u.id,{role}); }}>{roles.filter((role)=>role!=="workspace_owner"||u.role==="workspace_owner").map((role)=><option key={role} value={role}>{role.replace(/_/g," ")}</option>)}</select></div>
+              <div><label className={UI.label}>Data scope</label><select className={UI.select} value={u.access_scope || "own"} disabled={saving===u.id || u.role==="workspace_owner"} onChange={async(event)=>{const access_scope=event.target.value as "own"|"team"|"all";setUsers((prev)=>prev.map((item)=>item.id===u.id?{...item,access_scope}:item));await saveUser(u.id,{access_scope});}}><option value="own">Own records</option><option value="team">Assigned / team</option><option value="all">All records</option></select></div>
+              <div className="flex flex-wrap gap-2"><button type="button" className={UI.secondaryButton} onClick={()=>setAdvancedUserId(advancedUserId===u.id?null:u.id)}>Advanced access</button><button type="button" className={UI.secondaryButton} onClick={()=>{setPwUser(u);setPwNew("");setPwConfirm("");}}>Password</button><button type="button" className={UI.secondaryButton} disabled={u.role==="workspace_owner"} onClick={async()=>{await saveUser(u.id,{is_active:!u.is_active});setUsers((prev)=>prev.map((item)=>item.id===u.id?{...item,is_active:!u.is_active}:item));}}>{u.is_active?"Deactivate":"Reactivate"}</button></div>
+            </div>
+            <div className="mt-3 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-xs text-[var(--ats-text-muted)]"><strong className="text-[var(--ats-text)]">Effective access:</strong> {Object.values(u.permissions || {}).filter(Boolean).length} capabilities · {u.access_scope || "own"} data scope</div>
+            {advancedUserId===u.id?<div className="mt-3 border-t border-[var(--ats-border)] pt-3"><div className="mb-2 flex items-center justify-between"><span className="text-sm font-semibold">Per-user overrides</span><button className={UI.secondaryButton} onClick={()=>void saveUser(u.id,{revoke_sessions:true})}>Revoke active sessions</button></div><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{keys.map((key)=><label key={key} className="flex items-center gap-2 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-3 py-2 text-xs"><input type="checkbox" checked={Boolean(u.permissions?.[key])} disabled={saving===u.id||u.role==="workspace_owner"} onChange={async(event)=>{const allowed=event.target.checked;setUsers((prev)=>prev.map((item)=>item.id===u.id?{...item,permissions:{...item.permissions,[key]:allowed}}:item));await saveUser(u.id,{permissions:{[key]:allowed}});}}/><span>{key}</span></label>)}</div></div>:null}
+          </article>
+        ))}</div>}
+      </section>
     </div>
   );
 }

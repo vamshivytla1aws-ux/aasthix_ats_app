@@ -186,6 +186,14 @@ export function SingleMatchResultDetails({ result, modeLabel, loadedFromHistoryA
       </div>
 
       {result.summary ? <p className="mb-2 text-xs text-slate-600">{result.summary}</p> : null}
+      {result.domain_gate ? (
+        <div className={`mb-2 rounded-lg border px-3 py-2 text-xs ${result.domain_gate.evidence_depth === "hands_on" ? "border-emerald-200 bg-emerald-50 text-emerald-950" : result.domain_gate.evidence_depth === "none" ? "border-rose-200 bg-rose-50 text-rose-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>
+          <div className="font-semibold">Primary domain: {result.domain_gate.label} · {result.domain_gate.evidence_depth.replace("_", " ")}</div>
+          <p className="mt-1">{result.domain_gate.reason}</p>
+          {result.domain_gate.cap != null ? <p className="mt-1 font-semibold">Score cap applied: {result.domain_gate.cap}%</p> : null}
+          {result.domain_gate.evidence.length ? <ul className="mt-1 list-disc space-y-0.5 pl-4">{result.domain_gate.evidence.slice(0, 3).map((item) => <li key={item}>{item}</li>)}</ul> : null}
+        </div>
+      ) : null}
       {recoverySuccess ? (
         <div className="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900">
           <div className="font-semibold">{recoverySuccess.title}</div>

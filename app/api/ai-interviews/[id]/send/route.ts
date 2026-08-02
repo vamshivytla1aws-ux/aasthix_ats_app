@@ -34,7 +34,6 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   }
   const token = createSecureInterviewToken();
   const publicUrl = buildPublicUrl(`/ai-interview/${token}`);
-  await query(`UPDATE ai_interviews SET status='READY',secure_token_hash=$2,token_revoked_at=NULL,updated_at=NOW() WHERE id=$1`, [id,hashInterviewToken(token)]);
   const expiry = `${formatIst(row.expires_at)} IST`;
   const subject = `Complete your AASTHIX AI Interview - ${row.job_title}`;
   const text = `Dear ${row.full_name},\n\nYou are invited to complete an AASTHIX AI Interview for ${row.job_title}.\n\nInterview duration: ${row.duration_minutes} minutes\nLink expires: ${expiry}\n\nPlease complete the interview independently and answer genuinely based on your own knowledge and experience. Do not share this private link, use impersonation, or rely on unauthorized external assistance.\n\nUse Chrome or Edge on a laptop or desktop with a working camera, microphone, and stable internet connection. Recording and browser integrity monitoring begin only after you review and provide consent.\n\nStart your secure AI Interview: ${publicUrl}\n\nPlease complete the interview before the expiry shown above. After expiry, this link will no longer work.\n\nRegards,\nAASTHIX Talent Team`;
@@ -44,9 +43,9 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   });
   if (!email.sent) {
     await query(`INSERT INTO ai_interview_audit_events (interview_id,actor_user_id,event_type,metadata_json) VALUES ($1,$2,'INVITATION_SEND_FAILED',$3::jsonb)`, [id,auth.access.user_id,JSON.stringify({ recipient, reason: email.reason, detail: email.detail || null })]);
-    return NextResponse.json({ error: "Invitation email could not be sent", detail: email.detail, recipient, public_url: publicUrl }, { status: 503 });
+    return NextResponse.json({ error: "Invitation email could not be sent. The existing candidate link remains active.", detail: email.detail, recipient }, { status: 503 });
   }
-  await query(`UPDATE ai_interviews SET invitation_sent_at=NOW(),updated_at=NOW() WHERE id=$1`, [id]);
+  await query(`UPDATE ai_interviews SET status='READY',secure_token_hash=$2,token_revoked_at=NULL,invitation_sent_at=NOW(),updated_at=NOW() WHERE id=$1`, [id,hashInterviewToken(token)]);
   await query(`INSERT INTO ai_interview_audit_events (interview_id,actor_user_id,event_type,metadata_json) VALUES ($1,$2,'INVITATION_SENT',$3::jsonb)`, [id,auth.access.user_id,JSON.stringify({ recipient, provider: email.provider, message_id: email.messageId || null, expires_at: row.expires_at })]);
   return NextResponse.json({ sent: true, public_url: publicUrl, recipient, expires_at: row.expires_at, provider: email.provider, message_id: email.messageId || null });
 }

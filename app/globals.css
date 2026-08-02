@@ -175,6 +175,23 @@ html.dark {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Compatibility bridge while legacy modules migrate to semantic utilities. */
+.ui-refresh-v2 { font-size: 15px; }
+.ui-refresh-v2 .text-slate-950,
+.ui-refresh-v2 .text-slate-900,
+.ui-refresh-v2 .text-slate-800 { color: var(--ats-text); }
+.ui-refresh-v2 .text-slate-700,
+.ui-refresh-v2 .text-slate-600 { color: var(--ats-text-muted); }
+.ui-refresh-v2 .text-slate-500,
+.ui-refresh-v2 .text-slate-400 { color: var(--ats-text-soft); }
+.ui-refresh-v2 .border-gray-200,
+.ui-refresh-v2 .border-slate-200,
+.ui-refresh-v2 .border-slate-100 { border-color: var(--ats-border); }
+.ui-refresh-v2 .bg-white { background-color: var(--ats-bg-elevated); }
+.ui-refresh-v2 .bg-slate-50 { background-color: var(--ats-bg-panel); }
+.ui-refresh-v2 a.text-blue-700,
+.ui-refresh-v2 button.text-blue-700 { color: var(--ats-primary); }
+
 .ui-refresh-v2 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .ui-refresh-v2 select,
 .ui-refresh-v2 textarea {

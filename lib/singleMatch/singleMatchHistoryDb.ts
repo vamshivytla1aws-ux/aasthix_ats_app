@@ -54,6 +54,10 @@ function buildAdvancedInsightsJson(result: SingleMatchCheckResultPayload): Recor
     recruiter_summary: result.recruiter_summary ?? null,
     candidate_feedback: result.candidate_feedback ?? null,
     model_used: result.model_used ?? null,
+    scoring_policy_version: result.scoring_policy_version ?? null,
+    rubric_version: result.rubric_version ?? null,
+    domain_gate: result.domain_gate ?? null,
+    applied_caps: result.applied_caps ?? [],
     fallback_review_used: result.fallback_review_used ?? false,
     resume_recovery_attempted: result.resume_recovery_attempted ?? false,
     resume_recovery_succeeded: result.resume_recovery_succeeded ?? false,
@@ -141,6 +145,16 @@ function mapHistoryRuns(rows: DbRow[]): SingleMatchHistoryRun[] {
       recruiter_summary: typeof advanced.recruiter_summary === "string" ? advanced.recruiter_summary : undefined,
       candidate_feedback: typeof advanced.candidate_feedback === "string" ? advanced.candidate_feedback : undefined,
       model_used: typeof advanced.model_used === "string" ? advanced.model_used : undefined,
+      scoring_policy_version:
+        typeof advanced.scoring_policy_version === "string" ? advanced.scoring_policy_version : undefined,
+      rubric_version: typeof advanced.rubric_version === "string" ? advanced.rubric_version : undefined,
+      domain_gate:
+        advanced.domain_gate && typeof advanced.domain_gate === "object"
+          ? (advanced.domain_gate as SingleMatchHistoryRun["domain_gate"])
+          : undefined,
+      applied_caps: Array.isArray(advanced.applied_caps)
+        ? (advanced.applied_caps as SingleMatchHistoryRun["applied_caps"])
+        : undefined,
       fallback_review_used: advanced.fallback_review_used != null ? Boolean(advanced.fallback_review_used) : undefined,
       resume_recovery_attempted: advanced.resume_recovery_attempted != null ? Boolean(advanced.resume_recovery_attempted) : undefined,
       resume_recovery_succeeded: advanced.resume_recovery_succeeded != null ? Boolean(advanced.resume_recovery_succeeded) : undefined,
