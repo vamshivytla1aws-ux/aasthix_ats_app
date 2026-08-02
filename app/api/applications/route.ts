@@ -1373,9 +1373,20 @@ export async function PATCH(request: Request) {
             !updated.interview_datetime))
       );
 
+    // isReschedule must be computed before the sync block so inviteMode can be derived.
+    const isRescheduleForSync = prevInterviewDatetime !== null;
+
     if (shouldUpsertGoogleMeeting || shouldCancelGoogleMeeting) {
       const meetingContext = await loadInterviewMeetingContext(updated.id, user.user_id, accessWhere2);
       if (meetingContext) {
+        const calendarInviteMode = isRescheduleForSync ? "rescheduled" : "scheduled";
+        const calendarInviteSubject = isRescheduleForSync
+          ? `Rescheduled: ${meetingContext.job_title || "Interview"} – ${meetingContext.candidate_full_name || "Candidate"}`
+          : `${meetingContext.job_title || "Interview"} – ${meetingContext.candidate_full_name || "Candidate"}`;
+        const calendarInviteBody = isRescheduleForSync
+          ? `Your interview for the ${meetingContext.job_title || "role"} has been rescheduled. Please use this updated calendar invite.`
+          : `Your interview for the ${meetingContext.job_title || "role"} has been scheduled. Please join using the Google Meet link in this invite.`;
+
         const syncResult = await syncInterviewMeeting({
           action: shouldCancelGoogleMeeting ? "cancel" : "upsert",
           applicationId: updated.id,
@@ -1388,6 +1399,9 @@ export async function PATCH(request: Request) {
           existingMeetLink: prevMeetLink,
           notes: normalizedInterviewStatusNote,
           durationMinutes: normalizedInterviewDurationMinutes,
+          inviteMode: calendarInviteMode,
+          inviteSubject: calendarInviteSubject,
+          inviteBody: calendarInviteBody,
         });
 
         calendarSyncStatus = normalizeMeetingSyncStatus(syncResult.status);
