@@ -25,6 +25,9 @@
   --ats-info: #2f6f9f;
   --ats-selection: #dcece8;
   --ats-focus: rgb(11 110 105 / 0.16);
+  --ats-layer-dialog: 120;
+  --ats-layer-popover: 140;
+  --ats-layer-notification: 160;
   --ats-chart-1: #0b6e69;
   --ats-chart-2: #2f6f9f;
   --ats-chart-3: #b57d46;
@@ -203,7 +206,7 @@ html.dark {
 }
 
 .ats-calendar-popover {
-  z-index: 100;
+  z-index: var(--ats-layer-popover);
   width: min(22rem, calc(100vw - 2rem));
   border: 1px solid var(--ats-border);
   border-radius: var(--ats-radius-lg);

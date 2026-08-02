@@ -5,8 +5,6 @@ import { fetchApplicationCardRow } from "@/lib/applicationCard";
 import { writeAuditLog } from "@/lib/auditLog";
 import { query } from "@/lib/db";
 import { syncInterviewMeeting } from "@/lib/services/googleCalendar";
-import { sendTransactionalEmail } from "@/lib/sendTransactionalEmail";
-import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +46,7 @@ function parseRecipients(raw: unknown, label: string): { ok: true; emails: strin
 export async function POST(request: Request, context: { params: { id: string } }) {
   const requestStartedAt = performance.now();
   const timings: Record<string, number> = {};
+  let deliveryAttempt: { applicationId: number; idempotencyKey: string } | null = null;
   try {
     const auth = await requirePermission("pipeline.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -83,10 +82,7 @@ export async function POST(request: Request, context: { params: { id: string } }
     const subject = typeof body.subject === "string" ? body.subject.trim() : "";
     const text = typeof body.body === "string" ? body.body : "";
     const inviteMode = body.invite_mode === "rescheduled" ? "rescheduled" : "scheduled";
-    const meetingMode = String(body.meeting_mode || "Google Meet").trim().slice(0, 80) || "Google Meet";
-    const meetingLocation = String(body.meeting_location || "").trim().slice(0, 1000);
     const durationMinutes = [15, 30, 45, 60].includes(Number(body.duration_minutes)) ? Number(body.duration_minutes) : 60;
-    const allowEmailFallback = body.allow_email_fallback !== false;
     const idempotencyKey = String(body.idempotency_key || randomUUID()).trim().slice(0, 160);
     if (!subject) return NextResponse.json({ error: "subject is required." }, { status: 400 });
     if (!text.trim()) return NextResponse.json({ error: "body is required." }, { status: 400 });
@@ -134,8 +130,10 @@ export async function POST(request: Request, context: { params: { id: string } }
     }
 
     const recipientHash = createHash("sha256").update([candidateEmail, ...parsedCc.emails].sort().join("|")).digest("hex");
-    const claim = await query(
-      `INSERT INTO interview_invitation_deliveries
+    let claim: { rows: unknown[] };
+    try {
+      claim = await query(
+        `INSERT INTO interview_invitation_deliveries
        (application_id, idempotency_key, invite_mode, scheduled_at, recipient_hash, subject_preview,
         status, created_by_user_id)
        VALUES ($1,$2,$3,$4::timestamptz,$5,$6,'pending',$7)
@@ -145,8 +143,22 @@ export async function POST(request: Request, context: { params: { id: string } }
         WHERE interview_invitation_deliveries.status='failed'
            OR (interview_invitation_deliveries.status='pending' AND interview_invitation_deliveries.updated_at < NOW() - INTERVAL '5 minutes')
         RETURNING status`,
-      [applicationId, idempotencyKey, inviteMode, card.interview_datetime, recipientHash, subject.slice(0, 200), user.user_id],
-    ).catch(() => ({ rows: [{ status: "pending" }] }));
+        [applicationId, idempotencyKey, inviteMode, card.interview_datetime, recipientHash, subject.slice(0, 200), user.user_id],
+      );
+    } catch (error) {
+      console.error("Interview delivery tracking is unavailable", error);
+      return NextResponse.json({
+        error: "Interview invitation tracking is not ready. Apply migration 0098 and retry.",
+        schedule_saved: true,
+        operation_status: "configuration_error",
+        calendar_sync_status: "not_attempted",
+        email_send_status: "not_attempted",
+        delivery_channel: "none",
+        retry_allowed: true,
+        next_action_hint: "Run database migration 0098_interview_invitation_delivery.sql.",
+      }, { status: 503 });
+    }
+    deliveryAttempt = { applicationId, idempotencyKey };
     if (claim.rows.length === 0) {
       const previous = await query(
         `SELECT status, delivery_channel, calendar_sync_status, email_send_status, email_provider,
@@ -230,69 +242,21 @@ export async function POST(request: Request, context: { params: { id: string } }
     );
     timings.persist_application_ms = Math.round(performance.now() - persistStartedAt);
 
-    if (syncFailed && allowEmailFallback) {
-      const accessWarning = meetingMode === "Google Meet" && !syncResult.meet_link
-        ? "Google Meet could not be created. The recruiter will provide access details before the interview."
-        : null;
-      const fallbackText = [text.trim(), meetingLocation ? `Access details: ${meetingLocation}` : "", accessWarning || ""]
-        .filter(Boolean)
-        .join("\n\n");
-      const paragraphs = fallbackText.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
-      const emailBody = buildCandidateEmailTemplate({
-        candidateName: card.candidate_full_name,
-        paragraphs,
-        job: { title: card.job_title, location: card.job_location },
-      });
-      const sendResult = await sendTransactionalEmail({
-        to: [candidateEmail],
-        cc: internalAttendees,
-        subject: inviteMode === "rescheduled" && !/^updated invitation:/i.test(subject) ? `Updated invitation: ${subject}` : subject,
-        text: emailBody.text,
-        html: emailBody.html,
-      });
-      if (sendResult.sent) {
-        const warning = accessWarning || syncResult.error || "Google Calendar was unavailable; the invitation was sent by ATS email.";
-        await query(
-          `UPDATE interview_invitation_deliveries
-           SET status='sent_with_warning', delivery_channel='transactional_email_fallback',
-               calendar_sync_status=$3, email_send_status='sent', email_provider=$4,
-               provider_message_id=$5, meet_link=$6, external_calendar_event_id=$7,
-               error_category='calendar_unavailable', error_detail=$8, completed_at=NOW(), updated_at=NOW()
-           WHERE application_id=$1 AND idempotency_key=$2`,
-          [applicationId, idempotencyKey, syncStatus, sendResult.provider, sendResult.messageId || null,
-            syncResult.meet_link, syncResult.external_calendar_event_id, warning.slice(0, 2000)],
-        ).catch(() => null);
-        await writeAuditLog({ actorUserId: user.user_id, action: "application_interview_invite.sent", metadata: {
-          application_id: applicationId, delivery_channel: "transactional_email_fallback", invite_mode: inviteMode,
-          calendar_sync_status: syncStatus, email_provider: sendResult.provider,
-        }});
-        return NextResponse.json({
-          ok: true, sent: true, schedule_saved: true, operation_status: "success_with_warning",
-          calendar_sync_status: syncStatus, email_send_status: "sent", email_provider: sendResult.provider,
-          delivery_channel: "transactional_email_fallback", invite_mode: inviteMode,
-          meet_link: syncResult.meet_link, external_calendar_event_id: syncResult.external_calendar_event_id,
-          delivery_warning: warning, retry_allowed: false,
-          next_action_hint: accessWarning ? "Provide meeting access details to the candidate before the interview." : "Reconnect Google Calendar for future Meet invitations.",
-        });
-      }
-      const detail = sendResult.detail || "Transactional email delivery failed.";
+    if (syncFailed) {
+      const detail = syncResult.error || "Google Calendar invitation failed.";
       await query(
         `UPDATE interview_invitation_deliveries SET status='failed', delivery_channel='none',
-         calendar_sync_status=$3, email_send_status='failed', error_category='all_channels_failed',
+         calendar_sync_status=$3, email_send_status='not_attempted', error_category='google_calendar_failed',
          error_detail=$4, updated_at=NOW() WHERE application_id=$1 AND idempotency_key=$2`,
         [applicationId, idempotencyKey, syncStatus, detail.slice(0, 2000)],
-      ).catch(() => null);
+      );
       return NextResponse.json({
-        error: detail, schedule_saved: true, operation_status: "error", calendar_sync_status: syncStatus,
-        email_send_status: "failed", delivery_channel: "none", retry_allowed: true,
-        next_action_hint: "The schedule is saved. Repair Calendar or Email Health, then retry this invitation.",
-      }, { status: 502 });
-    }
-    if (syncFailed) {
-      return NextResponse.json({
-        error: syncResult.error || "Calendar invitation failed.", schedule_saved: true,
+        error: detail, schedule_saved: true,
         operation_status: "error", calendar_sync_status: syncStatus, email_send_status: "not_attempted",
         delivery_channel: "none", retry_allowed: true,
+        next_action_hint: syncStatus === "google_not_connected"
+          ? "Connect the shared Google Calendar account in Settings, then retry this invitation."
+          : "Test the shared Google Calendar connection in Settings, then retry this invitation.",
       }, { status: 409 });
     }
 
@@ -366,12 +330,21 @@ export async function POST(request: Request, context: { params: { id: string } }
     return response;
   } catch (error) {
     console.error("POST /api/applications/[id]/send-interview-invite", error);
+    if (deliveryAttempt) {
+      await query(
+        `UPDATE interview_invitation_deliveries SET status='failed', delivery_channel='none',
+         calendar_sync_status='unknown', email_send_status='not_attempted', error_category='unexpected_error',
+         error_detail='Unexpected invitation delivery error', updated_at=NOW()
+         WHERE application_id=$1 AND idempotency_key=$2`,
+        [deliveryAttempt.applicationId, deliveryAttempt.idempotencyKey],
+      ).catch(() => null);
+    }
     return NextResponse.json(
       {
         error: "Failed to send interview invite.",
         operation_status: "error",
         calendar_sync_status: "unknown",
-        email_send_status: "unknown",
+        email_send_status: "not_attempted",
         delivery_channel: "none",
         schedule_saved: true,
         retry_allowed: true,

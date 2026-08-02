@@ -35,7 +35,7 @@ export default function Toast({
           : "border-sky-200 text-sky-800 bg-white";
 
   return (
-    <div className="pointer-events-none fixed right-4 top-4 z-50 max-w-sm sm:max-w-md" aria-live="polite">
+    <div className="pointer-events-none fixed right-4 top-4 z-[var(--ats-layer-notification)] max-w-sm sm:max-w-md" aria-live="polite">
       <div className={["pointer-events-auto rounded-2xl border px-4 py-2 shadow-sm text-sm", styles].join(" ")}>
         <div className="flex items-start justify-between gap-3">
           <div>{message}</div>

@@ -30,6 +30,10 @@ export default function ViewportPortal({ children, onClose, dirty = false, busy 
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      const activePopover = document.querySelector<HTMLElement>('[data-ats-dialog-popover][data-state="open"]');
+      if (activePopover && (activePopover.contains(event.target as Node) || activePopover.contains(document.activeElement))) {
+        return;
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         requestClose();

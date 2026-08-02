@@ -21,6 +21,7 @@ import ViewportPortal from "@/components/ui/ViewportPortal";
 
 const STAGES = ["Applied", "Screening", "Screening Failed", "Interview", "Selected", "Rejected"] as const;
 type Stage = (typeof STAGES)[number];
+type InterviewActionState = "idle" | "saving" | "creating_google_event" | "sent" | "failed";
 
 type ApplicationRow = {
   id: number;
@@ -364,6 +365,8 @@ export default function PipelineBoard({
   const [confirmScheduleIso, setConfirmScheduleIso] = useState<string>("");
   const [scheduleSendEmail, setScheduleSendEmail] = useState(false);
   const [scheduleDeliveryRetry, setScheduleDeliveryRetry] = useState(false);
+  const [scheduleDialogError, setScheduleDialogError] = useState<string | null>(null);
+  const [scheduleActionState, setScheduleActionState] = useState<InterviewActionState>("idle");
   const [scheduleAttendees, setScheduleAttendees] = useState("");
   const [scheduleTimezone, setScheduleTimezone] = useState(
     ATS_TIMEZONE_LABEL
@@ -389,6 +392,8 @@ export default function PipelineBoard({
   const [rescheduleDurationMinutes, setRescheduleDurationMinutes] = useState<15 | 30 | 45 | 60>(60);
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
   const [rescheduleDeliveryRetry, setRescheduleDeliveryRetry] = useState(false);
+  const [rescheduleDialogError, setRescheduleDialogError] = useState<string | null>(null);
+  const [rescheduleActionState, setRescheduleActionState] = useState<InterviewActionState>("idle");
   const [rescheduleAttendees, setRescheduleAttendees] = useState("");
   const [rescheduleTimezone, setRescheduleTimezone] = useState(
     ATS_TIMEZONE_LABEL
@@ -700,10 +705,12 @@ export default function PipelineBoard({
     setConfirmScheduleOpen(false);
     setScheduleSendEmail(false);
     setScheduleDeliveryRetry(false);
+    setScheduleDialogError(null);
+    setScheduleActionState("idle");
     setScheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
     setScheduleTimezone(ATS_TIMEZONE_LABEL);
     setScheduleDurationMinutes(60);
-    setScheduleMeetingMode(calendarStatus?.shared_google?.connected ? "Google Meet" : "Manual");
+    setScheduleMeetingMode("Google Meet");
     setScheduleMeetingLocation("");
     setScheduleNotes("");
     setScheduleDraftTo("");
@@ -980,21 +987,24 @@ export default function PipelineBoard({
   async function submitInterviewSchedule(sendInvite = false) {
     if (!scheduleApp) return;
     if (!scheduleDate || !scheduleTime) {
-      setError("Please select interview date and time.");
+      setScheduleDialogError("Select a valid interview date and time before continuing.");
       return;
     }
     if (sendInvite && (!scheduleDraftTo.trim() || !scheduleDraftSubject.trim() || !scheduleDraftBody.trim())) {
-      setError("Generate the interview invite draft before sending.");
+      setScheduleDialogError(!scheduleDraftTo.trim()
+        ? "The candidate profile does not have a valid email address. Update the candidate profile before sending."
+        : "The invitation draft is incomplete. Regenerate the draft or complete its subject and body.");
       return;
     }
     const scheduleIso = kolkataLocalToUtcIso(scheduleDate, scheduleTime);
     if (!scheduleIso) {
-      setError("Invalid interview date/time.");
+      setScheduleDialogError("The interview date or time is invalid. Use DD-MM-YYYY and a valid IST time.");
       return;
     }
 
     setBusyId(scheduleApp.id);
     setError(null);
+    setScheduleDialogError(null);
     setSuccess(null);
     const previousApplications = localApplications;
     let scheduleSaved = false;
@@ -1006,32 +1016,40 @@ export default function PipelineBoard({
       updated_at: new Date().toISOString(),
     };
     try {
-      optimisticallyPatchApplication(scheduleApp.id, optimisticUpdated);
-      onStageUpdated(optimisticUpdated);
-      const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: scheduleApp.id,
-          stage: "Interview",
-          interview_scheduled: true,
-          interview_datetime: scheduleIso,
-          interview_duration_minutes: scheduleDurationMinutes,
-          interview_attendee_emails: scheduleAttendees,
-          interview_status_note: scheduleNotes,
-          send_email: false,
-          skip_google_sync: true,
-        }),
-      });
-      scheduleSaved = true;
-      reconcileLocalApplication(updated);
-      onStageUpdated(updated);
-      await saveChecklist(scheduleApp.id);
+      let updated = scheduleApp;
+      if (!(sendInvite && scheduleDeliveryRetry)) {
+        setScheduleActionState("saving");
+        optimisticallyPatchApplication(scheduleApp.id, optimisticUpdated);
+        onStageUpdated(optimisticUpdated);
+        updated = await apiFetchJson<ApplicationRow>("/api/applications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: scheduleApp.id,
+            stage: "Interview",
+            interview_scheduled: true,
+            interview_datetime: scheduleIso,
+            interview_duration_minutes: scheduleDurationMinutes,
+            interview_attendee_emails: scheduleAttendees,
+            interview_status_note: scheduleNotes,
+            send_email: false,
+            skip_google_sync: true,
+          }),
+        });
+        scheduleSaved = true;
+        setScheduleApp(updated);
+        reconcileLocalApplication(updated);
+        onStageUpdated(updated);
+        await saveChecklist(scheduleApp.id);
+      } else {
+        scheduleSaved = true;
+      }
 
       let inviteResult:
         | { operation_status?: string; delivery_channel?: string; delivery_warning?: string | null; calendar_sync_status?: string; meet_link?: string | null; external_calendar_event_id?: string | null }
         | null = null;
       if (sendInvite) {
+        setScheduleActionState("creating_google_event");
         inviteResult = await apiFetchJson(`/api/applications/${scheduleApp.id}/send-interview-invite`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1048,11 +1066,12 @@ export default function PipelineBoard({
             meeting_mode: scheduleMeetingMode,
             meeting_location: scheduleMeetingLocation,
             duration_minutes: scheduleDurationMinutes,
-            allow_email_fallback: true,
+            allow_email_fallback: false,
             idempotency_key: scheduleInviteIdempotencyRef.current,
           }),
         });
         if (inviteResult) reconcileLocalApplication({ ...updated, meet_link: inviteResult.meet_link ?? updated.meet_link, external_calendar_event_id: inviteResult.external_calendar_event_id ?? updated.external_calendar_event_id, calendar_sync_status: inviteResult.calendar_sync_status as ApplicationRow["calendar_sync_status"] });
+        setScheduleActionState("sent");
       }
       setConfirmScheduleOpen(false);
       setScheduleOpen(false);
@@ -1071,9 +1090,7 @@ export default function PipelineBoard({
       setScheduleDraftBody("");
       setSuccess(
         sendInvite
-          ? inviteResult?.delivery_channel === "google_calendar"
-            ? "Interview scheduled and Google Calendar invitation sent."
-            : "Interview scheduled and ATS email invitation sent. Google Calendar requires attention."
+          ? "Interview scheduled and Google Calendar invitation sent."
           : "Interview schedule saved without sending an invitation."
       );
     } catch (err: any) {
@@ -1081,9 +1098,11 @@ export default function PipelineBoard({
         flushSync(() => setLocalApplications(previousApplications));
         onStageUpdated(scheduleApp);
       }
-      if (!notifyForbidden(err)) setError(scheduleSaved
-        ? `Interview schedule was saved, but invitation delivery failed. ${err.message || "Retry the invitation after checking Calendar or Email Health."}`
-        : err.message || "Something went wrong");
+      const message = scheduleSaved
+        ? `The schedule is saved, but Google could not send the invitation. ${err.message || "Test or reconnect Google Calendar, then retry."}`
+        : err.message || "The interview schedule could not be saved.";
+      if (!notifyForbidden(err)) setScheduleDialogError(message);
+      setScheduleActionState("failed");
       if (scheduleSaved && sendInvite) setScheduleDeliveryRetry(true);
     } finally {
       setBusyId(null);
@@ -1116,6 +1135,8 @@ export default function PipelineBoard({
     setRescheduleTime(time);
     setRescheduleSendEmail(false);
     setRescheduleDeliveryRetry(false);
+    setRescheduleDialogError(null);
+    setRescheduleActionState("idle");
     setRescheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
     setRescheduleTimezone(ATS_TIMEZONE_LABEL);
     setRescheduleDurationMinutes(60);
@@ -1248,46 +1269,57 @@ export default function PipelineBoard({
   async function submitInterviewReschedule(sendInvite = false) {
     if (!rescheduleApp) return;
     if (!rescheduleDate || !rescheduleTime) {
-      setError("Please select interview date and time.");
+      setRescheduleDialogError("Select a valid interview date and time before continuing.");
       return;
     }
     if (sendInvite && (!rescheduleDraftTo.trim() || !rescheduleDraftSubject.trim() || !rescheduleDraftBody.trim())) {
-      setError("Generate the interview invite draft before sending.");
+      setRescheduleDialogError(!rescheduleDraftTo.trim()
+        ? "The candidate profile does not have a valid email address. Update the candidate profile before sending."
+        : "The updated invitation draft is incomplete. Regenerate it or complete its subject and body.");
       return;
     }
 
     const iso = kolkataLocalToUtcIso(rescheduleDate, rescheduleTime);
     if (!iso) {
-      setError("Invalid interview date/time.");
+      setRescheduleDialogError("The interview date or time is invalid. Use DD-MM-YYYY and a valid IST time.");
       return;
     }
     setBusyId(rescheduleApp.id);
     setError(null);
+    setRescheduleDialogError(null);
     let scheduleSaved = false;
     try {
-      const updated = await apiFetchJson<ApplicationRow>("/api/applications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: rescheduleApp.id,
-          interview_datetime: iso,
-          interview_duration_minutes: rescheduleDurationMinutes,
-          interview_attendee_emails: rescheduleAttendees,
-          interview_status_note: rescheduleNotes,
-          reminder_sent: false,
-          send_email: false,
-          skip_google_sync: true,
-        }),
-      });
-      scheduleSaved = true;
-      reconcileLocalApplication(updated);
-      onStageUpdated(updated);
-      await saveChecklist(rescheduleApp.id);
+      let updated = rescheduleApp;
+      if (!(sendInvite && rescheduleDeliveryRetry)) {
+        setRescheduleActionState("saving");
+        updated = await apiFetchJson<ApplicationRow>("/api/applications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: rescheduleApp.id,
+            interview_datetime: iso,
+            interview_duration_minutes: rescheduleDurationMinutes,
+            interview_attendee_emails: rescheduleAttendees,
+            interview_status_note: rescheduleNotes,
+            reminder_sent: false,
+            send_email: false,
+            skip_google_sync: true,
+          }),
+        });
+        scheduleSaved = true;
+        setRescheduleApp(updated);
+        reconcileLocalApplication(updated);
+        onStageUpdated(updated);
+        await saveChecklist(rescheduleApp.id);
+      } else {
+        scheduleSaved = true;
+      }
 
       let inviteResult:
         | { operation_status?: string; delivery_channel?: string; delivery_warning?: string | null; calendar_sync_status?: string; meet_link?: string | null; external_calendar_event_id?: string | null }
         | null = null;
       if (sendInvite) {
+        setRescheduleActionState("creating_google_event");
         inviteResult = await apiFetchJson(`/api/applications/${rescheduleApp.id}/send-interview-invite`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1304,11 +1336,12 @@ export default function PipelineBoard({
             meeting_mode: rescheduleMeetingMode,
             meeting_location: rescheduleMeetingLocation,
             duration_minutes: rescheduleDurationMinutes,
-            allow_email_fallback: true,
+            allow_email_fallback: false,
             idempotency_key: rescheduleInviteIdempotencyRef.current,
           }),
         });
         if (inviteResult) reconcileLocalApplication({ ...updated, meet_link: inviteResult.meet_link ?? updated.meet_link, external_calendar_event_id: inviteResult.external_calendar_event_id ?? updated.external_calendar_event_id, calendar_sync_status: inviteResult.calendar_sync_status as ApplicationRow["calendar_sync_status"] });
+        setRescheduleActionState("sent");
       }
       setRescheduleOpen(false);
       setRescheduleApp(null);
@@ -1326,15 +1359,15 @@ export default function PipelineBoard({
       setRescheduleDraftBody("");
       setSuccess(
         sendInvite
-          ? inviteResult?.delivery_channel === "google_calendar"
-            ? "Interview rescheduled and Google Calendar update sent."
-            : "Interview rescheduled and updated ATS email sent. Google Calendar requires attention."
+          ? "Interview rescheduled and Google Calendar update sent."
           : "Updated interview schedule saved without sending an invitation."
       );
     } catch (err: any) {
-      if (!notifyForbidden(err)) setError(scheduleSaved
-        ? `Interview was rescheduled, but invitation delivery failed. ${err.message || "Retry the invitation after checking Calendar or Email Health."}`
-        : err.message || "Something went wrong");
+      const message = scheduleSaved
+        ? `The new time is saved, but Google could not update the invitation. ${err.message || "Test or reconnect Google Calendar, then retry."}`
+        : err.message || "The interview could not be rescheduled.";
+      if (!notifyForbidden(err)) setRescheduleDialogError(message);
+      setRescheduleActionState("failed");
       if (scheduleSaved && sendInvite) setRescheduleDeliveryRetry(true);
     } finally {
       setBusyId(null);
@@ -1813,7 +1846,7 @@ export default function PipelineBoard({
 
       {scheduleOpen && scheduleApp && (
         <ViewportPortal onClose={() => setScheduleOpen(false)} busy={busyId === scheduleApp.id} dirty={Boolean(scheduleDate || scheduleTime || scheduleDraftBody)}>
-        <div className="fixed inset-0 z-[120]" role="dialog" aria-modal="true" aria-label="Schedule interview">
+        <div className="fixed inset-0 z-[var(--ats-layer-dialog)]" role="dialog" aria-modal="true" aria-label="Schedule interview">
           <div data-viewport-close className="absolute inset-0 bg-black/30" />
           <div className="absolute inset-0 flex items-center justify-center p-0 sm:p-4">
             <div className="h-full w-full max-w-3xl overflow-y-auto bg-white p-4 shadow-md sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:border sm:border-slate-200 sm:p-6">
@@ -1834,6 +1867,19 @@ export default function PipelineBoard({
                   Close
                 </button>
               </div>
+
+              {scheduleDialogError ? (
+                <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">
+                  <div className="font-semibold">Interview invitation needs attention</div>
+                  <div className="mt-1">{scheduleDialogError}</div>
+                  {!scheduleDraftTo.trim() ? <Link href={`/candidates/${scheduleApp.candidate_id}`} className="mt-2 inline-flex font-semibold text-rose-900 underline">Open candidate profile</Link> : null}
+                </div>
+              ) : null}
+              {scheduleDraftBusy || scheduleActionState !== "idle" ? (
+                <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800" aria-live="polite">
+                  {scheduleDraftBusy ? "Generating the recruiter invitation draft..." : scheduleActionState === "saving" ? "Saving the interview schedule..." : scheduleActionState === "creating_google_event" ? "Creating the Google Calendar event and Meet invitation..." : scheduleActionState === "sent" ? "Google invitation sent." : "Invitation delivery failed. The saved schedule is ready for retry."}
+                </div>
+              ) : null}
 
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -1924,9 +1970,7 @@ export default function PipelineBoard({
                 <p className="mt-1 text-xs text-slate-500">
                   {calendarStatus?.shared_google?.connected
                     ? `Google Meet invite will be created from ${calendarStatus.shared_google.account_email || "the shared Google account"} and sent to the candidate plus these attendees.`
-                    : calendarStatus?.transactional_email?.configured
-                      ? "Google Calendar is unavailable. The schedule will be saved and one ATS email invitation can be sent without a new Meet link."
-                      : "Delivery services are unavailable. The schedule will remain saved so the invitation can be retried later."}
+                    : "Google Calendar is not connected. You can save the schedule, but sending requires connecting the shared Google account in Settings."}
                 </p>
               </div>
 
@@ -2078,7 +2122,7 @@ export default function PipelineBoard({
                 <button
                   type="button"
                   onClick={() => void submitInterviewSchedule(true)}
-                  disabled={busyId === scheduleApp.id || checklistSaving || !scheduleDraftTo.trim() || !scheduleDraftSubject.trim() || !scheduleDraftBody.trim()}
+                  disabled={busyId === scheduleApp.id || checklistSaving}
                   className="rounded-xl bg-blue-600 text-white px-4 py-2 text-sm font-semibold hover:bg-blue-700 transition-all duration-200 disabled:opacity-50"
                 >
                   {busyId === scheduleApp.id || checklistSaving ? "Sending..." : scheduleDeliveryRetry ? "Retry invitation" : "Create schedule + send invite"}
@@ -2092,7 +2136,7 @@ export default function PipelineBoard({
 
       {rescheduleOpen && rescheduleApp && (
         <ViewportPortal onClose={() => setRescheduleOpen(false)} busy={busyId === rescheduleApp.id} dirty={Boolean(rescheduleDate || rescheduleTime || rescheduleDraftBody)}>
-        <div className="fixed inset-0 z-[120]" role="dialog" aria-modal="true" aria-label="Reschedule interview">
+        <div className="fixed inset-0 z-[var(--ats-layer-dialog)]" role="dialog" aria-modal="true" aria-label="Reschedule interview">
           <div data-viewport-close className="absolute inset-0 bg-black/30" />
           <div className="absolute inset-0 flex items-center justify-center p-0 sm:p-4">
             <div className="h-full w-full max-w-3xl overflow-y-auto bg-white p-4 shadow-md sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:border sm:border-slate-200 sm:p-6">
@@ -2113,6 +2157,19 @@ export default function PipelineBoard({
                   Close
                 </button>
               </div>
+
+              {rescheduleDialogError ? (
+                <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">
+                  <div className="font-semibold">Updated invitation needs attention</div>
+                  <div className="mt-1">{rescheduleDialogError}</div>
+                  {!rescheduleDraftTo.trim() ? <Link href={`/candidates/${rescheduleApp.candidate_id}`} className="mt-2 inline-flex font-semibold text-rose-900 underline">Open candidate profile</Link> : null}
+                </div>
+              ) : null}
+              {rescheduleDraftBusy || rescheduleActionState !== "idle" ? (
+                <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800" aria-live="polite">
+                  {rescheduleDraftBusy ? "Generating the updated invitation draft..." : rescheduleActionState === "saving" ? "Saving the new interview time..." : rescheduleActionState === "creating_google_event" ? "Updating the Google Calendar event and invitation..." : rescheduleActionState === "sent" ? "Google invitation updated." : "Invitation update failed. The new time is saved and ready for retry."}
+                </div>
+              ) : null}
 
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -2178,9 +2235,7 @@ export default function PipelineBoard({
                 <p className="mt-1 text-xs text-slate-500">
                   {calendarStatus?.shared_google?.connected
                     ? "The shared Google Calendar will update the Meet invite for the candidate and these attendees."
-                    : calendarStatus?.transactional_email?.configured
-                      ? "Google Calendar is unavailable. One updated ATS email can be sent after saving the new time."
-                      : "Delivery services are unavailable. The new time will remain saved so delivery can be retried later."}
+                    : "Google Calendar is not connected. You can save the new time, but sending the update requires reconnecting Google in Settings."}
                 </p>
               </div>
 
@@ -2301,7 +2356,7 @@ export default function PipelineBoard({
                 <button
                   type="button"
                   onClick={() => void submitInterviewReschedule(true)}
-                  disabled={busyId === rescheduleApp.id || !rescheduleDraftTo.trim() || !rescheduleDraftSubject.trim() || !rescheduleDraftBody.trim()}
+                  disabled={busyId === rescheduleApp.id}
                   className="rounded-xl bg-blue-600 text-white px-4 py-2 text-sm font-semibold hover:bg-blue-700 transition-all duration-200 disabled:opacity-50"
                 >
                   {busyId === rescheduleApp.id ? "Sending..." : rescheduleDeliveryRetry ? "Retry updated invitation" : "Save + send updated invite"}
@@ -2315,7 +2370,7 @@ export default function PipelineBoard({
 
       {decisionOpen && decisionApp ? (
         <ViewportPortal onClose={() => setDecisionOpen(false)} busy={busyId === decisionApp.id} dirty={decisionSendEmail}>
-        <div className="fixed inset-0 z-[120]" role="dialog" aria-modal="true" aria-label="Interview decision">
+        <div className="fixed inset-0 z-[var(--ats-layer-dialog)]" role="dialog" aria-modal="true" aria-label="Interview decision">
           <div data-viewport-close className="absolute inset-0 bg-black/30 dark:bg-black/50" />
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-600 dark:bg-slate-900">
