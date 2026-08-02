@@ -748,7 +748,7 @@ export async function PATCH(request: Request) {
       }
       const row0 = upd.rows[0] as { id: number; candidate_id: number };
       try {
-        const existingMeeting = await loadInterviewMeetingContext(row0.id, user.user_id, accessWhere2);
+        const existingMeeting = await loadInterviewMeetingContext(row0.id, user.user_id, accessWhereA2);
         if (existingMeeting?.external_calendar_event_id) {
           const syncResult = await syncInterviewMeeting({
             action: "cancel",
@@ -859,7 +859,7 @@ export async function PATCH(request: Request) {
     }
 
     // Used to ensure scheduled email is only sent once on the transition to Interview+interview_scheduled=true.
-    const prev = await loadPreviousApplicationState(id, user.user_id, accessWhere2);
+    const prev = await loadPreviousApplicationState(id, user.user_id, accessWhereA2);
     if (prev.rowCount === 0) {
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
     }
@@ -1377,7 +1377,7 @@ export async function PATCH(request: Request) {
     const isRescheduleForSync = prevInterviewDatetime !== null;
 
     if (shouldUpsertGoogleMeeting || shouldCancelGoogleMeeting) {
-      const meetingContext = await loadInterviewMeetingContext(updated.id, user.user_id, accessWhere2);
+      const meetingContext = await loadInterviewMeetingContext(updated.id, user.user_id, accessWhereA2);
       if (meetingContext) {
         const calendarInviteMode = isRescheduleForSync ? "rescheduled" : "scheduled";
         const calendarInviteSubject = isRescheduleForSync
