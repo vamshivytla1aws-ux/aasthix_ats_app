@@ -11,9 +11,12 @@ import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { callStateReducer, type CallUiState } from "@/lib/chat/callStateReducer";
 import { DateTimePicker } from "@/components/ui/DateTimeFields";
+import { CHAT_UI_V2_ENABLED } from "@/lib/featureFlags";
+import styles from "./chat-v2.module.css";
 import {
   Bell,
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   Clock3,
   Download,
@@ -32,6 +35,7 @@ import {
   Search,
   Send,
   Smile,
+  Star,
   Users,
   X,
 } from "lucide-react";
@@ -107,6 +111,7 @@ type ConversationDetails = {
 };
 type PinnedMessageItem = Message & { pin_id: number; pinned_at: string; pinned_by: number; pinned_by_name: string };
 type DrawerView = "details" | "pins" | "notify" | "calendar";
+type ConversationFilter = "all" | "unread" | "direct" | "group";
 type ChatUser = { id: number; full_name: string; email: string; role: string };
 type SearchResult = {
   id: number;
@@ -601,6 +606,10 @@ export default function ChatPage() {
   const [queryConversationId, setQueryConversationId] = useState<number | null>(null);
   const [queryRoomId, setQueryRoomId] = useState<number | null>(null);
   const [sidebarSearch, setSidebarSearch] = useState("");
+  const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("all");
+  const [favoriteConversationIds, setFavoriteConversationIds] = useState<number[]>([]);
+  const [favoritesCollapsed, setFavoritesCollapsed] = useState(false);
+  const [recentCollapsed, setRecentCollapsed] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("user");
   const [showNewChat, setShowNewChat] = useState(false);
@@ -633,6 +642,24 @@ export default function ChatPage() {
       setRingVolume(Math.min(1, Math.max(0.1, parsed)));
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem("ats_chat_ui_preferences") || "{}");
+      setFavoriteConversationIds(Array.isArray(parsed.favoriteConversationIds) ? parsed.favoriteConversationIds.filter(Number.isFinite) : []);
+      setFavoritesCollapsed(Boolean(parsed.favoritesCollapsed));
+      setRecentCollapsed(Boolean(parsed.recentCollapsed));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "ats_chat_ui_preferences",
+      JSON.stringify({ favoriteConversationIds, favoritesCollapsed, recentCollapsed })
+    );
+  }, [favoriteConversationIds, favoritesCollapsed, recentCollapsed]);
 
   useEffect(() => {
     setDesktopFullscreenFit(typeof window !== "undefined" && Boolean((window as any).atsDesktop));
@@ -698,9 +725,22 @@ export default function ChatPage() {
   }, [statusData]);
   const filteredConversations = useMemo(() => {
     const q = sidebarSearch.trim().toLowerCase();
-    if (!q) return conversations;
-    return conversations.filter((conv) => convLabel(conv, currentUserId).toLowerCase().includes(q));
-  }, [conversations, sidebarSearch, currentUserId]);
+    return conversations.filter((conv) => {
+      if (q && !convLabel(conv, currentUserId).toLowerCase().includes(q)) return false;
+      if (conversationFilter === "unread") return (conv.unread_count ?? 0) > 0;
+      if (conversationFilter === "direct") return conv.type === "direct";
+      if (conversationFilter === "group") return conv.type === "group";
+      return true;
+    });
+  }, [conversations, sidebarSearch, currentUserId, conversationFilter]);
+  const favoriteConversations = useMemo(
+    () => filteredConversations.filter((conv) => favoriteConversationIds.includes(conv.id)),
+    [favoriteConversationIds, filteredConversations]
+  );
+  const recentConversations = useMemo(
+    () => filteredConversations.filter((conv) => !favoriteConversationIds.includes(conv.id)),
+    [favoriteConversationIds, filteredConversations]
+  );
 
   const activeConversation = useMemo(
     () => conversations.find((conv) => conv.id === activeConvId) ?? null,
@@ -848,31 +888,35 @@ export default function ChatPage() {
   return (
     <ChatPageBoundary>
       <AccessGate permissionKey="chat.view">
-      <div className={["font-['Sora','Manrope','Inter','Segoe_UI',sans-serif] flex overflow-hidden bg-[#0a0f1f]", desktopFullscreenFit ? "h-[calc(100vh-2px)] rounded-none border-0 shadow-none" : "h-[calc(100vh-7rem)] rounded-2xl border border-[#2c3342] shadow-[0_20px_60px_rgba(2,6,23,0.55)]"].join(" ")}>
+      <div className={CHAT_UI_V2_ENABLED ? styles.page : undefined}>
+      <div className={[CHAT_UI_V2_ENABLED ? styles.shell : "font-['Sora','Manrope','Inter','Segoe_UI',sans-serif] flex overflow-hidden bg-[#0a0f1f]", desktopFullscreenFit ? "h-[calc(100vh-2px)] rounded-none border-0 shadow-none" : "h-[calc(100vh-7rem)]"].join(" ")}>
         <aside
           className={[
-            "w-80 shrink-0 border-r border-slate-700 bg-[#1f2430] text-slate-100",
+            CHAT_UI_V2_ENABLED ? styles.sidebar : "w-80 shrink-0 border-r border-slate-700 bg-[#1f2430] text-slate-100",
             activeConversation ? "hidden md:flex md:flex-col" : "flex flex-col",
           ].join(" ")}
         >
-          <div className="border-b border-slate-700 px-4 py-3">
+          <div className={CHAT_UI_V2_ENABLED ? styles.sidebarHeader : "border-b border-slate-700 px-4 py-3"}>
             <div className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-indigo-300" />
-              <h2 className="text-sm font-semibold tracking-wide text-slate-100">Messages</h2>
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--chat-surface-teal)] text-[var(--chat-primary)]">
+                <MessageSquare className="h-[18px] w-[18px]" />
+              </span>
+              <h2 className={CHAT_UI_V2_ENABLED ? styles.sidebarTitle : "text-sm font-semibold tracking-wide text-slate-100"}>Messages</h2>
               {unreadTotal > 0 ? (
-                <span className="rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] font-semibold text-white">{unreadTotal}</span>
+                <span className="rounded-full bg-[var(--chat-primary)] px-2 py-0.5 text-[11px] font-bold text-white">{unreadTotal}</span>
               ) : null}
               <div className="relative ml-auto">
                 <button
                   type="button"
                   onClick={() => setShowComposeMenu((v) => !v)}
-                  className="rounded-md bg-indigo-500 p-1.5 text-white hover:bg-indigo-400"
+                  className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--chat-primary)] text-white shadow-sm transition hover:bg-[var(--chat-primary-strong)]"
                   title="Create"
+                  aria-label="Create conversation or event"
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-[18px] w-[18px]" />
                 </button>
                 {showComposeMenu ? (
-                  <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-[#364157] bg-[#0f1629] p-1 shadow-xl">
+                  <div className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-[var(--chat-border)] bg-white p-1.5 text-[var(--chat-text)] shadow-xl">
                     <button
                       type="button"
                       onClick={() => {
@@ -880,7 +924,7 @@ export default function ChatPage() {
                         setShowNewChat(true);
                         setShowComposeMenu(false);
                       }}
-                      className="w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-[#1a233a]"
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--chat-surface-teal)]"
                     >
                       Direct
                     </button>
@@ -891,7 +935,7 @@ export default function ChatPage() {
                         setShowNewChat(true);
                         setShowComposeMenu(false);
                       }}
-                      className="w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-[#1a233a]"
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--chat-surface-teal)]"
                     >
                       Group
                     </button>
@@ -901,7 +945,7 @@ export default function ChatPage() {
                         setShowComposeMenu(false);
                         setShowQuickCalendar(true);
                       }}
-                      className="w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-[#1a233a]"
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--chat-surface-teal)]"
                     >
                       Calendar
                     </button>
@@ -911,7 +955,7 @@ export default function ChatPage() {
                         setShowComposeMenu(false);
                         setShowTempChatModal(true);
                       }}
-                      className="w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-[#1a233a]"
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--chat-surface-teal)]"
                     >
                       Temp chat
                     </button>
@@ -920,14 +964,28 @@ export default function ChatPage() {
               </div>
             </div>
             <div className="relative mt-3">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--chat-muted)]" />
               <input
                 value={sidebarSearch}
                 onChange={(e) => setSidebarSearch(e.target.value)}
                 placeholder="Search conversations"
-                className="w-full rounded-lg border border-slate-700 bg-[#151922] py-2 pl-8 pr-3 text-xs text-slate-200 outline-none placeholder:text-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                className={`${CHAT_UI_V2_ENABLED ? styles.sidebarSearch : ""} rounded-xl py-2.5 pl-9 pr-3 text-sm placeholder:text-[var(--chat-soft)]`}
               />
             </div>
+            {CHAT_UI_V2_ENABLED ? (
+              <div className={styles.filterBar} aria-label="Conversation filters">
+                {(["all", "unread", "direct", "group"] as ConversationFilter[]).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setConversationFilter(filter)}
+                    className={[styles.filterButton, conversationFilter === filter ? styles.filterActive : ""].join(" ")}
+                  >
+                    {filter === "direct" ? "People" : filter === "group" ? "Groups" : filter[0].toUpperCase() + filter.slice(1)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="chat-scrollbar flex-1 overflow-y-auto">
             {threadInbox.length > 0 ? (
@@ -995,9 +1053,15 @@ export default function ChatPage() {
               </div>
             ) : null}
             {filteredConversations.length === 0 ? (
-              <div className="px-4 py-8 text-center text-xs text-slate-400">No conversations found</div>
+              <div className="px-4 py-10 text-center text-sm text-[var(--chat-muted)]">No conversations match this view.</div>
             ) : null}
-            {filteredConversations.map((conv) => (
+            {CHAT_UI_V2_ENABLED && favoriteConversations.length > 0 ? (
+              <button type="button" className={styles.sectionLabel} onClick={() => setFavoritesCollapsed((value) => !value)}>
+                <span className="flex items-center gap-2"><Star className="h-3.5 w-3.5" /> Favorites</span>
+                <ChevronDown className={`h-3.5 w-3.5 transition ${favoritesCollapsed ? "-rotate-90" : ""}`} />
+              </button>
+            ) : null}
+            {!favoritesCollapsed && favoriteConversations.map((conv) => (
               <ConversationRow
                 key={conv.id}
                 conv={conv}
@@ -1005,6 +1069,26 @@ export default function ChatPage() {
                 isActive={conv.id === activeConvId}
                 currentUserId={currentUserId}
                 onClick={() => setActiveConvId(conv.id)}
+                isFavorite
+                onToggleFavorite={() => setFavoriteConversationIds((ids) => ids.filter((id) => id !== conv.id))}
+              />
+            ))}
+            {CHAT_UI_V2_ENABLED && recentConversations.length > 0 ? (
+              <button type="button" className={styles.sectionLabel} onClick={() => setRecentCollapsed((value) => !value)}>
+                <span>Recent</span>
+                <ChevronDown className={`h-3.5 w-3.5 transition ${recentCollapsed ? "-rotate-90" : ""}`} />
+              </button>
+            ) : null}
+            {!recentCollapsed && recentConversations.map((conv) => (
+              <ConversationRow
+                key={conv.id}
+                conv={conv}
+                statusKind={statusMap.get(conv.id) || "none"}
+                isActive={conv.id === activeConvId}
+                currentUserId={currentUserId}
+                onClick={() => setActiveConvId(conv.id)}
+                isFavorite={false}
+                onToggleFavorite={() => setFavoriteConversationIds((ids) => [...new Set([...ids, conv.id])])}
               />
             ))}
           </div>
@@ -1012,7 +1096,7 @@ export default function ChatPage() {
 
         <main
           className={[
-            "min-w-0 flex-1 bg-[radial-gradient(circle_at_20%_0%,#10193a_0%,#0b1126_35%,#080d1d_100%)]",
+            CHAT_UI_V2_ENABLED ? styles.workspace : "min-w-0 flex-1 bg-[radial-gradient(circle_at_20%_0%,#10193a_0%,#0b1126_35%,#080d1d_100%)]",
             activeConversation ? "flex" : "hidden md:flex",
           ].join(" ")}
         >
@@ -1030,9 +1114,9 @@ export default function ChatPage() {
           ) : (
             <div className="flex w-full items-center justify-center">
               <div className="text-center">
-                <MessageSquare className="mx-auto h-10 w-10 text-indigo-500" />
-                <p className="mt-3 text-base font-semibold text-slate-100">Start a conversation</p>
-                <p className="text-sm text-slate-400">Pick a chat from the left or create a new one.</p>
+                <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-[var(--chat-border)] bg-white text-[var(--chat-primary)] shadow-sm"><MessageSquare className="h-7 w-7" /></span>
+                <p className="mt-4 font-[var(--font-ats-heading)] text-lg font-bold text-[var(--chat-text)]">Your conversations, in one calm workspace</p>
+                <p className="mt-1 text-sm text-[var(--chat-muted)]">Choose a conversation or start a new one.</p>
               </div>
             </div>
           )}
@@ -1074,6 +1158,7 @@ export default function ChatPage() {
           onToast={(message, tone = "success") => setToast({ message, tone })}
         />
       ) : null}
+      </div>
       </AccessGate>
     </ChatPageBoundary>
   );
@@ -1085,37 +1170,36 @@ function ConversationRow({
   isActive,
   currentUserId,
   onClick,
+  isFavorite,
+  onToggleFavorite,
 }: {
   conv: Conversation;
   statusKind: ConversationLiveStatus["status_kind"];
   isActive: boolean;
   currentUserId: number | null;
   onClick: () => void;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
 }) {
   const label = convLabel(conv, currentUserId);
   const unread = conv.unread_count ?? 0;
   const last = conv.last_message;
   const badge = statusLabel(statusKind);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "w-full border-l-2 px-4 py-2.5 text-left transition duration-200 ease-out",
-        isActive ? "border-indigo-400 bg-[#2a3142]" : "border-transparent hover:bg-[#262c3c]",
-      ].join(" ")}
-    >
+    <div className={[CHAT_UI_V2_ENABLED ? styles.conversationRow : "relative w-full px-4 py-2.5", CHAT_UI_V2_ENABLED && isActive ? styles.conversationActive : "", "group/conv"].join(" ")}>
+      <button type="button" onClick={onClick} className="w-full text-left" aria-current={isActive ? "page" : undefined}>
       <div className="flex items-start gap-2.5">
-        <div className={`grid h-8 w-8 place-items-center rounded-full text-[10px] font-bold text-white ${avatarColor(conv.id)}`}>
-          {conv.type === "group" ? <Users className="h-3.5 w-3.5" /> : initials(label)}
+        <div className={`relative grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xs font-bold text-white ${avatarColor(conv.id)}`}>
+          {conv.type === "group" ? <Users className="h-4 w-4" /> : initials(label)}
+          {statusKind === "active_now" ? <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[var(--chat-sidebar)] bg-emerald-500" /> : null}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className={`truncate text-sm ${unread > 0 ? "font-semibold text-white" : "font-medium text-slate-200"}`}>{label}</span>
-            {last ? <span className="text-[10px] text-slate-400">{formatTime(last.created_at)}</span> : null}
+            <span className={`truncate ${styles.conversationName} ${unread > 0 ? "font-extrabold" : ""}`}>{label}</span>
+            {last ? <span className="pr-5 text-[11px] text-[var(--chat-soft)]">{formatTime(last.created_at)}</span> : null}
           </div>
           <div className="mt-0.5 flex items-center gap-2">
-            <span className="truncate text-xs text-slate-400">
+            <span className={`truncate ${styles.conversationPreview}`}>
               {last ? (last.is_system ? last.content : `${last.sender_name.split(" ")[0]}: ${last.content}`) : "No messages yet"}
             </span>
             {badge ? (
@@ -1124,12 +1208,22 @@ function ConversationRow({
               </span>
             ) : null}
             {unread > 0 ? (
-              <span className="shrink-0 animate-pulse rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">{unread}</span>
+              <span className="shrink-0 rounded-full bg-[var(--chat-primary)] px-1.5 py-0.5 text-[10px] font-bold text-white">{unread}</span>
             ) : null}
           </div>
         </div>
       </div>
-    </button>
+      </button>
+      <button
+        type="button"
+        onClick={(event) => { event.stopPropagation(); onToggleFavorite(); }}
+        className={`absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-lg transition ${isFavorite ? "text-amber-600" : "text-[var(--chat-soft)] opacity-0 hover:bg-white group-hover/conv:opacity-100 focus:opacity-100"}`}
+        aria-label={isFavorite ? `Remove ${label} from favorites` : `Add ${label} to favorites`}
+        title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+      >
+        <Star className={`h-3.5 w-3.5 ${isFavorite ? "fill-current" : ""}`} />
+      </button>
+    </div>
   );
 }
 
@@ -3499,18 +3593,19 @@ function ChatWorkspace({
       onDrop={onDropZone}
     >
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-[#2b3346] bg-[#10172b]/95 px-5 py-3 backdrop-blur">
+        <header className={CHAT_UI_V2_ENABLED ? styles.workspaceHeader : "border-b border-[#2b3346] bg-[#10172b]/95 px-5 py-3 backdrop-blur"}>
           <div className="flex items-center gap-2">
             <button type="button" onClick={onBack} className="rounded p-1 hover:bg-slate-100 md:hidden">
               <ChevronLeft className="h-4 w-4 text-slate-600" />
             </button>
-            <div className={`grid h-8 w-8 place-items-center rounded-full text-[10px] font-bold text-white ${avatarColor(conversation.id)}`}>
-              {conversation.type === "group" ? <Users className="h-3.5 w-3.5" /> : initials(convLabel(conversation, currentUserId))}
+            <div className={`grid h-10 w-10 place-items-center rounded-xl text-xs font-bold text-white shadow-sm ${avatarColor(conversation.id)}`}>
+              {conversation.type === "group" ? <Users className="h-4 w-4" /> : initials(convLabel(conversation, currentUserId))}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-base font-bold tracking-tight text-slate-100">{convLabel(conversation, currentUserId)}</p>
-              <p className="text-[11px] text-slate-400">
-                {conversation.type === "group" ? `${safeConversationMembers.length} members` : "Direct message"}
+              <p className={CHAT_UI_V2_ENABLED ? styles.conversationTitle : "truncate text-base font-bold tracking-tight text-slate-100"}>{convLabel(conversation, currentUserId)}</p>
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-[var(--chat-muted)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                {conversation.type === "group" ? `${safeConversationMembers.length} members` : "Direct message · Available"}
               </p>
             </div>
             <div className="hidden items-center gap-1 md:flex">
@@ -3518,7 +3613,7 @@ function ChatWorkspace({
                 type="button"
                 onClick={async () => launchCall("call")}
                 disabled={callLoading !== null}
-                className="rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-2 py-1.5 text-[11px] font-semibold text-emerald-200 transition hover:bg-emerald-500/25 disabled:opacity-60"
+                className={styles.primaryAction}
               >
                 <Phone className="mr-1 inline h-3.5 w-3.5" />
                 {callLoading === "call" ? "Starting…" : "Call"}
@@ -3527,7 +3622,7 @@ function ChatWorkspace({
                 type="button"
                 onClick={async () => launchCall("screenshare")}
                 disabled={callLoading !== null}
-                className="rounded-lg border border-cyan-400/40 bg-cyan-500/15 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 transition hover:bg-cyan-500/25 disabled:opacity-60"
+                className={styles.primaryAction}
               >
                 <MonitorUp className="mr-1 inline h-3.5 w-3.5" />
                 {callLoading === "screenshare" ? "Starting…" : "Share"}
@@ -3535,7 +3630,7 @@ function ChatWorkspace({
               <button
                 type="button"
                 onClick={() => setDrawerView((v) => (v === "calendar" ? null : "calendar"))}
-                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition", drawerView === "calendar" ? "border-amber-400 bg-amber-500/20 text-amber-100" : "border-[#364157] bg-[#0f1629] text-slate-300 hover:bg-[#1a233a]"].join(" ")}
+                className={[styles.secondaryAction, drawerView === "calendar" ? "border-[var(--chat-primary)] bg-[var(--chat-surface-teal)] text-[var(--chat-primary)]" : ""].join(" ")}
               >
                 <CalendarDays className="mr-1 inline h-3.5 w-3.5" />
                 Calendar
@@ -3543,7 +3638,7 @@ function ChatWorkspace({
               <button
                 type="button"
                 onClick={() => setDrawerView((v) => (v === "details" ? null : "details"))}
-                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition", drawerView === "details" ? "border-indigo-400 bg-indigo-500/20 text-indigo-200" : "border-[#364157] bg-[#0f1629] text-slate-300 hover:bg-[#1a233a]"].join(" ")}
+                className={[styles.secondaryAction, drawerView === "details" ? "border-[var(--chat-primary)] bg-[var(--chat-surface-teal)] text-[var(--chat-primary)]" : ""].join(" ")}
               >
                 <Info className="mr-1 inline h-3.5 w-3.5" />
                 Details
@@ -3551,7 +3646,7 @@ function ChatWorkspace({
               <button
                 type="button"
                 onClick={() => setDrawerView((v) => (v === "pins" ? null : "pins"))}
-                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition", drawerView === "pins" ? "border-violet-400 bg-violet-500/20 text-violet-200" : "border-[#364157] bg-[#0f1629] text-slate-300 hover:bg-[#1a233a]"].join(" ")}
+                className={[styles.secondaryAction, drawerView === "pins" ? "border-[var(--chat-primary)] bg-[var(--chat-surface-teal)] text-[var(--chat-primary)]" : ""].join(" ")}
               >
                 <Pin className="mr-1 inline h-3.5 w-3.5" />
                 Pins
@@ -3559,7 +3654,7 @@ function ChatWorkspace({
               <button
                 type="button"
                 onClick={() => setDrawerView((v) => (v === "notify" ? null : "notify"))}
-                className={["rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition", drawerView === "notify" ? "border-cyan-400 bg-cyan-500/20 text-cyan-200" : "border-[#364157] bg-[#0f1629] text-slate-300 hover:bg-[#1a233a]"].join(" ")}
+                className={[styles.secondaryAction, drawerView === "notify" ? "border-[var(--chat-primary)] bg-[var(--chat-surface-teal)] text-[var(--chat-primary)]" : ""].join(" ")}
               >
                 <Bell className="mr-1 inline h-3.5 w-3.5" />
                 Notify
@@ -3569,7 +3664,7 @@ function ChatWorkspace({
                 onChange={async (e) => {
                   await setManualPresence(e.target.value === "busy" ? "busy" : "available");
                 }}
-                className="rounded-lg border border-[#364157] bg-[#0f1629] px-2 py-1.5 text-[11px] font-semibold text-slate-200"
+                className={`${styles.secondaryAction} px-2`}
               >
                 <option value="available">Available</option>
                 <option value="busy">Busy</option>
@@ -3583,13 +3678,13 @@ function ChatWorkspace({
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
                 placeholder="Search in chat"
-                className="w-full rounded-xl border border-[#364157] bg-[#0c1324] py-2 pl-9 pr-3 text-xs text-slate-200 outline-none transition placeholder:text-slate-500 focus:border-indigo-400 focus:bg-[#0f1629] focus:ring-2 focus:ring-indigo-500/20"
+                className={`${styles.workspaceSearch} rounded-xl py-2.5 pl-9 pr-3 text-sm placeholder:text-[var(--chat-soft)]`}
               />
             </div>
             <select
               value={searchScope}
               onChange={(e) => setSearchScope(e.target.value as "all" | "conversation")}
-              className="rounded-xl border border-[#364157] bg-[#0c1324] px-3 py-2 text-xs text-slate-200"
+              className={`${styles.secondaryAction} px-3`}
             >
               <option value="conversation">This chat</option>
               <option value="all">All chats</option>
@@ -3629,7 +3724,7 @@ function ChatWorkspace({
           ) : null}
         </header>
 
-        <div className="chat-scrollbar flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0d1428_0%,#0a1020_100%)] px-5 py-4">
+        <div className={`chat-scrollbar ${CHAT_UI_V2_ENABLED ? styles.timeline : "flex-1 overflow-y-auto bg-[linear-gradient(180deg,#0d1428_0%,#0a1020_100%)] px-5 py-4"}`}>
           {(pinData?.pins?.length ?? 0) > 0 ? (
             <div className="mb-3 flex items-center gap-2 overflow-x-auto rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2">
               <Pin className="h-3.5 w-3.5 text-amber-300" />
@@ -3685,7 +3780,7 @@ function ChatWorkspace({
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="border-t border-[#2b3346] bg-[#10172b]/95 px-4 py-3 backdrop-blur">
+        <div className={CHAT_UI_V2_ENABLED ? styles.composerArea : "border-t border-[#2b3346] bg-[#10172b]/95 px-4 py-3 backdrop-blur"}>
           {uploadQueue.length > 0 ? (
             <div className="mb-2 space-y-1">
               {uploadQueue.map((item) => (
@@ -3704,7 +3799,8 @@ function ChatWorkspace({
             </div>
           ) : null}
 
-          <div className="mb-2 flex items-center gap-1">
+          <div className={CHAT_UI_V2_ENABLED ? styles.composer : ""}>
+          <div className="mb-1 flex items-center gap-1">
             <div className="relative">
               <button
                 type="button"
@@ -3800,13 +3896,13 @@ function ChatWorkspace({
                 }
               }}
               placeholder="Type a message"
-              className="max-h-[220px] min-h-[56px] flex-1 resize-none overflow-y-auto rounded-2xl border border-[#3a4660] bg-[#0a1121] px-4 py-3 text-sm leading-6 text-slate-100 shadow-[inset_0_1px_2px_rgba(2,6,23,0.45)] outline-none transition placeholder:text-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/25"
+              className={CHAT_UI_V2_ENABLED ? "flex-1 overflow-y-auto" : "max-h-[220px] min-h-[56px] flex-1 resize-none overflow-y-auto rounded-2xl border border-[#3a4660] bg-[#0a1121] px-4 py-3 text-sm leading-6 text-slate-100 shadow-[inset_0_1px_2px_rgba(2,6,23,0.45)] outline-none transition placeholder:text-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/25"}
             />
             <button
               type="button"
               onClick={async () => sendComposer()}
               disabled={!canSend}
-              className="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-2.5 text-white shadow-md transition hover:from-indigo-500 hover:to-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+              className={CHAT_UI_V2_ENABLED ? styles.sendButton : "rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-2.5 text-white shadow-md transition hover:from-indigo-500 hover:to-violet-500 disabled:cursor-not-allowed disabled:opacity-60"}
             >
               <Send className="h-4 w-4" />
             </button>
@@ -3859,6 +3955,7 @@ function ChatWorkspace({
               {failedAttachmentCount > 0 ? ` • ${failedAttachmentCount} failed` : ""}
             </p>
           </div>
+        </div>
         </div>
       </section>
 
@@ -4278,23 +4375,26 @@ function MessageBubble({
   return (
     <div
       id={`message-${message.id}`}
-      className={`group flex gap-2 transition-all duration-200 ease-out ${isMe ? "justify-end" : ""}`}
+      className={`group ${CHAT_UI_V2_ENABLED ? styles.messageRow : `flex gap-2 ${isMe ? "justify-end" : ""}`}`}
     >
-      {!isMe ? (
-        <div className="w-8 shrink-0">
+      <div className="w-9 shrink-0">
           {showSender ? (
-            <div className={`grid h-7 w-7 place-items-center rounded-full text-[10px] font-bold text-white ${avatarColor(message.sender_id)}`}>
+            <div className={`grid h-9 w-9 place-items-center rounded-xl text-[11px] font-bold text-white shadow-sm ${avatarColor(message.sender_id)}`}>
               {initials(message.sender_name)}
             </div>
           ) : null}
-        </div>
-      ) : null}
-      <div className={`max-w-[76%] ${isMe ? "items-end" : "items-start"}`}>
-        {showSender && !isMe ? <p className="mb-0.5 text-[11px] font-semibold text-slate-300">{message.sender_name}</p> : null}
+      </div>
+      <div className={`${CHAT_UI_V2_ENABLED ? styles.messageContent : "max-w-[76%]"} ${CHAT_UI_V2_ENABLED && isMe ? styles.ownMessage : ""}`}>
+        {showSender ? (
+          <div className="mb-0.5 flex items-baseline gap-2">
+            <p className={CHAT_UI_V2_ENABLED ? styles.messageSender : "text-[11px] font-semibold text-slate-300"}>{isMe ? "You" : message.sender_name}</p>
+            <span className={CHAT_UI_V2_ENABLED ? styles.messageMeta : "text-[10px] text-slate-400"}>{formatTime(message.created_at)}</span>
+          </div>
+        ) : null}
         {message.attachment_url && isImageAttachment(message) ? (
           <a href={message.attachment_url} target="_blank" rel="noopener noreferrer">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={message.attachment_url} alt={message.attachment_name || "Attachment"} className="max-h-72 rounded-xl object-contain" />
+            <img src={message.attachment_url} alt={message.attachment_name || "Attachment"} className="mt-1 max-h-80 rounded-xl border border-[var(--chat-border)] object-contain shadow-sm" />
           </a>
         ) : null}
         {message.attachment_url && message.attachment_type === "file" ? (
@@ -4315,13 +4415,7 @@ function MessageBubble({
           </a>
         ) : null}
         {message.content ? (
-          <div
-            className={`mt-1 rounded-2xl px-3.5 py-2.5 text-sm leading-5 shadow-sm ${
-              isMe
-                ? "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-[0_8px_24px_rgba(79,70,229,0.35)]"
-                : "border border-[#33405d] bg-[#121a30] text-slate-100 shadow-[0_6px_16px_rgba(2,6,23,0.35)]"
-            }`}
-          >
+          <div className={CHAT_UI_V2_ENABLED ? styles.messageBody : `mt-1 rounded-2xl px-3.5 py-2.5 text-sm leading-5 ${isMe ? "bg-indigo-600 text-white" : "border border-slate-700 bg-slate-800 text-slate-100"}`}>
             {editing ? (
               <div className="space-y-2">
                 <textarea
@@ -4344,7 +4438,7 @@ function MessageBubble({
                 <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                   {renderMessageWithMentions(message.content, message.mentions)}
                 </span>
-                {message.edited_at ? <span className={`ml-1 text-[10px] ${isMe ? "text-indigo-100" : "text-slate-400"}`}>(edited)</span> : null}
+                {message.edited_at ? <span className="ml-1 text-[11px] text-[var(--chat-soft)]">(edited)</span> : null}
               </>
             )}
           </div>
@@ -4368,17 +4462,17 @@ function MessageBubble({
             ))}
           </div>
         ) : null}
-        <div className={`mt-0.5 flex items-center gap-2 text-[10px] text-slate-400 ${isMe ? "justify-end" : ""}`}>
-          <span>{formatTime(message.created_at)}</span>
-          <button type="button" onClick={() => addReaction("👍")} className="opacity-0 transition group-hover:opacity-100 hover:text-indigo-600">
-            👍
+        {!showSender ? <span className={`mt-1 inline-block ${CHAT_UI_V2_ENABLED ? styles.messageMeta : "text-[10px] text-slate-400"}`}>{formatTime(message.created_at)}</span> : null}
+        {message.thread_reply_count ? (
+          <button type="button" onClick={onOpenThread} className="mt-1 block text-xs font-semibold text-[var(--chat-primary)] hover:underline">
+            {message.thread_reply_count} thread repl{message.thread_reply_count === 1 ? "y" : "ies"}
           </button>
-          <button type="button" onClick={onOpenThread} className="opacity-0 transition group-hover:opacity-100 hover:text-indigo-600">
-            Reply thread{message.thread_reply_count ? ` (${message.thread_reply_count})` : ""}
-          </button>
-          <button type="button" onClick={() => setMenuOpen((v) => !v)} className="opacity-0 transition group-hover:opacity-100 hover:text-indigo-600">
-            •••
-          </button>
+        ) : null}
+        <div className={CHAT_UI_V2_ENABLED ? styles.messageToolbar : "mt-1 flex gap-2 text-[10px] text-slate-400"} aria-label="Message actions">
+          <button type="button" onClick={() => addReaction("👍")} aria-label="React with thumbs up">👍</button>
+          <button type="button" onClick={onOpenThread}>Reply</button>
+          <button type="button" onClick={async () => { if (message.content) await navigator.clipboard?.writeText(message.content); }} aria-label="Copy message">Copy</button>
+          <button type="button" onClick={() => setMenuOpen((v) => !v)} aria-label="More message actions">•••</button>
         </div>
         {menuOpen ? (
           <div className={`mt-1 inline-flex rounded border border-[#3a4660] bg-[#0f1629] shadow-sm ${isMe ? "ml-auto" : ""}`}>
@@ -4590,10 +4684,10 @@ function ChatContextDrawer({
   }
 
   return (
-    <aside className="w-[340px] shrink-0 border-l border-[#2e3a56] bg-[#0d1428]/95 backdrop-blur">
-      <div className="flex items-center justify-between border-b border-[#2e3a56] px-4 py-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-200">{view}</p>
-        <button type="button" onClick={onClose} className="rounded p-1 text-slate-300 hover:bg-[#1a233a]">
+    <aside className={CHAT_UI_V2_ENABLED ? styles.contextPanel : "w-[340px] shrink-0 border-l border-[#2e3a56] bg-[#0d1428]/95 backdrop-blur"}>
+      <div className="flex min-h-16 items-center justify-between border-b border-[var(--chat-border)] px-4 py-3">
+        <div><p className="font-[var(--font-ats-heading)] text-base font-bold capitalize text-[var(--chat-text)]">{view}</p><p className="text-xs text-[var(--chat-muted)]">Conversation workspace</p></div>
+        <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg text-[var(--chat-muted)] hover:bg-[var(--chat-surface-teal)]" aria-label={`Close ${view} panel`}>
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -4764,7 +4858,7 @@ function ChatContextDrawer({
                   placeholder="Call title"
                   className="w-full rounded-lg border border-[#3a4660] bg-[#0b1223] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400"
                 />
-                <DateTimePicker value={scheduleStart} onChange={setScheduleStart} variant="dark" />
+                <DateTimePicker value={scheduleStart} onChange={setScheduleStart} />
                 <select
                   value={scheduleDuration}
                   onChange={(e) => setScheduleDuration(Number(e.target.value))}
@@ -4856,14 +4950,14 @@ function ThreadPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   return (
-    <aside className="w-[400px] shrink-0 border-l border-[#2e3a56] bg-[#121a30] text-slate-100 shadow-[-12px_0_30px_rgba(2,6,23,0.35)]">
-      <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-200">Thread</p>
-        <button type="button" onClick={onClose} className="rounded p-1 hover:bg-[#1a233a]">
-          <X className="h-4 w-4 text-slate-100" />
+    <aside className={CHAT_UI_V2_ENABLED ? styles.threadPanel : "w-[400px] shrink-0 border-l border-[#2e3a56] bg-[#121a30] text-slate-100"}>
+      <div className="flex min-h-16 items-center justify-between border-b border-[var(--chat-border)] px-4 py-3">
+        <div><p className="font-[var(--font-ats-heading)] text-base font-bold text-[var(--chat-text)]">Thread</p><p className="text-xs text-[var(--chat-muted)]">{replies.length} repl{replies.length === 1 ? "y" : "ies"}</p></div>
+        <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg hover:bg-[var(--chat-surface-teal)]" aria-label="Close thread">
+          <X className="h-4 w-4 text-[var(--chat-muted)]" />
         </button>
       </div>
-      <div className="chat-scrollbar h-[calc(100%-112px)] overflow-y-auto bg-[#0f162a] px-3 py-3">
+      <div className="chat-scrollbar h-[calc(100%-130px)] overflow-y-auto bg-[var(--chat-surface-soft)] px-3 py-3">
         <div className="mb-2 rounded-lg border border-slate-700 bg-[#212735] px-2 py-1 text-[11px] text-slate-300">
           {replies.length} repl{replies.length === 1 ? "y" : "ies"} • started {formatRelative(parent.created_at)}
         </div>
@@ -4891,13 +4985,13 @@ function ThreadPanel({
           {replies.length === 0 ? <p className="text-xs text-slate-400">No replies yet.</p> : null}
         </div>
       </div>
-      <div className="border-t border-[#2f3953] bg-[#121a30] p-3">
+      <div className="border-t border-[var(--chat-border)] bg-white p-3">
         <textarea
           rows={2}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Reply in thread"
-          className="w-full resize-none rounded-xl border border-slate-600 bg-[#131828] px-3 py-2.5 text-xs text-slate-100 outline-none transition focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300/30"
+          className="w-full resize-none rounded-xl border border-[var(--chat-border)] bg-white px-3 py-2.5 text-sm text-[var(--chat-text)] outline-none transition focus:border-[var(--chat-primary)] focus:ring-2 focus:ring-[var(--ats-focus)]"
         />
         <button
           type="button"
