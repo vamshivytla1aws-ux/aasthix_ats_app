@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { Calendar as CalendarIcon, Download, EyeOff, SlidersHorizontal, Trash2, UserX, XCircle } from "lucide-react";
@@ -24,6 +24,7 @@ import FilterDrawer from "@/components/enterprise/FilterDrawer";
 import Toast from "@/components/Toast";
 import { DatePicker, TimePicker } from "@/components/ui/DateTimeFields";
 import "react-big-calendar/lib/css/react-big-calendar.css";
+import ViewportPortal from "@/components/ui/ViewportPortal";
 
 const INTERVIEWS_LIST_KEY = "/api/applications?interview_overview=1";
 const INTERVIEW_ALERTS_KEY = "/api/interviews/alerts";
@@ -92,6 +93,7 @@ type CalendarStatusResponse = {
     updated_at?: string | null;
     sync_error?: string | null;
   };
+  transactional_email?: { configured: boolean; provider_order?: string[] };
 };
 
 const locales = {
@@ -233,6 +235,7 @@ export default function InterviewsPage() {
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [rescheduleDurationMinutes, setRescheduleDurationMinutes] = useState<15 | 30 | 45 | 60>(60);
   const [rescheduleSendEmail, setRescheduleSendEmail] = useState(false);
+  const [rescheduleDeliveryRetry, setRescheduleDeliveryRetry] = useState(false);
   const [rescheduleAttendees, setRescheduleAttendees] = useState("");
   const [rescheduleTimezone, setRescheduleTimezone] = useState(
     ATS_TIMEZONE_LABEL
@@ -247,6 +250,7 @@ export default function InterviewsPage() {
   const [rescheduleDraftBusy, setRescheduleDraftBusy] = useState(false);
   const [rescheduleDraftError, setRescheduleDraftError] = useState<string | null>(null);
   const [rescheduleDraftSource, setRescheduleDraftSource] = useState<"ai" | "fallback" | null>(null);
+  const rescheduleInviteIdempotencyRef = useRef("");
   const [searchQ, setSearchQ] = useState("");
   const [debouncedSearchQ, setDebouncedSearchQ] = useState("");
   const [tableViewPreset, setTableViewPreset] = useState<"all" | "scheduled" | "upcoming" | "today" | "this_week" | "overdue" | "completed" | "followup" | "no_show" | "rejected">("all");
@@ -709,6 +713,7 @@ export default function InterviewsPage() {
     }
     setError(null);
     setActionBusyId(selectedInterview.id);
+    let scheduleSaved = false;
     try {
       const iso = kolkataLocalToUtcIso(rescheduleDate, rescheduleTime);
       if (!iso) {
@@ -731,21 +736,13 @@ export default function InterviewsPage() {
           send_email: false,
           interview_attendee_emails: rescheduleAttendees,
           interview_status_note: rescheduleNotes,
-          skip_google_sync: sendInvite,
+          skip_google_sync: true,
         }),
       });
-      if (
-        (updated.calendar_sync_status === "calendar_sync_failed" ||
-          updated.calendar_sync_status === "google_not_connected") &&
-        !sendInvite
-      ) {
-        throw new Error(
-          updated.calendar_sync_error ||
-            "Calendar invite failed; reconnect shared Google account or fix scopes."
-        );
-      }
+      scheduleSaved = true;
+      await updateInterviewInState(updated);
       let inviteResult:
-        | { calendar_sync_status?: string; meet_link?: string | null; external_calendar_event_id?: string | null }
+        | { operation_status?: string; delivery_channel?: string; delivery_warning?: string | null; calendar_sync_status?: string; meet_link?: string | null; external_calendar_event_id?: string | null }
         | null = null;
       if (sendInvite) {
         inviteResult = await apiFetchJson(`/api/applications/${selectedInterview.id}/send-interview-invite`, {
@@ -761,10 +758,15 @@ export default function InterviewsPage() {
               meetingLocation: rescheduleMeetingLocation,
             }),
             invite_mode: "rescheduled",
+            meeting_mode: rescheduleMeetingMode,
+            meeting_location: rescheduleMeetingLocation,
+            duration_minutes: rescheduleDurationMinutes,
+            allow_email_fallback: true,
+            idempotency_key: rescheduleInviteIdempotencyRef.current,
           }),
         });
+        if (inviteResult) await updateInterviewInState({ ...updated, meet_link: inviteResult.meet_link ?? updated.meet_link, external_calendar_event_id: inviteResult.external_calendar_event_id ?? updated.external_calendar_event_id, calendar_sync_status: inviteResult.calendar_sync_status as ApplicationRow["calendar_sync_status"] });
       }
-      await updateInterviewInState(updated);
       setRescheduleOpen(false);
       setDetailsOpen(false);
       setRescheduleReason("");
@@ -776,21 +778,21 @@ export default function InterviewsPage() {
       setRescheduleDraftSubject("");
       setRescheduleDraftBody("");
       setRescheduleSendEmail(false);
+      setRescheduleDeliveryRetry(false);
       showSuccessToast(
         sendInvite
-          ? inviteResult?.meet_link || updated.meet_link
-            ? "Interview rescheduled and single ATS+Google invite sent."
-            : "Interview rescheduled and single Google invite sent."
-          : updated.meet_link
-            ? "Interview rescheduled and Google Meet invite updated."
-            : updated.calendar_sync_status === "google_not_connected"
-              ? "Interview rescheduled. Google Calendar is not connected yet."
-              : "Interview rescheduled."
+          ? inviteResult?.delivery_channel === "google_calendar"
+            ? "Interview rescheduled and Google Calendar update sent."
+            : "Interview rescheduled and updated ATS email sent. Google Calendar requires attention."
+          : "Updated interview schedule saved without sending an invitation."
       );
       void mutateAlerts();
     } catch (err: any) {
       showPermissionToast(err);
-      setError(err.message || "Failed to reschedule interview");
+      setError(scheduleSaved
+        ? `Interview was rescheduled, but invitation delivery failed. ${err.message || "Retry after checking Calendar or Email Health."}`
+        : err.message || "Failed to reschedule interview");
+      if (scheduleSaved && sendInvite) setRescheduleDeliveryRetry(true);
     } finally {
       setActionBusyId(null);
     }
@@ -868,6 +870,7 @@ export default function InterviewsPage() {
     setRescheduleDate(date);
     setRescheduleTime(time);
     setRescheduleSendEmail(false);
+    setRescheduleDeliveryRetry(false);
     setRescheduleAttendees(Array.isArray(app.interview_attendee_emails) ? app.interview_attendee_emails.join(", ") : "");
     setRescheduleTimezone(ATS_TIMEZONE_LABEL);
     setRescheduleDurationMinutes(60);
@@ -881,6 +884,7 @@ export default function InterviewsPage() {
     setRescheduleDraftError(null);
     setRescheduleDraftSource(null);
     setRescheduleReason(app.interview_reschedule_reason || "");
+    rescheduleInviteIdempotencyRef.current = crypto.randomUUID();
     setError(null);
     setRescheduleOpen(true);
   }
@@ -1889,11 +1893,12 @@ export default function InterviewsPage() {
       )}
 
       {rescheduleOpen && selectedInterview && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setRescheduleOpen(false)} />
-          <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white shadow-md border border-slate-200 p-6">
-              <div className="flex items-start justify-between gap-6">
+        <ViewportPortal onClose={() => setRescheduleOpen(false)} busy={actionBusyId === selectedInterview.id} dirty={Boolean(rescheduleDate || rescheduleTime || rescheduleDraftBody)}>
+        <div className="fixed inset-0 z-[120]" role="dialog" aria-modal="true" aria-label="Reschedule interview">
+          <div data-viewport-close className="absolute inset-0 bg-black/30" />
+          <div className="absolute inset-0 flex items-center justify-center p-0 sm:p-4">
+            <div className="h-full w-full max-w-3xl overflow-y-auto bg-white p-4 shadow-md sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:border sm:border-slate-200 sm:p-6">
+              <div className="sticky -top-4 z-10 -mx-4 flex items-start justify-between gap-6 border-b border-slate-100 bg-white px-4 pb-4 pt-1 sm:-top-6 sm:-mx-6 sm:px-6">
                 <div>
                   <div className="text-lg font-semibold">Reschedule Interview</div>
                   <div className="mt-1 text-sm text-slate-600">
@@ -1901,6 +1906,7 @@ export default function InterviewsPage() {
                   </div>
                 </div>
                 <button
+                  data-viewport-close
                   type="button"
                   onClick={() => setRescheduleOpen(false)}
                   className="rounded-xl border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 transition-all duration-200"
@@ -1984,7 +1990,9 @@ export default function InterviewsPage() {
                 <p className="mt-1 text-xs text-slate-500">
                   {calendarStatus?.shared_google?.connected
                     ? `Google Meet invite will be updated from ${calendarStatus.shared_google.account_email || "the shared calendar account"} for the candidate and these attendees.`
-                    : "Google Calendar is not connected yet. Rescheduling will stay inside the ATS only."}
+                    : calendarStatus?.transactional_email?.configured
+                      ? "Google Calendar is unavailable. One updated ATS email can be sent after saving the new time."
+                      : "Delivery services are unavailable. The new time will remain saved so delivery can be retried later."}
                 </p>
               </div>
 
@@ -2039,11 +2047,12 @@ export default function InterviewsPage() {
                     <label className="block mb-1 text-sm text-gray-600">To</label>
                     <input
                       type="text"
-                      className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full rounded-xl border border-gray-300 bg-slate-50 px-3 py-2 text-sm text-slate-700"
                       value={rescheduleDraftTo}
-                      onChange={(e) => setRescheduleDraftTo(e.target.value)}
-                      disabled={actionBusyId === selectedInterview.id}
+                      readOnly
+                      aria-readonly="true"
                     />
+                    <p className="mt-1 text-xs text-slate-500">Locked to the candidate profile email.</p>
                   </div>
                   <div>
                     <label className="block mb-1 text-sm text-gray-600">CC panel members</label>
@@ -2082,7 +2091,7 @@ export default function InterviewsPage() {
                 </div>
               </div>
 
-              <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <div className="sticky -bottom-4 z-10 -mx-4 mt-6 flex flex-wrap justify-end gap-2 border-t border-slate-100 bg-white px-4 pb-1 pt-4 sm:-bottom-6 sm:-mx-6 sm:px-6 sm:pb-2">
                 <button
                   type="button"
                   disabled={actionBusyId === selectedInterview.id}
@@ -2097,12 +2106,13 @@ export default function InterviewsPage() {
                   onClick={() => void submitReschedule(true)}
                   className="rounded-xl bg-blue-600 text-white px-4 py-2 text-sm font-semibold hover:bg-blue-700 transition-all duration-200 disabled:opacity-50"
                 >
-                  {actionBusyId === selectedInterview.id ? "Sending..." : "Save + send updated invite"}
+                  {actionBusyId === selectedInterview.id ? "Sending..." : rescheduleDeliveryRetry ? "Retry updated invitation" : "Save + send updated invite"}
                 </button>
               </div>
             </div>
           </div>
         </div>
+        </ViewportPortal>
       )}
       </div>
       </ModulePageFrame>

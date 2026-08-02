@@ -36,6 +36,12 @@ export async function GET() {
     }
 
     const sharedGoogle = await getSharedGoogleCalendarStatus();
+    const providerOrder = String(process.env.EMAIL_PROVIDER_ORDER || "resend,smtp").split(",").map((value) => value.trim()).filter(Boolean);
+    const resendReady = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
+    const smtpReady = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+    const lastEmailEvent = await query(
+      `SELECT provider, status, error_category, created_at FROM email_delivery_events ORDER BY created_at DESC LIMIT 1`,
+    ).then((result: { rows: unknown[] }) => result.rows[0] || null).catch(() => null);
 
     return NextResponse.json({
       google_configured: connections.some((c) => c.provider === "google" && c.sync_enabled),
@@ -44,6 +50,11 @@ export async function GET() {
       shared_google: sharedGoogle,
       provider_env_ready: {
         google: sharedGoogle.configured,
+      },
+      transactional_email: {
+        configured: (providerOrder.includes("resend") && resendReady) || (providerOrder.includes("smtp") && smtpReady),
+        provider_order: providerOrder,
+        last_delivery: lastEmailEvent,
       },
       message:
         connections.length === 0

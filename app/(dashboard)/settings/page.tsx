@@ -37,11 +37,12 @@ const DENSITY_STORAGE_KEY = "ats-settings-density";
 export default function SettingsPage() {
   const [tab, setTab] = useState<"profile" | "appearance" | "notifications" | "calendar" | "session">("profile");
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetchJson<{ user: UserProfile }>("/api/auth/me")
-      .then((d) => setUser(d.user))
+    apiFetchJson<{ user: UserProfile; permissions?: Record<string, boolean> }>("/api/auth/me")
+      .then((d) => { setUser(d.user); setPermissions(d.permissions || {}); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -50,7 +51,7 @@ export default function SettingsPage() {
     { id: "profile" as const, label: "Profile", icon: <User className="h-4 w-4" /> },
     { id: "appearance" as const, label: "Appearance", icon: <Palette className="h-4 w-4" /> },
     { id: "notifications" as const, label: "Notifications", icon: <Bell className="h-4 w-4" /> },
-    ...(String(user?.role || "").toLowerCase() === "admin"
+    ...(permissions["settings.manage"] === true
       ? [{ id: "calendar" as const, label: "Calendar & Meet", icon: <Calendar className="h-4 w-4" /> }]
       : []),
     { id: "session" as const, label: "Session & Security", icon: <KeyRound className="h-4 w-4" /> },
@@ -345,6 +346,7 @@ function NotificationsSection() {
 function CalendarMeetSection({ user }: { user: UserProfile | null }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<{
@@ -385,7 +387,7 @@ function CalendarMeetSection({ user }: { user: UserProfile | null }) {
     const map: Record<string, string> = {
       connected: "Shared Google Calendar connected.",
       connect_failed: "Google Calendar connection failed.",
-      forbidden: "Only admins can connect the shared Google account.",
+      forbidden: "Workspace settings access is required to connect the shared Google account.",
       unauthorized: "Please sign in again to complete Google Calendar connection.",
       invalid_auth_state: "Google OAuth state check failed. Please try again.",
       missing_auth_state: "Google OAuth could not be completed. Please try again.",
@@ -420,6 +422,20 @@ function CalendarMeetSection({ user }: { user: UserProfile | null }) {
       setError(err?.message || "Failed to disconnect Google Calendar");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function testGoogle() {
+    setTestBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetchJson<{ health?: { ok?: boolean; account_email?: string | null } }>("/api/settings/calendar/test", { method: "POST" });
+      setToast(result.health?.ok ? `Google Calendar is healthy${result.health.account_email ? ` for ${result.health.account_email}` : ""}.` : "Google Calendar test completed with warnings.");
+      await loadStatus();
+    } catch (err: any) {
+      setError(err?.message || "Google Calendar health test failed");
+    } finally {
+      setTestBusy(false);
     }
   }
 
@@ -486,6 +502,11 @@ function CalendarMeetSection({ user }: { user: UserProfile | null }) {
               Signed in as {user?.full_name || "Admin"}.
             </div>
             <div className="flex gap-2">
+              {shared?.connected ? (
+                <button type="button" onClick={() => void testGoogle()} disabled={busy || testBusy} className={UI.secondaryButton + " text-xs py-2"}>
+                  {testBusy ? "Testing..." : "Test connection"}
+                </button>
+              ) : null}
               {shared?.connected ? (
                 <button type="button" onClick={() => void disconnectGoogle()} disabled={busy} className={UI.secondaryButton + " text-xs py-2"}>
                   {busy ? "Disconnecting…" : "Disconnect"}

@@ -15,7 +15,7 @@ function redirectToSettings(message: string) {
 export async function GET(request: Request) {
   const access = await getAuthAccess();
   if (!access) return NextResponse.redirect(redirectToSettings("unauthorized"));
-  if (String(access.role || "").toLowerCase() !== "admin") {
+  if (!access.permissions["settings.manage"]) {
     return NextResponse.redirect(redirectToSettings("forbidden"));
   }
 

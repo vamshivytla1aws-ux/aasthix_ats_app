@@ -652,6 +652,23 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
   }
 }
 
+export async function testSharedGoogleCalendarConnection() {
+  const status = await getSharedGoogleCalendarStatus();
+  if (!status.configured || !status.connected) {
+    return { ok: false, configured: status.configured, connected: status.connected, account_email: status.account_email, calendar_id: status.calendar_id, error: status.sync_error || "Shared Google Calendar is not connected." };
+  }
+  const connection = await requireSharedGoogleConnection();
+  if (!connection) return { ok: false, configured: true, connected: false, account_email: status.account_email, calendar_id: status.calendar_id, error: "Stored Google credentials are unavailable." };
+  try {
+    const accessToken = await ensureUsableGoogleAccessToken(connection);
+    const calendarId = encodeURIComponent(connection.calendar_id || process.env.GOOGLE_CALENDAR_ID || "primary");
+    await googleApi(`/calendar/v3/calendars/${calendarId}`, accessToken, { method: "GET" });
+    return { ok: true, configured: true, connected: true, token_refresh_ready: true, calendar_access_ready: true, account_email: connection.account_email || null, calendar_id: connection.calendar_id || process.env.GOOGLE_CALENDAR_ID || "primary", error: null };
+  } catch (error) {
+    return { ok: false, configured: true, connected: true, token_refresh_ready: false, calendar_access_ready: false, account_email: connection.account_email || null, calendar_id: connection.calendar_id || null, error: error instanceof Error ? error.message : "Google Calendar health test failed." };
+  }
+}
+
 export async function syncTeamCalendarMeeting(input: SyncTeamCalendarMeetingInput): Promise<TeamCalendarSyncResult> {
   const status = await getSharedGoogleCalendarStatus();
   const attendees = uniqueEmails(input.attendeeEmails);
