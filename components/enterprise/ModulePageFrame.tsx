@@ -22,14 +22,14 @@ export default function ModulePageFrame({
   children,
 }: ModulePageFrameProps) {
   return (
-    <div className="space-y-5">
-      <section className="overflow-hidden rounded-[1.65rem] border border-[var(--ats-border)] bg-[linear-gradient(135deg,color-mix(in_oklab,var(--ats-primary)_14%,var(--ats-bg-elevated)),var(--ats-bg-elevated)_38%,color-mix(in_oklab,var(--ats-accent)_10%,var(--ats-bg-elevated)))] shadow-[var(--ats-shadow-md)] ring-1 ring-[rgb(255_255_255_/_0.42)]">
-        <div className="flex flex-col gap-4 px-5 py-5 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
+    <div className="ats-page-enter space-y-5">
+      <section className="border-b border-[var(--ats-border)] pb-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
-            <div className="inline-flex items-center rounded-full border border-[color:rgb(37_99_235_/_0.16)] bg-[color:rgb(255_255_255_/_0.56)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ats-primary)]">
-              Enterprise workspace
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--ats-primary)]">
+              Workspace
             </div>
-            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--ats-text)] sm:text-[1.95rem]">
+            <h1 className="mt-1.5 font-display text-2xl font-semibold text-[var(--ats-text)] sm:text-[1.9rem]">
               {title}
             </h1>
             {subtitle ? (
@@ -38,7 +38,7 @@ export default function ModulePageFrame({
               </p>
             ) : null}
             {metrics ? (
-              <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--ats-text)]">
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--ats-text)]">
                 {metrics}
               </div>
             ) : null}
@@ -46,9 +46,9 @@ export default function ModulePageFrame({
           {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
         </div>
         {(banner || toolbar) ? (
-          <div className="border-t border-[var(--ats-border)]/70 bg-[color:rgb(255_255_255_/_0.45)] px-5 py-4 backdrop-blur-sm sm:px-6">
+          <div className="mt-4 border-t border-[var(--ats-border-subtle)] pt-4">
             {banner ? (
-              <div className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-4 py-3 shadow-[var(--ats-shadow-sm)]">
+              <div className="rounded-[var(--ats-radius-md)] border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-4 py-3">
                 {banner}
               </div>
             ) : null}

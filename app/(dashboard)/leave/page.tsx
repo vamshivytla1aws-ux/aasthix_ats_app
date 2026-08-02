@@ -12,6 +12,7 @@ import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import { toneFromStatus, toToastTone, toastMsForTone } from "@/lib/operationFeedback";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 
 type LeaveRequest = {
   id: number;
@@ -300,11 +301,11 @@ export default function LeavePage() {
               </div>
               <div>
                 <label className={UI.label}>From date</label>
-                <input type="date" className={UI.input} value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                <DatePicker value={fromDate} onChange={setFromDate} aria-label="Leave start date" />
               </div>
               <div>
                 <label className={UI.label}>To date</label>
-                <input type="date" className={UI.input} value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                <DatePicker value={toDate} onChange={setToDate} min={fromDate} aria-label="Leave end date" />
               </div>
               <div>
                 <label className={UI.label}>Reason</label>
@@ -418,7 +419,7 @@ export default function LeavePage() {
             </div>
             {canManagePolicy ? (
               <div className="mt-4 grid gap-3 md:grid-cols-[1fr_2fr_auto]">
-                <input type="date" className={UI.input} value={holidayDate} onChange={(e) => setHolidayDate(e.target.value)} />
+                <DatePicker value={holidayDate} onChange={setHolidayDate} aria-label="Holiday date" />
                 <input className={UI.input} value={holidayName} onChange={(e) => setHolidayName(e.target.value)} placeholder="Holiday name" />
                 <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void addHoliday()} disabled={busy === "holiday"}>
                   Add

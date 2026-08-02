@@ -8,6 +8,7 @@ import Toast from "@/components/Toast";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { apiFetchJson } from "@/lib/apiClient";
 import { UI } from "@/lib/ui";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 
 type Employee = {
   id: number;
@@ -216,7 +217,7 @@ export default function EmployeeDirectoryPage() {
             <input className={UI.input} placeholder="Department" value={form.department} onChange={(e) => setForm((s) => ({ ...s, department: e.target.value }))} />
             <input className={UI.input} placeholder="Designation" value={form.designation} onChange={(e) => setForm((s) => ({ ...s, designation: e.target.value }))} />
             <input className={UI.input} placeholder="Employment type" value={form.employmentType} onChange={(e) => setForm((s) => ({ ...s, employmentType: e.target.value }))} />
-            <input className={UI.input} placeholder="Joining date" type="date" value={form.joiningDate} onChange={(e) => setForm((s) => ({ ...s, joiningDate: e.target.value }))} />
+            <DatePicker value={form.joiningDate} onChange={(value) => setForm((s) => ({ ...s, joiningDate: value }))} placeholder="Joining date" />
             <input className={UI.input} placeholder="Work location" value={form.workLocation} onChange={(e) => setForm((s) => ({ ...s, workLocation: e.target.value }))} />
             <select className={UI.select} value={form.status} onChange={(e) => setForm((s) => ({ ...s, status: e.target.value }))}>
               <option value="active">Active</option>

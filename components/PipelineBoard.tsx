@@ -15,6 +15,7 @@ import PipelineApplicationDrawer from "@/components/pipeline/PipelineApplication
 import OnboardingLinkModal from "@/components/pipeline/OnboardingLinkModal";
 import { INTELLIGENCE_V3_ENABLED } from "@/lib/featureFlags";
 import { ATS_TIMEZONE, ATS_TIMEZONE_LABEL, kolkataLocalToUtcIso } from "@/lib/timezones";
+import { DatePicker, TimePicker } from "@/components/ui/DateTimeFields";
 import { toToastTone, toastMsForTone } from "@/lib/operationFeedback";
 
 const STAGES = ["Applied", "Screening", "Screening Failed", "Interview", "Selected", "Rejected"] as const;
@@ -1903,23 +1904,11 @@ export default function PipelineBoard({
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block mb-1 text-sm text-gray-600">Date</label>
-                  <input
-                    type="date"
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={scheduleDate}
-                    onChange={(e) => setScheduleDate(e.target.value)}
-                    disabled={busyId === scheduleApp.id}
-                  />
+                  <DatePicker value={scheduleDate} onChange={setScheduleDate} disabled={busyId === scheduleApp.id} aria-label="Interview date" />
                 </div>
                 <div>
                   <label className="block mb-1 text-sm text-gray-600">Time</label>
-                  <input
-                    type="time"
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={scheduleTime}
-                    onChange={(e) => setScheduleTime(e.target.value)}
-                    disabled={busyId === scheduleApp.id}
-                  />
+                  <TimePicker value={scheduleTime} onChange={setScheduleTime} disabled={busyId === scheduleApp.id} />
                 </div>
                 <div>
                   <label className="block mb-1 text-sm text-gray-600">Duration</label>
@@ -2191,23 +2180,11 @@ export default function PipelineBoard({
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block mb-1 text-sm text-gray-600">Date</label>
-                  <input
-                    type="date"
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={rescheduleDate}
-                    onChange={(e) => setRescheduleDate(e.target.value)}
-                    disabled={busyId === rescheduleApp.id}
-                  />
+                  <DatePicker value={rescheduleDate} onChange={setRescheduleDate} disabled={busyId === rescheduleApp.id} aria-label="Reschedule date" />
                 </div>
                 <div>
                   <label className="block mb-1 text-sm text-gray-600">Time</label>
-                  <input
-                    type="time"
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={rescheduleTime}
-                    onChange={(e) => setRescheduleTime(e.target.value)}
-                    disabled={busyId === rescheduleApp.id}
-                  />
+                  <TimePicker value={rescheduleTime} onChange={setRescheduleTime} disabled={busyId === rescheduleApp.id} />
                 </div>
                 <div>
                   <label className="block mb-1 text-sm text-gray-600">Duration</label>

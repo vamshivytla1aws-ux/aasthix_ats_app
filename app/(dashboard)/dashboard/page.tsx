@@ -94,7 +94,7 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [jData, cData, aData, slaData] = await Promise.all([
+      const [jobsResult, candidatesResult, applicationsResult, slaResult] = await Promise.allSettled([
         apiFetchJson<Job[]>("/api/jobs"),
         apiFetchJson<Candidate[]>("/api/candidates"),
         apiFetchJson<Application[]>("/api/applications"),
@@ -103,12 +103,14 @@ export default function DashboardPage() {
           stale_days_threshold: number;
           interview_overdue_after_hours: number;
           interview_stale_hours_threshold: number;
-        }>("/api/dashboard/sla").catch(() => null),
+        }>("/api/dashboard/sla"),
       ]);
-      setJobs(jData as Job[]);
-      setCandidates(cData as Candidate[]);
-      setApplications(aData as Application[]);
-      setSla(slaData);
+      if (jobsResult.status === "fulfilled") setJobs(jobsResult.value);
+      if (candidatesResult.status === "fulfilled") setCandidates(candidatesResult.value);
+      if (applicationsResult.status === "fulfilled") setApplications(applicationsResult.value);
+      if (slaResult.status === "fulfilled") setSla(slaResult.value);
+      const failedCoreRequests = [jobsResult, candidatesResult, applicationsResult].filter((result) => result.status === "rejected");
+      if (failedCoreRequests.length === 3) setError("Dashboard data is temporarily unavailable. Refresh to try again.");
     } catch (err: any) {
       setError(err.message || "Something went wrong");
     } finally {

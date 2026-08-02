@@ -10,6 +10,7 @@ import Toast from "@/components/Toast";
 import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 import { getMonthDaysFromDateString } from "@/lib/salary/monthDays";
 
 type EmployeeOption = {
@@ -319,7 +320,7 @@ function AdminSalaryPage() {
             <label className={UI.label}>Employee Code<input className={UI.input} value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} /></label>
             <label className={UI.label}>Department<input className={UI.input} value={department} onChange={(e) => setDepartment(e.target.value)} /></label>
             <label className={UI.label}>Designation<input className={UI.input} value={designation} onChange={(e) => setDesignation(e.target.value)} /></label>
-            <label className={UI.label}>Date of Joining<input type="date" className={UI.input} value={dateOfJoining} onChange={(e) => setDateOfJoining(e.target.value)} /></label>
+            <label className={UI.label}>Date of Joining<DatePicker value={dateOfJoining} onChange={setDateOfJoining} /></label>
             <label className={UI.label}>PAN<input className={UI.input} value={pan} onChange={(e) => setPan(e.target.value.toUpperCase())} /></label>
             <label className={UI.label}>UAN Number<input className={UI.input} value={uanNumber} onChange={(e) => setUanNumber(e.target.value)} /></label>
             <label className={UI.label}>PF Number<input className={UI.input} value={pfNumber} onChange={(e) => setPfNumber(e.target.value)} /></label>

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
 import Toast from "@/components/Toast";
-import BrandLogo from "@/components/BrandLogo";
 import { APP_CONFIG } from "@/lib/config";
 import { navigateAfterAuthSession } from "@/lib/postAuthRedirect";
 import { UI } from "@/lib/ui";
@@ -59,26 +58,11 @@ export default function LoginPage() {
       {info && <Toast message={info} variant="success" onClose={() => setInfo(null)} autoHideMs={3500} />}
       {error && <Toast message={error} variant="error" onClose={() => setError(null)} autoHideMs={3500} />}
 
-      <div className="w-full overflow-hidden rounded-[2rem] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] shadow-[var(--ats-shadow-md)] ring-1 ring-white/10">
-        <div className="border-b border-[var(--ats-border)] bg-[linear-gradient(135deg,color-mix(in_oklab,var(--ats-primary)_14%,var(--ats-bg-elevated)),var(--ats-bg-panel))] px-6 py-6">
-          <div className="flex items-center gap-4">
-            <BrandLogo
-              size={64}
-              className="shrink-0 rounded-2xl bg-[var(--ats-bg-elevated)] p-2 shadow-[var(--ats-shadow-sm)] ring-1 ring-[var(--ats-border)]"
-              imageClassName="scale-[0.94]"
-            />
-            <div className="min-w-0">
-              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--ats-primary)]">
-                AASTHIX TALENT
-              </div>
-              <div className="mt-1 text-sm text-[var(--ats-text-muted)]">{APP_CONFIG.tagline}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-5 px-6 py-6">
+      <div className="w-full">
+        <div className="space-y-6">
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight text-[var(--ats-text)]">Login</h1>
+            <div className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--ats-primary)]">Welcome back</div>
+            <h1 className="font-display text-3xl font-semibold text-[var(--ats-text)]">Sign in to your workspace</h1>
             <div className="text-sm leading-6 text-[var(--ats-text-muted)]">
               Sign in to {APP_CONFIG.appName}. {APP_CONFIG.tagline}
             </div>

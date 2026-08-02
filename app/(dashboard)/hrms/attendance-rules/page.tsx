@@ -6,6 +6,7 @@ import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import Toast from "@/components/Toast";
 import { UI } from "@/lib/ui";
+import { DatePicker, TimePicker } from "@/components/ui/DateTimeFields";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { apiFetchJson } from "@/lib/apiClient";
 
@@ -204,11 +205,11 @@ export default function AttendanceRulesPage() {
             </label>
             <label className={UI.label}>
               Shift start
-              <input className={UI.input} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+              <TimePicker value={startTime} onChange={setStartTime} />
             </label>
             <label className={UI.label}>
               Shift end
-              <input className={UI.input} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+              <TimePicker value={endTime} onChange={setEndTime} />
             </label>
             <label className={UI.label}>
               Late grace (minutes)
@@ -282,8 +283,8 @@ export default function AttendanceRulesPage() {
         <section className={UI.card + " mt-4 p-4 sm:p-5"}>
           <h2 className="text-base font-semibold text-[var(--ats-text)]">Work from home requests</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
-            <input className={UI.input} type="date" value={wfhFromDate} onChange={(e) => setWfhFromDate(e.target.value)} />
-            <input className={UI.input} type="date" value={wfhToDate} onChange={(e) => setWfhToDate(e.target.value)} />
+            <DatePicker value={wfhFromDate} onChange={setWfhFromDate} aria-label="Work from home start date" />
+            <DatePicker value={wfhToDate} onChange={setWfhToDate} min={wfhFromDate} aria-label="Work from home end date" />
             <input className={UI.input} placeholder="Reason" value={wfhReason} onChange={(e) => setWfhReason(e.target.value)} />
             <button type="button" className={UI.secondaryButton + " py-2 text-sm"} onClick={() => void createWfhRequest()} disabled={busy}>
               Apply WFH

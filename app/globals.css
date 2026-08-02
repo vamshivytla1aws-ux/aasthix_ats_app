@@ -4,43 +4,49 @@
 
 :root {
   color-scheme: light;
-  --ats-bg-page: #f4f7fb;
-  --ats-bg-page-accent: radial-gradient(circle at top left, rgb(59 130 246 / 0.12), transparent 26%), radial-gradient(circle at top right, rgb(14 165 233 / 0.08), transparent 24%), linear-gradient(180deg, #f8fbff 0%, #f4f7fb 100%);
-  --ats-bg-elevated: #ffffff;
-  --ats-bg-panel: #fbfdff;
-  --ats-bg-panel-strong: #eef4ff;
+  --ats-bg-page: #f4f2ec;
+  --ats-bg-page-accent: radial-gradient(circle at 8% 2%, rgb(20 116 111 / 0.09), transparent 24rem), radial-gradient(circle at 92% 8%, rgb(181 125 70 / 0.08), transparent 22rem), linear-gradient(180deg, #faf9f5 0%, #f4f2ec 48%, #f7f6f2 100%);
+  --ats-bg-elevated: #fffefa;
+  --ats-bg-panel: #f8f7f2;
+  --ats-bg-panel-strong: #edf4f1;
   --ats-bg-overlay: rgb(15 23 42 / 0.62);
-  --ats-border: #d9e4f2;
-  --ats-border-strong: #bfd1e8;
-  --ats-border-subtle: #edf3fa;
-  --ats-text: #10233f;
-  --ats-text-muted: #5f728d;
-  --ats-text-soft: #7b8da5;
-  --ats-primary: #2563eb;
-  --ats-primary-hover: #1d4ed8;
-  --ats-accent: #0891b2;
-  --ats-success: #0f8a5f;
-  --ats-warning: #c27d00;
-  --ats-danger: #c23f52;
-  --ats-selection: #e6efff;
-  --ats-chart-1: #2563eb;
-  --ats-chart-2: #06b6d4;
-  --ats-chart-3: #8b5cf6;
-  --ats-chart-4: #22c55e;
-  --ats-chart-5: #f59e0b;
-  --ats-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.05);
-  --ats-shadow-md: 0 22px 54px -28px rgb(37 99 235 / 0.25), 0 16px 24px -20px rgb(15 23 42 / 0.24);
-  --ats-shadow-ring: 0 0 0 1px rgb(148 163 184 / 0.14);
-  --enterprise-shell-from: #081a38;
-  --enterprise-shell-via: #123d6f;
-  --enterprise-shell-to: #0f6da4;
-  --enterprise-on-shell: #eff6ff;
-  --enterprise-nav-active: #2563eb;
-  --enterprise-surface: #ffffff;
-  --enterprise-surface-muted: #eef4fb;
-  --enterprise-table-border: #d9e4f2;
-  --enterprise-table-header: #f5f9ff;
-  --enterprise-row-hover: #eef5ff;
+  --ats-border: #dedbd1;
+  --ats-border-strong: #c6c1b5;
+  --ats-border-subtle: #ebe8e0;
+  --ats-text: #102a2e;
+  --ats-text-muted: #52666a;
+  --ats-text-soft: #7b898a;
+  --ats-primary: #0b6e69;
+  --ats-primary-hover: #075853;
+  --ats-accent: #b57d46;
+  --ats-success: #167454;
+  --ats-warning: #a96813;
+  --ats-danger: #b6414f;
+  --ats-info: #2f6f9f;
+  --ats-selection: #dcece8;
+  --ats-focus: rgb(11 110 105 / 0.16);
+  --ats-chart-1: #0b6e69;
+  --ats-chart-2: #2f6f9f;
+  --ats-chart-3: #b57d46;
+  --ats-chart-4: #679e75;
+  --ats-chart-5: #b95748;
+  --ats-radius-sm: 0.5rem;
+  --ats-radius-md: 0.75rem;
+  --ats-radius-lg: 1rem;
+  --ats-radius-xl: 1.25rem;
+  --ats-shadow-sm: 0 1px 2px rgb(16 42 46 / 0.05), 0 8px 22px -20px rgb(16 42 46 / 0.28);
+  --ats-shadow-md: 0 20px 50px -34px rgb(16 42 46 / 0.38), 0 8px 18px -16px rgb(16 42 46 / 0.22);
+  --ats-shadow-ring: 0 0 0 1px rgb(16 42 46 / 0.08);
+  --enterprise-shell-from: #102a2e;
+  --enterprise-shell-via: #123e40;
+  --enterprise-shell-to: #17625e;
+  --enterprise-on-shell: #f5fbf9;
+  --enterprise-nav-active: #0b6e69;
+  --enterprise-surface: #fffefa;
+  --enterprise-surface-muted: #f2f3ee;
+  --enterprise-table-border: #e2dfd6;
+  --enterprise-table-header: #f5f4ef;
+  --enterprise-row-hover: #edf4f1;
 }
 
 html.dark {
@@ -93,6 +99,21 @@ html.dark {
     @apply antialiased;
     background: var(--ats-bg-page-accent);
     color: var(--ats-text);
+    font-family: var(--font-ats-body), sans-serif;
+    font-feature-settings: "ss01" 1, "cv02" 1, "cv03" 1;
+  }
+
+  h1,
+  h2,
+  h3,
+  .ats-display {
+    font-family: var(--font-ats-heading), var(--font-ats-body), sans-serif;
+    letter-spacing: -0.025em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ats-primary);
+    outline-offset: 2px;
   }
 
   ::selection {
@@ -109,6 +130,28 @@ html.dark {
     @apply mx-auto w-full max-w-[1600px];
   }
 
+  .ats-workspace-main {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .ats-workspace-main::before {
+    position: fixed;
+    inset: 7rem 0 auto;
+    z-index: -1;
+    height: 22rem;
+    content: "";
+    pointer-events: none;
+    opacity: 0.42;
+    background-image: linear-gradient(rgb(16 42 46 / 0.026) 1px, transparent 1px), linear-gradient(90deg, rgb(16 42 46 / 0.026) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: linear-gradient(to bottom, black, transparent 92%);
+  }
+
+  .ats-page-enter {
+    animation: ats-page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
   .mobile-safe-bottom {
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
@@ -121,6 +164,66 @@ html.dark {
     .mobile-vh-screen {
       min-height: 100dvh;
     }
+  }
+}
+
+.ui-refresh-v2 input,
+.ui-refresh-v2 select,
+.ui-refresh-v2 textarea,
+.ui-refresh-v2 button,
+.ui-refresh-v2 a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ui-refresh-v2 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.ui-refresh-v2 select,
+.ui-refresh-v2 textarea {
+  font-family: var(--font-ats-body), sans-serif;
+}
+
+.ui-refresh-v2 table {
+  font-variant-numeric: tabular-nums;
+}
+
+.ats-calendar-popover {
+  z-index: 100;
+  width: min(22rem, calc(100vw - 2rem));
+  border: 1px solid var(--ats-border);
+  border-radius: var(--ats-radius-lg);
+  background: var(--ats-bg-elevated);
+  padding: 0.75rem;
+  box-shadow: var(--ats-shadow-md);
+  animation: ats-popover-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ats-calendar .rdp-months { justify-content: center; }
+.ats-calendar .rdp-month { width: 100%; }
+.ats-calendar .rdp-month_caption { min-height: 2.5rem; align-items: center; }
+.ats-calendar .rdp-caption_label { font-family: var(--font-ats-heading); font-size: 0.95rem; font-weight: 650; color: var(--ats-text); }
+.ats-calendar .rdp-button_previous,
+.ats-calendar .rdp-button_next { border: 1px solid var(--ats-border); border-radius: 0.65rem; color: var(--ats-text-muted); }
+.ats-calendar .rdp-weekday { color: var(--ats-text-soft); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+.ats-calendar .rdp-day_button { border-radius: 0.65rem; font-size: 0.82rem; }
+.ats-calendar .rdp-today:not(.rdp-selected) .rdp-day_button { border: 1px solid var(--ats-primary); color: var(--ats-primary); }
+.ats-calendar .rdp-selected .rdp-day_button { border-color: var(--ats-primary); background: var(--ats-primary); color: white; }
+.ats-calendar .rdp-day_button:hover { background: var(--ats-bg-panel-strong); }
+
+@keyframes ats-page-enter {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ats-popover-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

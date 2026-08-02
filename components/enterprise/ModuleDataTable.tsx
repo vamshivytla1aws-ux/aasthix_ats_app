@@ -17,6 +17,8 @@ export type ModuleDataTableColumn<T> = {
   cell: (row: T) => React.ReactNode;
   sortValue?: (row: T) => string | number;
   align?: "left" | "right" | "center";
+  priority?: "primary" | "secondary" | "optional";
+  sticky?: "left" | "right";
 };
 
 export type ModuleDataTableColumnPreset = {
@@ -342,8 +344,8 @@ export default function ModuleDataTable<T>({
   const colCount = activeColumns.length;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
-      <div className="flex flex-wrap items-center justify-end gap-2 border-b border-slate-100 px-3 py-2 dark:border-slate-700">
+    <div className="rounded-[var(--ats-radius-lg)] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] shadow-[var(--ats-shadow-sm)]">
+      <div className="flex flex-wrap items-center justify-end gap-2 border-b border-[var(--ats-border)] px-3 py-2.5">
         {toolbarLeft ? <div className="mr-auto flex flex-wrap items-center gap-2">{toolbarLeft}</div> : null}
         {columnPresets && columnPresets.length > 0 ? (
           <div className="relative">
@@ -425,9 +427,9 @@ export default function ModuleDataTable<T>({
           if (doVirtualize) setScrollTop(e.currentTarget.scrollTop);
         }}
       >
-        <table className="min-w-full border-collapse text-left text-sm">
+        <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/95">
+            <tr className="border-b border-[var(--ats-border)] bg-[var(--enterprise-table-header)]">
               {activeColumns.map((c) => {
                 const align = c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left";
                 const sortable = Boolean(c.sortValue);
@@ -439,7 +441,10 @@ export default function ModuleDataTable<T>({
                     className={[
                       thPad,
                       align,
-                      "relative sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-900/98 dark:text-slate-400",
+                      "relative sticky top-0 z-10 border-b border-[var(--ats-border)] bg-[var(--enterprise-table-header)] text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ats-text-muted)]",
+                      c.priority === "optional" ? "hidden lg:table-cell" : c.priority === "secondary" ? "hidden sm:table-cell" : "",
+                      c.sticky === "left" ? "left-0 z-20" : "",
+                      c.sticky === "right" ? "right-0 z-20" : "",
                     ].join(" ")}
                   >
                     {sortable ? (
@@ -468,7 +473,7 @@ export default function ModuleDataTable<T>({
               })}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+          <tbody>
             {doVirtualize && virtualWindow.padTop > 0 ? (
               <tr aria-hidden className="pointer-events-none">
                 <td colSpan={colCount} style={{ height: virtualWindow.padTop, padding: 0, border: 0 }} />
@@ -485,9 +490,9 @@ export default function ModuleDataTable<T>({
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                   className={[
                     onRowClick ? "cursor-pointer" : "",
-                    striped ? "bg-slate-50/40 dark:bg-slate-900/30" : "",
-                    isSelected ? "!bg-blue-50/80 dark:!bg-blue-950/30" : "",
-                    "hover:bg-slate-100/50 dark:hover:bg-slate-800/40",
+                    striped ? "bg-[color:color-mix(in_oklab,var(--ats-bg-panel)_52%,transparent)]" : "",
+                    isSelected ? "!bg-[var(--ats-selection)]" : "",
+                    "group hover:bg-[var(--enterprise-row-hover)]",
                   ].join(" ")}
                 >
                   {activeColumns.map((c) => {
@@ -498,7 +503,14 @@ export default function ModuleDataTable<T>({
                       <td
                         key={c.id}
                         style={{ width: w }}
-                        className={[tdPad, align, "text-slate-800 dark:text-slate-200"].join(" ")}
+                        className={[
+                          tdPad,
+                          align,
+                          "border-b border-[var(--ats-border-subtle)] text-[var(--ats-text)]",
+                          c.priority === "optional" ? "hidden lg:table-cell" : c.priority === "secondary" ? "hidden sm:table-cell" : "",
+                          c.sticky === "left" ? "sticky left-0 z-10 bg-[var(--ats-bg-elevated)] group-hover:bg-[var(--enterprise-row-hover)]" : "",
+                          c.sticky === "right" ? "sticky right-0 z-10 bg-[var(--ats-bg-elevated)] group-hover:bg-[var(--enterprise-row-hover)]" : "",
+                        ].join(" ")}
                       >
                         {c.cell(row)}
                       </td>

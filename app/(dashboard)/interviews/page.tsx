@@ -22,6 +22,7 @@ import RowActionsMenu from "@/components/enterprise/RowActionsMenu";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import FilterDrawer from "@/components/enterprise/FilterDrawer";
 import Toast from "@/components/Toast";
+import { DatePicker, TimePicker } from "@/components/ui/DateTimeFields";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 
 const INTERVIEWS_LIST_KEY = "/api/applications?interview_overview=1";
@@ -1053,21 +1054,11 @@ export default function InterviewsPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block font-medium text-slate-700 dark:text-slate-300">From date</label>
-              <input
-                type="date"
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-600 dark:bg-slate-800"
-                value={drawerDateFrom}
-                onChange={(e) => setDrawerDateFrom(e.target.value)}
-              />
+              <DatePicker value={drawerDateFrom} onChange={setDrawerDateFrom} aria-label="Interview filter start date" />
             </div>
             <div>
               <label className="mb-1 block font-medium text-slate-700 dark:text-slate-300">To date</label>
-              <input
-                type="date"
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-600 dark:bg-slate-800"
-                value={drawerDateTo}
-                onChange={(e) => setDrawerDateTo(e.target.value)}
-              />
+              <DatePicker value={drawerDateTo} onChange={setDrawerDateTo} min={drawerDateFrom} aria-label="Interview filter end date" />
             </div>
           </div>
           <label className="flex cursor-pointer items-center gap-2">
@@ -1921,23 +1912,11 @@ export default function InterviewsPage() {
               <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block mb-1 text-sm text-gray-600">Date</label>
-                  <input
-                    type="date"
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                    value={rescheduleDate}
-                    onChange={(e) => setRescheduleDate(e.target.value)}
-                    disabled={actionBusyId === selectedInterview.id}
-                  />
+                  <DatePicker value={rescheduleDate} onChange={setRescheduleDate} disabled={actionBusyId === selectedInterview.id} aria-label="Reschedule date" />
                 </div>
                 <div>
                   <label className="block mb-1 text-sm text-gray-600">Time</label>
-                  <input
-                    type="time"
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                    value={rescheduleTime}
-                    onChange={(e) => setRescheduleTime(e.target.value)}
-                    disabled={actionBusyId === selectedInterview.id}
-                  />
+                  <TimePicker value={rescheduleTime} onChange={setRescheduleTime} disabled={actionBusyId === selectedInterview.id} />
                 </div>
                 <div>
                   <label className="block mb-1 text-sm text-gray-600">Duration</label>

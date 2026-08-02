@@ -12,6 +12,7 @@ import { apiFetchJson } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import { toneFromStatus, toToastTone, toastMsForTone } from "@/lib/operationFeedback";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 
 type TimesheetStatus = "draft" | "submitted";
 
@@ -298,7 +299,7 @@ export default function TimesheetPage() {
             <div className="grid gap-3 md:grid-cols-4">
               <div>
                 <label className={UI.label}>Date</label>
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={UI.input} />
+                <DatePicker value={date} onChange={setDate} aria-label="Timesheet date" />
               </div>
               <div>
                 <label className={UI.label}>Sheet status</label>

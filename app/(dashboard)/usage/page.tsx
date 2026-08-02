@@ -11,6 +11,7 @@ import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import { formatDateOnly, formatDateTime, formatInteger, formatPercent, formatTokenCount, formatUsd } from "@/lib/usage/format";
 import type { OpenAiUsageResponse, OpenAiUsageRow, RailwayUsageResponse, RailwayUsageRow, UsageSummaryResponse } from "@/lib/usage/types";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 
 type TabKey = "openai" | "railway";
 type Preset = "today" | "last7" | "thisMonth" | "custom";
@@ -394,8 +395,8 @@ function DateFilter({
           ))}
           {preset === "custom" ? (
             <div className="mt-2 space-y-2 border-t border-slate-100 pt-2 dark:border-slate-700">
-              <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className={UI.input + " text-xs"} />
-              <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className={UI.input + " text-xs"} />
+              <DatePicker value={from} onChange={setFrom} className="text-xs" aria-label="Usage start date" />
+              <DatePicker value={to} onChange={setTo} min={from} className="text-xs" aria-label="Usage end date" />
               <button type="button" onClick={() => setOpen(false)} className={UI.primaryButton + " w-full py-2 text-xs"}>
                 Apply
               </button>

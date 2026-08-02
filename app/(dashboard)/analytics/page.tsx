@@ -17,6 +17,7 @@ import {
   BarChart3, TrendingUp, Users, Briefcase, Activity, AlertTriangle,
   CheckCircle2, Info, Calendar, Target, RefreshCw, ChevronDown,
 } from "lucide-react";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -285,9 +286,9 @@ function TimeFilter({
           {range === "custom" && (
             <div className="mt-2 space-y-2 border-t border-slate-100 pt-2 dark:border-slate-700">
               <label className="block text-xs text-slate-500">From</label>
-              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className={UI.input + " text-xs"} />
+              <DatePicker value={customFrom} onChange={setCustomFrom} className="text-xs" aria-label="Analytics start date" />
               <label className="block text-xs text-slate-500">To</label>
-              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className={UI.input + " text-xs"} />
+              <DatePicker value={customTo} onChange={setCustomTo} min={customFrom} className="text-xs" aria-label="Analytics end date" />
               <button type="button" onClick={() => setOpen(false)} className={UI.primaryButton + " w-full py-1.5 text-xs"}>
                 Apply
               </button>

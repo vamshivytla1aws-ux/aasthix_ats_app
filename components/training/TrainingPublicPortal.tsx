@@ -161,7 +161,7 @@ export default function TrainingPublicPortal() {
   if (result) {
     if (answersSubmitted) {
       return (
-        <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+        <div className="min-h-screen bg-gradient-to-b from-[#0b2024] via-[#123e40] to-[#0f272c] text-slate-100">
           <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
             <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-8 shadow-xl">
               <div className="flex items-center gap-3">
@@ -201,7 +201,7 @@ export default function TrainingPublicPortal() {
     }
 
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+      <div className="min-h-screen bg-gradient-to-b from-[#0b2024] via-[#123e40] to-[#0f272c] text-slate-100">
         <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
           <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-8 shadow-xl">
             <div className="flex items-center gap-3">
@@ -290,7 +290,7 @@ export default function TrainingPublicPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+    <div className="min-h-screen bg-gradient-to-b from-[#0b2024] via-[#123e40] to-[#0f272c] text-slate-100">
       <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
           <a

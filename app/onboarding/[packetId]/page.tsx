@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { apiFetchJson } from "@/lib/apiClient";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 
 type DocReq = { key: string; label: string };
 
@@ -297,7 +298,7 @@ export default function OnboardingPublicPage() {
         <div className="text-sm font-semibold text-slate-800">Personal Information</div>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-xs text-slate-600">Full Name<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.full_name || ""} onChange={(e) => setField("full_name", e.target.value)} /></label>
-          <label className="text-xs text-slate-600">Date of Birth<input type="date" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.date_of_birth || ""} onChange={(e) => setField("date_of_birth", e.target.value)} /></label>
+          <label className="text-xs text-slate-600">Date of Birth<DatePicker className="mt-1" value={form.date_of_birth || ""} onChange={(value) => setField("date_of_birth", value)} /></label>
           <label className="text-xs text-slate-600">Gender
             <select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.gender || ""} onChange={(e) => setField("gender", e.target.value)}>
               <option value="">Select</option><option>Male</option><option>Female</option><option>Rather not say</option>
@@ -324,7 +325,7 @@ export default function OnboardingPublicPage() {
               <option value="">Select</option><option>Full Time</option><option>Part Time</option><option>Contract</option>
             </select>
           </label>
-          <label className="text-xs text-slate-600">Joining Date<input type="date" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.joining_date || ""} onChange={(e) => setField("joining_date", e.target.value)} /></label>
+          <label className="text-xs text-slate-600">Joining Date<DatePicker className="mt-1" value={form.joining_date || ""} onChange={(value) => setField("joining_date", value)} /></label>
           <label className="text-xs text-slate-600">Work Mode
             <select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.work_mode || ""} onChange={(e) => setField("work_mode", e.target.value)}>
               <option value="">Select</option><option>Hybrid</option><option>Work from home</option><option>Work from office</option>
@@ -419,8 +420,8 @@ export default function OnboardingPublicPage() {
                   <td className="border border-slate-300 p-2">{idx + 1}</td>
                   <td className="border border-slate-300 p-1"><input className="w-full rounded border border-slate-200 px-2 py-1" value={row.employer} onChange={(e) => setEmploymentRows((prev) => prev.map((r, i) => i === idx ? { ...r, employer: e.target.value } : r))} /></td>
                   <td className="border border-slate-300 p-1"><input className="w-full rounded border border-slate-200 px-2 py-1" value={row.empId} onChange={(e) => setEmploymentRows((prev) => prev.map((r, i) => i === idx ? { ...r, empId: e.target.value } : r))} /></td>
-                  <td className="border border-slate-300 p-1"><input type="date" className="w-full rounded border border-slate-200 px-2 py-1" value={row.from} onChange={(e) => setEmploymentRows((prev) => prev.map((r, i) => i === idx ? { ...r, from: e.target.value } : r))} /></td>
-                  <td className="border border-slate-300 p-1"><input type="date" className="w-full rounded border border-slate-200 px-2 py-1" value={row.to} onChange={(e) => setEmploymentRows((prev) => prev.map((r, i) => i === idx ? { ...r, to: e.target.value } : r))} /></td>
+                  <td className="border border-slate-300 p-1"><DatePicker value={row.from} onChange={(value) => setEmploymentRows((prev) => prev.map((r, i) => i === idx ? { ...r, from: value } : r))} aria-label="Employment start date" /></td>
+                  <td className="border border-slate-300 p-1"><DatePicker value={row.to} onChange={(value) => setEmploymentRows((prev) => prev.map((r, i) => i === idx ? { ...r, to: value } : r))} min={row.from} aria-label="Employment end date" /></td>
                   <td className="border border-slate-300 p-1"><input className="w-full rounded border border-slate-200 px-2 py-1" value={row.designation} onChange={(e) => setEmploymentRows((prev) => prev.map((r, i) => i === idx ? { ...r, designation: e.target.value } : r))} /></td>
                   <td className="border border-slate-300 p-1"><input className="w-full rounded border border-slate-200 px-2 py-1" value={row.salary} onChange={(e) => setEmploymentRows((prev) => prev.map((r, i) => i === idx ? { ...r, salary: e.target.value } : r))} /></td>
                   <td className="border border-slate-300 p-1">
@@ -474,7 +475,7 @@ export default function OnboardingPublicPage() {
         <div className="mt-2 text-xs text-slate-600">I confirm that the information provided above is true and correct to the best of my knowledge.</div>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-xs text-slate-600">Employee Signature (typed name)<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.declaration_name || ""} onChange={(e) => setField("declaration_name", e.target.value)} /></label>
-          <label className="text-xs text-slate-600">Date<input type="date" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.declaration_date || todayIso()} onChange={(e) => setField("declaration_date", e.target.value)} /></label>
+          <label className="text-xs text-slate-600">Date<DatePicker className="mt-1" value={form.declaration_date || todayIso()} onChange={(value) => setField("declaration_date", value)} /></label>
         </div>
       </div>
 

@@ -6,6 +6,7 @@ import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import Toast from "@/components/Toast";
 import { UI } from "@/lib/ui";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { apiFetchJson } from "@/lib/apiClient";
 
@@ -188,7 +189,7 @@ export default function EmployeeDocumentsPage() {
               ))}
             </select>
             <input className={UI.input} type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-            <input className={UI.input} type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+            <DatePicker value={expiryDate} onChange={setExpiryDate} aria-label="Document expiry date" />
             <button type="button" className={UI.primaryButton + " py-2 text-sm"} disabled={busy} onClick={() => void upload()}>
               Upload
             </button>

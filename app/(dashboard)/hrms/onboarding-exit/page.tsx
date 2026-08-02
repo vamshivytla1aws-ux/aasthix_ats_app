@@ -6,6 +6,7 @@ import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import Toast from "@/components/Toast";
 import { UI } from "@/lib/ui";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { apiFetchJson } from "@/lib/apiClient";
 
@@ -162,8 +163,8 @@ export default function OnboardingExitPage() {
                 </option>
               ))}
             </select>
-            <input className={UI.input} placeholder="Notice start date" type="date" value={noticeStartDate} onChange={(e) => setNoticeStartDate(e.target.value)} />
-            <input className={UI.input} placeholder="Notice end date" type="date" value={noticeEndDate} onChange={(e) => setNoticeEndDate(e.target.value)} />
+            <DatePicker value={noticeStartDate} onChange={setNoticeStartDate} placeholder="Notice start date" />
+            <DatePicker value={noticeEndDate} onChange={setNoticeEndDate} min={noticeStartDate} placeholder="Notice end date" />
           </div>
           {workflowType === "exit" ? (
             <input

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Calendar, CheckCircle2, Clock, FileText, MapPin, Send, Sparkles, X } from "lucide-react";
+import { Calendar, CheckCircle2, Clock, FileText, MapPin, Search, Send, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import BrandLogo from "@/components/BrandLogo";
 
@@ -71,6 +71,16 @@ export default function CareersPortal() {
   const [formError, setFormError] = useState<string | null>(null);
   const [resumeName, setResumeName] = useState<string>("");
   const [form, setForm] = useState(EMPTY_APPLY_FORM);
+  const [query, setQuery] = useState("");
+  const filteredJobs = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return jobs;
+    return jobs.filter((job) =>
+      [job.title, job.location, job.employment_type, job.experience_requirement].some((value) =>
+        String(value || "").toLowerCase().includes(term)
+      )
+    );
+  }, [jobs, query]);
 
   const track = useCallback(async (event_type: string, job_id?: number | null) => {
     try {
@@ -211,8 +221,8 @@ export default function CareersPortal() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
-      <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur-md">
+    <div className="min-h-screen bg-[var(--ats-bg-page-accent)] text-[var(--ats-text)]">
+      <header className="sticky top-0 z-30 border-b border-[var(--ats-border)] bg-[color:rgb(255_254_250_/_0.86)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
           <a
             href="https://www.aasthix.com"
@@ -224,13 +234,13 @@ export default function CareersPortal() {
               className="shrink-0 rounded-xl bg-slate-950/70 p-1 ring-1 ring-white/10"
             />
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-300/90">AASTHIX</p>
-              <p className="text-sm text-slate-400">Talent &amp; Delivery</p>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--ats-primary)]">AASTHIX</p>
+              <p className="text-sm text-[var(--ats-text-muted)]">Talent &amp; Delivery</p>
             </div>
           </a>
           <Link
             href="/login"
-            className="text-sm font-medium text-slate-300 underline-offset-4 hover:text-white hover:underline"
+            className="text-sm font-semibold text-[var(--ats-text-muted)] underline-offset-4 hover:text-[var(--ats-primary)] hover:underline"
           >
             Recruiter sign in
           </Link>
@@ -238,26 +248,26 @@ export default function CareersPortal() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-600/20 via-slate-900/60 to-violet-600/10 p-8 shadow-2xl sm:p-12">
+        <section className="relative overflow-hidden rounded-[1.75rem] border border-[var(--ats-border)] bg-[linear-gradient(140deg,#102a2e,#175551_68%,#1d6b64)] p-8 text-white shadow-[var(--ats-shadow-md)] sm:p-12">
           <div className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-indigo-500/20 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-20 -left-20 h-56 w-56 rounded-full bg-violet-500/15 blur-3xl" />
-          <h1 className="relative text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">
-            Welcome to AASTHIX Open Job Opportunities
+          <h1 className="relative font-display text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
+            Build meaningful work with AASTHIX
           </h1>
           <p className="relative mt-4 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">{heroSubtitle}</p>
         </section>
 
-        <section className="mt-14 rounded-3xl border border-white/10 bg-slate-900/40 p-8 backdrop-blur-sm sm:p-10">
-          <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
-            <Sparkles className="h-6 w-6 text-indigo-400" />
+        <section className="mt-10 rounded-[var(--ats-radius-xl)] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-8 shadow-[var(--ats-shadow-sm)] sm:p-10">
+          <h2 className="flex items-center gap-2 font-display text-xl font-semibold text-[var(--ats-text)]">
+            <Sparkles className="h-5 w-5 text-[var(--ats-primary)]" />
             About AASTHIX
           </h2>
-          <p className="mt-4 text-slate-300 leading-relaxed">
+          <p className="mt-4 leading-relaxed text-[var(--ats-text-muted)]">
             AASTHIX partners with enterprises to design, build, and run mission-critical technology programs. We value
             craft, ownership, and clarity — from how we scope work to how we grow teams. Our hiring process is built to
             respect your time: realistic job descriptions, structured interviews, and timely feedback at every step.
           </p>
-          <ul className="mt-6 grid gap-3 text-sm text-slate-400 sm:grid-cols-2">
+          <ul className="mt-6 grid gap-3 text-sm text-[var(--ats-text-muted)] sm:grid-cols-2">
             <li className="flex gap-2">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
               Enterprise delivery mindset with product-grade engineering standards
@@ -278,8 +288,10 @@ export default function CareersPortal() {
         </section>
 
         <section className="mt-14">
-          <h2 className="text-2xl font-semibold text-white">Open positions</h2>
-          <p className="mt-2 text-slate-400">Only active roles with available headcount are listed.</p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div><h2 className="font-display text-2xl font-semibold text-[var(--ats-text)]">Open positions</h2><p className="mt-2 text-[var(--ats-text-muted)]">Only active roles with available headcount are listed.</p></div>
+            <label className="relative block w-full sm:max-w-sm"><Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--ats-text-soft)]" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search roles or locations" className="min-h-11 w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] pl-10 pr-4 text-sm outline-none focus:border-[var(--ats-primary)] focus:ring-4 focus:ring-[var(--ats-focus)]" /></label>
+          </div>
 
           {loadError && (
             <div className="mt-8 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-rose-100">{loadError}</div>
@@ -312,7 +324,7 @@ export default function CareersPortal() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {jobs.map((job) => (
+                    {filteredJobs.map((job) => (
                       <tr key={job.id} className="hover:bg-white/[0.03]">
                         <td className="whitespace-nowrap px-4 py-4 text-slate-300">
                           <span className="inline-flex items-center gap-1.5">

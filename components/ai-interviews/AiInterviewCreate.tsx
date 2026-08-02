@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { DateTimePicker } from "@/components/ui/DateTimeFields";
 
 type Option = {
   id: number;
@@ -237,13 +238,7 @@ export default function AiInterviewCreate() {
         </label>
         <label className="text-sm font-semibold text-slate-700">
           Link expiry
-          <input
-            required
-            type="datetime-local"
-            value={form.expires_at}
-            onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
-            className={input}
-          />
+          <DateTimePicker value={form.expires_at} onChange={(value) => setForm({ ...form, expires_at: value })} />
         </label>
         <label className="text-sm font-semibold text-slate-700 md:col-span-2">
           Instructions

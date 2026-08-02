@@ -214,11 +214,11 @@ export default function CandidateTable({
         </div>
       )}
 
-      <div className="-mx-1 overflow-x-auto overflow-y-visible rounded-2xl border border-slate-200 bg-white shadow-sm sm:mx-0">
-        <table className={`${UI.layout.wideTableMinWidth} divide-y divide-slate-200`}>
-        <thead className="bg-slate-50">
+      <div className="-mx-1 overflow-x-auto overflow-y-visible rounded-[var(--ats-radius-lg)] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] shadow-[var(--ats-shadow-sm)] sm:mx-0">
+        <table className={`${UI.layout.wideTableMinWidth} divide-y divide-[var(--ats-border)]`}>
+        <thead className="bg-[var(--enterprise-table-header)]">
           <tr>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <th className="sticky left-0 z-20 bg-[var(--enterprise-table-header)] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--ats-text-muted)]">
               Full name
             </th>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -251,7 +251,7 @@ export default function CandidateTable({
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
               Company Name
             </th>
-            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <th className="sticky right-0 z-20 bg-[var(--enterprise-table-header)] px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[var(--ats-text-muted)]">
               Current Salary
             </th>
             <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -277,7 +277,7 @@ export default function CandidateTable({
               key={c.id}
               className="odd:bg-slate-50/50 hover:bg-slate-100/60 transition-colors"
             >
-              <td className="px-4 py-3.5 whitespace-nowrap font-semibold text-slate-900">
+              <td className="sticky left-0 z-10 whitespace-nowrap bg-[var(--ats-bg-elevated)] px-4 py-3.5 font-semibold text-[var(--ats-text)]">
                 <Link href={`/candidates/${c.id}`} className="text-blue-700 transition hover:text-blue-800 hover:underline">
                   {c.full_name}
                 </Link>
@@ -408,7 +408,7 @@ export default function CandidateTable({
                   <span className="text-slate-400">No Resume</span>
                 )}
               </td>
-              <td className="px-4 py-3.5 whitespace-nowrap text-right">
+              <td className="sticky right-0 z-10 whitespace-nowrap bg-[var(--ats-bg-elevated)] px-4 py-3.5 text-right">
                 <div className="relative inline-flex items-center gap-2" ref={openActionsId === c.id ? actionsRef : undefined}>
                   <Link
                     href={`/candidates/${c.id}`}

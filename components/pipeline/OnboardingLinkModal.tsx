@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { apiFetchJson } from "@/lib/apiClient";
 import { UI } from "@/lib/ui";
+import { DateTimePicker } from "@/components/ui/DateTimeFields";
 
 type AppRow = {
   id: number;
@@ -105,12 +106,7 @@ export default function OnboardingLinkModal({
           </div>
           <div>
             <label className={UI.label}>Deadline (optional)</label>
-            <input
-              type="datetime-local"
-              className={UI.input}
-              value={deadlineAt}
-              onChange={(e) => setDeadlineAt(e.target.value)}
-            />
+            <DateTimePicker value={deadlineAt} onChange={setDeadlineAt} />
           </div>
           <div>
             <label className={UI.label}>Note (optional)</label>

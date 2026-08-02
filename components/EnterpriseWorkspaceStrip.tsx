@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarClock, FolderKanban, LayoutDashboard, Plus, UserPlus, Users } from "lucide-react";
+import { CalendarClock, FolderKanban, LayoutDashboard, Users } from "lucide-react";
 import { UI } from "@/lib/ui";
 import { IA_V2_ENABLED, PERSONALIZATION_V2_ENABLED } from "@/lib/featureFlags";
 import { useEffect, useMemo, useState } from "react";
@@ -125,16 +124,12 @@ export default function EnterpriseWorkspaceStrip() {
 
   return (
     <section className={UI.enterprise.workspaceStrip}>
-      <div className="ats-page-inner flex flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ats-text-soft)]">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] text-[var(--ats-primary)]">
+      <div className="ats-page-inner flex flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2.5">
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--ats-bg-panel-strong)] text-[var(--ats-primary)]">
               {active.icon}
             </span>
-            Active workspace
-          </div>
-          <div className="mt-1 text-lg font-semibold tracking-tight text-[var(--ats-text)]">{active.title}</div>
-          <div className="text-sm text-[var(--ats-text-muted)]">{active.summary}</div>
+          <div className="min-w-0"><div className="truncate text-sm font-semibold text-[var(--ats-text)]">{active.title}</div><div className="hidden truncate text-xs text-[var(--ats-text-muted)] md:block">{active.summary}</div></div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -175,18 +170,6 @@ export default function EnterpriseWorkspaceStrip() {
               ) : null}
             </div>
           ) : null}
-          <Link href="/jobs" className={UI.enterprise.pillInactive}>
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            New job
-          </Link>
-          <Link href="/candidates" className={UI.enterprise.pillInactive}>
-            <UserPlus className="mr-1.5 h-3.5 w-3.5" />
-            New candidate
-          </Link>
-          <Link href="/pipeline" className={UI.enterprise.pillInactive}>
-            <FolderKanban className="mr-1.5 h-3.5 w-3.5" />
-            Open pipeline
-          </Link>
         </div>
       </div>
     </section>

@@ -10,6 +10,7 @@ import Toast, { type ToastTone } from "@/components/Toast";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { callStateReducer, type CallUiState } from "@/lib/chat/callStateReducer";
+import { DateTimePicker } from "@/components/ui/DateTimeFields";
 import {
   Bell,
   CalendarDays,
@@ -4734,12 +4735,7 @@ function ChatContextDrawer({
                   placeholder="Call title"
                   className="w-full rounded-lg border border-[#3a4660] bg-[#0b1223] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400"
                 />
-                <input
-                  type="datetime-local"
-                  value={scheduleStart}
-                  onChange={(e) => setScheduleStart(e.target.value)}
-                  className="w-full rounded-lg border border-[#3a4660] bg-[#0b1223] px-2.5 py-2 text-xs text-slate-100 outline-none focus:border-indigo-400"
-                />
+                <DateTimePicker value={scheduleStart} onChange={setScheduleStart} variant="dark" />
                 <select
                   value={scheduleDuration}
                   onChange={(e) => setScheduleDuration(Number(e.target.value))}
@@ -5083,12 +5079,7 @@ function QuickCalendarModal({
             placeholder="Call title"
             className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
           />
-          <input
-            type="datetime-local"
-            value={startAt}
-            onChange={(e) => setStartAt(e.target.value)}
-            className="w-full rounded-md border border-[#35405a] bg-[#0a1121] px-3 py-2 text-xs text-slate-100"
-          />
+          <DateTimePicker value={startAt} onChange={setStartAt} variant="dark" />
           <select
             value={duration}
             onChange={(e) => setDuration(Number(e.target.value))}

@@ -6,6 +6,7 @@ import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import Toast from "@/components/Toast";
 import { UI } from "@/lib/ui";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { apiFetchJson } from "@/lib/apiClient";
 
@@ -170,8 +171,8 @@ export default function PerformancePage() {
           <h2 className="text-base font-semibold text-[var(--ats-text)]">Create appraisal cycle</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
             <input className={UI.input} placeholder="Cycle name (e.g., FY 26 H1)" value={cycleName} onChange={(e) => setCycleName(e.target.value)} />
-            <input className={UI.input} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            <input className={UI.input} type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            <DatePicker value={startDate} onChange={setStartDate} aria-label="Review cycle start date" />
+            <DatePicker value={endDate} onChange={setEndDate} min={startDate} aria-label="Review cycle end date" />
             <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void createCycle()} disabled={busy}>
               Create cycle
             </button>

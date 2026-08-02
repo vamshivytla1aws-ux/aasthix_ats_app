@@ -11,6 +11,7 @@ import Toast from "@/components/Toast";
 import { apiFetchJson, ApiError } from "@/lib/apiClient";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
+import { DatePicker, DateTimePicker, TimePicker } from "@/components/ui/DateTimeFields";
 
 type AttendanceSettings = {
   company_timezone: string;
@@ -375,7 +376,7 @@ export default function AttendancePage() {
                 <div className="mt-4 grid gap-3 md:grid-cols-5">
                   <div>
                     <label className={UI.label}>Date</label>
-                    <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className={UI.input} />
+                    <DatePicker value={dateFilter} onChange={setDateFilter} aria-label="Attendance date" />
                   </div>
                   <div>
                     <label className={UI.label}>Status</label>
@@ -481,7 +482,7 @@ export default function AttendancePage() {
                     </div>
                     <div>
                       <label className={UI.label}>Start time</label>
-                      <input type="time" value={settingsDraft.start_time_local} onChange={(e) => setSettingsDraft({ ...settingsDraft, start_time_local: e.target.value })} className={UI.input} />
+                      <TimePicker value={settingsDraft.start_time_local} onChange={(value) => setSettingsDraft({ ...settingsDraft, start_time_local: value })} />
                     </div>
                     <div>
                       <label className={UI.label}>Grace minutes</label>
@@ -573,11 +574,11 @@ export default function AttendancePage() {
                 </div>
                 <div>
                   <label className={UI.label}>First check-in</label>
-                  <input type="datetime-local" value={editCheckIn} onChange={(e) => setEditCheckIn(e.target.value)} className={UI.input} disabled={editStatus === "absent"} />
+                  <DateTimePicker value={editCheckIn} onChange={setEditCheckIn} disabled={editStatus === "absent"} />
                 </div>
                 <div>
                   <label className={UI.label}>Last check-out</label>
-                  <input type="datetime-local" value={editCheckOut} onChange={(e) => setEditCheckOut(e.target.value)} className={UI.input} disabled={editStatus === "absent"} />
+                  <DateTimePicker value={editCheckOut} onChange={setEditCheckOut} disabled={editStatus === "absent"} />
                 </div>
               </div>
 
@@ -605,7 +606,7 @@ export default function AttendancePage() {
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <div>
                   <label className={UI.label}>Shift start time</label>
-                  <input type="time" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)} className={UI.input} />
+                  <TimePicker value={shiftStart} onChange={setShiftStart} />
                 </div>
                 <div>
                   <label className={UI.label}>Grace minutes</label>

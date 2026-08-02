@@ -23,7 +23,7 @@ test.describe("mobile-only hardening", () => {
     test(`public pages keep actions reachable at ${vp.width}px`, async ({ page }) => {
       await page.setViewportSize(vp);
       await page.goto("/login");
-      await expect(page.getByRole("heading", { name: "Login" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Sign in to your workspace" })).toBeVisible();
       await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
       await assertNoHorizontalOverflow(page);
 
@@ -64,4 +64,3 @@ test.describe("mobile-only hardening", () => {
     });
   }
 });
-

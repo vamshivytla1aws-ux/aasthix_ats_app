@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { UI } from "@/lib/ui";
 import { apiFetchJson } from "@/lib/apiClient";
 import Toast from "@/components/Toast";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 
 export type ClientContact = {
   id?: number;
@@ -245,11 +246,11 @@ export default function ClientModal({
                     <>
                       <div>
                         <label className={UI.label}>Agreement Start Date</label>
-                        <input type="date" className={UI.input} value={agreementStartDate} onChange={(e) => setAgreementStartDate(e.target.value)} />
+                        <DatePicker value={agreementStartDate} onChange={setAgreementStartDate} aria-label="Agreement start date" />
                       </div>
                       <div>
                         <label className={UI.label}>Agreement End Date</label>
-                        <input type="date" className={UI.input} value={agreementEndDate} onChange={(e) => setAgreementEndDate(e.target.value)} />
+                        <DatePicker value={agreementEndDate} onChange={setAgreementEndDate} min={agreementStartDate} aria-label="Agreement end date" />
                       </div>
                       <div>
                         <label className={UI.label}>Renewal Notice Days</label>

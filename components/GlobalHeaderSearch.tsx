@@ -88,11 +88,12 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
     setRecent(loadRecent());
   }, []);
 
-  // Press "/" to focus search
+  // Press "/" or Cmd/Ctrl+K to focus the command search.
   useEffect(() => {
     if (isPanel) return;
     function handler(e: KeyboardEvent) {
-      if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const commandShortcut = e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey);
+      if ((e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) || commandShortcut) {
         const tag = (e.target as HTMLElement)?.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
         e.preventDefault();
@@ -215,7 +216,7 @@ export default function GlobalHeaderSearch({ variant = "shell" }: Props) {
                 if (q.length >= 2) setOpen(true);
                 else if (r.length > 0) setOpen(true);
               }}
-              placeholder="Search candidates, jobs, applications…  ( / )"
+              placeholder="Search candidates, jobs, applications...  Ctrl K"
               className={[
                 "w-full min-w-0 rounded-lg border px-3 py-2 pl-9 pr-9 text-sm outline-none transition focus:ring-2",
                 isPanel

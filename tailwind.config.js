@@ -7,6 +7,10 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["var(--font-ats-body)", "sans-serif"],
+        display: ["var(--font-ats-heading)", "var(--font-ats-body)", "sans-serif"],
+      },
       colors: {
         ats: {
           page: "var(--ats-bg-page)",
@@ -28,4 +32,3 @@ module.exports = {
   },
   plugins: [],
 };
-

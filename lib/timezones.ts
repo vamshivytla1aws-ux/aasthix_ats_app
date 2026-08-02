@@ -1,10 +1,11 @@
 export const ATS_TIMEZONE = "Asia/Kolkata";
 export const ATS_TIMEZONE_LABEL = "IST";
+export const ATS_DATE_LOCALE = "en-IN";
 
 export function formatInAtsTimezone(value: string | Date, options?: Intl.DateTimeFormatOptions) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  const formatted = new Intl.DateTimeFormat("en-IN", {
+  const formatted = new Intl.DateTimeFormat(ATS_DATE_LOCALE, {
     timeZone: ATS_TIMEZONE,
     year: "numeric",
     month: "short",
@@ -15,6 +16,30 @@ export function formatInAtsTimezone(value: string | Date, options?: Intl.DateTim
     ...options,
   }).format(date);
   return formatted.replace(/\bam\b/gi, "AM").replace(/\bpm\b/gi, "PM");
+}
+
+export function formatAtsDate(value: string | Date) {
+  return formatInAtsTimezone(value, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: undefined,
+    minute: undefined,
+  });
+}
+
+export function formatAtsTime(value: string | Date) {
+  return formatInAtsTimezone(value, {
+    year: undefined,
+    month: undefined,
+    day: undefined,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function formatAtsDateTimeWithZone(value: string | Date) {
+  return `${formatInAtsTimezone(value)} ${ATS_TIMEZONE_LABEL}`;
 }
 
 export function kolkataLocalToUtcIso(datePart: string, timePart: string) {

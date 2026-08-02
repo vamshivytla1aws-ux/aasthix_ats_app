@@ -13,6 +13,7 @@ import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import { toneFromStatus, toToastTone, toastMsForTone } from "@/lib/operationFeedback";
 import { ATS_TIMEZONE_LABEL, formatInAtsTimezone, kolkataLocalToUtcIso } from "@/lib/timezones";
+import { DatePicker, TimePicker } from "@/components/ui/DateTimeFields";
 
 type TeamCalendarRecurrence = "none" | "daily" | "weekly" | "monthly";
 type TeamCalendarStatus = "scheduled" | "updated" | "cancelled" | "sync_failed";
@@ -227,11 +228,11 @@ export default function TeamCalendarPage() {
             </div>
             <div>
               <label className={UI.label}>Date (IST)</label>
-              <input type="date" className={UI.input} value={meetingDate} onChange={(event) => setMeetingDate(event.target.value)} />
+              <DatePicker value={meetingDate} onChange={setMeetingDate} aria-label="Meeting date" />
             </div>
             <div>
               <label className={UI.label}>Time (IST)</label>
-              <input type="time" className={UI.input} value={meetingTime} onChange={(event) => setMeetingTime(event.target.value)} />
+              <TimePicker value={meetingTime} onChange={setMeetingTime} />
             </div>
             <div>
               <label className={UI.label}>Duration</label>
@@ -254,7 +255,7 @@ export default function TeamCalendarPage() {
             {recurrence !== "none" ? (
               <div>
                 <label className={UI.label}>Repeat until</label>
-                <input type="date" className={UI.input} value={recurrenceUntil} onChange={(event) => setRecurrenceUntil(event.target.value)} />
+                <DatePicker value={recurrenceUntil} onChange={setRecurrenceUntil} min={meetingDate} aria-label="Recurrence end date" />
               </div>
             ) : null}
           </div>

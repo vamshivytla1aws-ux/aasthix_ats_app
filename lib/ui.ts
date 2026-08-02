@@ -8,24 +8,24 @@ export const UI = {
     wideTableShell: "max-w-[1600px]",
   },
   pageShell:
-    "w-full rounded-[1.5rem] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-6 py-6 shadow-[var(--ats-shadow-md)] ring-1 ring-[rgb(255_255_255_/_0.5)] md:px-8 md:py-7",
+    "w-full rounded-[var(--ats-radius-xl)] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-5 py-5 shadow-[var(--ats-shadow-sm)] md:px-7 md:py-7",
   sectionCard:
-    "rounded-[1.4rem] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] shadow-[var(--ats-shadow-md)] ring-1 ring-[rgb(255_255_255_/_0.5)]",
+    "rounded-[var(--ats-radius-lg)] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] shadow-[var(--ats-shadow-sm)]",
   label: "mb-1 block text-sm font-medium text-[var(--ats-text-muted)]",
   input:
-    "w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-4 py-2.5 text-[var(--ats-text)] " +
-    "outline-none transition duration-200 placeholder:text-[var(--ats-text-soft)] focus:border-[var(--ats-primary)] focus:ring-2 focus:ring-[color:rgb(37_99_235_/_0.16)]",
+    "w-full min-h-11 rounded-[var(--ats-radius-md)] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3.5 py-2.5 text-sm text-[var(--ats-text)] " +
+    "outline-none transition duration-200 placeholder:text-[var(--ats-text-soft)] hover:border-[var(--ats-border-strong)] focus:border-[var(--ats-primary)] focus:ring-4 focus:ring-[var(--ats-focus)]",
   select:
-    "w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-4 py-2.5 text-[var(--ats-text)] " +
-    "outline-none transition duration-200 focus:border-[var(--ats-primary)] focus:ring-2 focus:ring-[color:rgb(37_99_235_/_0.16)]",
+    "w-full min-h-11 rounded-[var(--ats-radius-md)] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3.5 py-2.5 text-sm text-[var(--ats-text)] " +
+    "outline-none transition duration-200 hover:border-[var(--ats-border-strong)] focus:border-[var(--ats-primary)] focus:ring-4 focus:ring-[var(--ats-focus)]",
   primaryButton:
-    "inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--ats-primary)] px-4 py-2.5 text-white " +
-    "shadow-[0_10px_30px_-16px_rgba(37,99,235,0.85)] transition duration-200 hover:bg-[var(--ats-primary-hover)] active:scale-[0.99] disabled:opacity-50",
+    "inline-flex min-h-10 items-center justify-center gap-2 rounded-[var(--ats-radius-md)] bg-[var(--ats-primary)] px-4 py-2.5 text-sm font-semibold text-white " +
+    "shadow-[0_10px_24px_-14px_rgba(11,110,105,0.7)] transition duration-200 hover:bg-[var(--ats-primary-hover)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50",
   secondaryButton:
-    "inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-4 py-2.5 text-[var(--ats-text)] " +
-    "shadow-[var(--ats-shadow-sm)] transition duration-200 hover:border-[var(--ats-border-strong)] hover:bg-[var(--ats-bg-panel-strong)] disabled:opacity-50",
+    "inline-flex min-h-10 items-center justify-center gap-2 rounded-[var(--ats-radius-md)] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-4 py-2.5 text-sm font-semibold text-[var(--ats-text)] " +
+    "shadow-[var(--ats-shadow-sm)] transition duration-200 hover:border-[var(--ats-border-strong)] hover:bg-[var(--ats-bg-panel)] disabled:cursor-not-allowed disabled:opacity-50",
   card:
-    "rounded-[1.4rem] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-6 shadow-[var(--ats-shadow-md)] ring-1 ring-[rgb(255_255_255_/_0.5)]",
+    "rounded-[var(--ats-radius-lg)] border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-5 shadow-[var(--ats-shadow-sm)]",
 
   enterprise: {
     shellGradient:
