@@ -177,9 +177,14 @@ export async function PUT(
   if (current.rows[0]?.interview_mode === "ADAPTIVE") {
     const q = questions[0];
     const updated = await query(
-      `UPDATE ai_interview_questions SET question_text=$2,skill_name=$3,difficulty=$4,expected_points_json=$5::jsonb,
-      expected_signals_json=$5::jsonb,scoring_rubric_json=$6::jsonb,max_score=$7,generated_by_ai=FALSE,updated_at=NOW()
-      WHERE id=(SELECT id FROM ai_interview_questions WHERE interview_id=$1 ORDER BY order_number,id LIMIT 1) RETURNING *`,
+      `UPDATE ai_interview_questions
+         SET question_text=$2, skill_name=$3, difficulty=$4,
+             expected_points_json=$5::jsonb, expected_signals_json=$5::jsonb,
+             scoring_rubric_json=$6::jsonb, max_score=$7,
+             question_type=$8, starter_code=$9, coding_language=$10,
+             generated_by_ai=FALSE, updated_at=NOW()
+       WHERE id=(SELECT id FROM ai_interview_questions WHERE interview_id=$1 ORDER BY order_number,id LIMIT 1)
+       RETURNING *`,
       [
         id,
         q.question,
@@ -188,6 +193,9 @@ export async function PUT(
         JSON.stringify(q.expectedPoints),
         JSON.stringify(q.scoringRubric),
         q.maxScore,
+        q.question_type || "TECHNICAL",
+        q.starter_code || null,
+        q.coding_language || "python",
       ],
     );
     return NextResponse.json({ questions: updated.rows });
@@ -202,7 +210,11 @@ export async function PUT(
     for (let index = 0; index < questions.length; index += 1) {
       const q = questions[index];
       await client.query(
-        `INSERT INTO ai_interview_questions (interview_id,order_number,question_text,skill_name,difficulty,expected_points_json,scoring_rubric_json,max_score,generated_by_ai) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,FALSE)`,
+        `INSERT INTO ai_interview_questions
+           (interview_id, order_number, question_text, skill_name, difficulty,
+            expected_points_json, scoring_rubric_json, max_score, generated_by_ai,
+            question_type, starter_code, coding_language)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,FALSE,$9,$10,$11)`,
         [
           id,
           index + 1,
@@ -212,6 +224,9 @@ export async function PUT(
           JSON.stringify(q.expectedPoints),
           JSON.stringify(q.scoringRubric),
           q.maxScore,
+          q.question_type || "TECHNICAL",
+          q.starter_code || null,
+          q.coding_language || "python",
         ],
       );
     }

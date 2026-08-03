@@ -36,6 +36,7 @@
     "@floating-ui/dom": "^1.7.6",
     "@hello-pangea/dnd": "^18.0.1",
     "@mediapipe/tasks-vision": "^1.0.1",
+    "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-popover": "^1.1.23",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.71.1",

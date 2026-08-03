@@ -54,7 +54,7 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
   const windowStart = new Date(); // invitation sent now = window opens now
   const windowEnd = new Date(row.expires_at);
   const windowLine = `${fmtIst(windowStart)} IST  →  ${fmtIst(windowEnd)} IST`;
-  const subject = `AI Interview Invitation: ${row.job_title} at ${row.job_company || "AASTHIX"}`;
+  const subject = `AI Interview Invitation: ${row.job_title} – AASTHIX`;
 
   let deliveredVia: "google_calendar" | "resend" | "smtp" | null = null;
   let deliveryMessageId: string | null = null;
@@ -64,7 +64,7 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
   const plainBody = [
     `Dear ${row.candidate_name},`,
     "",
-    `You are invited to complete an AI-powered technical & behavioural interview for the position of ${row.job_title} at ${row.job_company || "AASTHIX"}.`,
+    `You are invited to complete an AI-powered technical & behavioural interview for the position of ${row.job_title}.`,
     "",
     `Interview duration: ${row.duration_minutes} minutes`,
     `Interview window: ${windowLine}`,
@@ -118,7 +118,7 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
     const emailTemplate = buildCandidateEmailTemplate({
       candidateName: row.candidate_name,
       paragraphs: [
-        `You are invited to complete an AI-powered technical and behavioural interview for the position of <strong>${row.job_title}</strong> at ${row.job_company || "AASTHIX"}.`,
+        `You are invited to complete an AI-powered technical and behavioural interview for the position of <strong>${row.job_title}</strong>.`,
         `<strong>Interview duration:</strong> ${Number(row.duration_minutes)} minutes<br><strong>Interview window:</strong> ${windowLine}`,
         `Please complete the interview independently on a laptop or desktop with a working camera, microphone, and Chrome or Edge browser. Recording and browser integrity monitoring will begin after your consent.`,
         `Our recruiters will reach out to you based on the evaluation.`,

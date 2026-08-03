@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   BrainCircuit,
   Camera,
@@ -11,6 +12,8 @@ import {
   ShieldCheck,
   Wifi,
 } from "lucide-react";
+
+const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
 type Interview = {
   id: number;
@@ -39,6 +42,9 @@ type Question = {
   question_text: string;
   skill_name: string;
   difficulty: string;
+  question_type?: "TECHNICAL" | "CODING";
+  starter_code?: string | null;
+  coding_language?: string;
 };
 type Step = "loading" | "intro" | "system" | "interview" | "thanks" | "cancelled" | "error";
 
@@ -71,6 +77,8 @@ export default function CandidateAiInterviewRoom({
   const [preparing, setPreparing] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  // Code editor state for CODING questions
+  const [codeAnswer, setCodeAnswer] = useState("");
   const mediaRef = useRef<MediaStream | null>(null);
   const screenRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -641,8 +649,14 @@ export default function CandidateAiInterviewRoom({
     setListening(false);
     setCurrent(index);
     setAnswer("");
-    questionStartedAt.current = Date.now();
+    // Pre-fill code editor with the question's starter code
     const q = questions[index];
+    if (q?.question_type === "CODING") {
+      setCodeAnswer(q.starter_code || "");
+    } else {
+      setCodeAnswer("");
+    }
+    questionStartedAt.current = Date.now();
     if (q) {
       await fetch("/api/ai-interview/answer", {
         method: "POST",
@@ -708,6 +722,9 @@ export default function CandidateAiInterviewRoom({
   }
   async function submitAnswer() {
     const q = questions[current];
+    const isCoding = q?.question_type === "CODING";
+    // For coding questions, use the code editor value as the transcript
+    const transcript = isCoding ? codeAnswer : answer;
     recognitionRef.current?.stop?.();
     recognitionRef.current = null;
     setListening(false);
@@ -720,7 +737,7 @@ export default function CandidateAiInterviewRoom({
         body: JSON.stringify({
           action: "complete",
           question_id: q.id,
-          transcript: answer,
+          transcript,
           duration_seconds: Math.round(
             (Date.now() - questionStartedAt.current) / 1000,
           ),
@@ -743,6 +760,7 @@ export default function CandidateAiInterviewRoom({
         );
         setCurrent(current + 1);
         setAnswer("");
+        setCodeAnswer(next.starter_code || "");
         questionStartedAt.current = Date.now();
         await fetch("/api/ai-interview/answer", {
           method: "POST",
@@ -1080,26 +1098,60 @@ export default function CandidateAiInterviewRoom({
           >
             {speaking ? "Reading question..." : "Read question aloud"}
           </button>
-          <textarea
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            rows={9}
-            className="mt-6 w-full rounded-xl border border-slate-700 bg-slate-950/70 p-4 text-slate-100 outline-none focus:border-cyan-400"
-            placeholder="Speak or type your answer here..."
-          />
-          <div className="mt-3 flex flex-wrap justify-between gap-2">
-            <button
-              onClick={startDictation}
-              aria-pressed={listening}
-              className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${listening ? "border-rose-400 bg-rose-500/15 text-rose-200" : "border-slate-600 text-white"}`}
-            >
-              <Mic
-                className={`h-4 w-4 ${listening ? "animate-pulse text-rose-400" : ""}`}
+          {/* Answer area: Monaco for coding, textarea for text */}
+          {q?.question_type === "CODING" ? (
+            <div className="mt-6 overflow-hidden rounded-xl border border-slate-700">
+              <div className="flex items-center justify-between bg-slate-800 px-4 py-2">
+                <span className="text-xs font-semibold text-slate-300">
+                  💻 Code editor
+                  <span className="ml-2 rounded bg-slate-700 px-1.5 py-0.5 font-mono text-cyan-300">
+                    {q.coding_language || "python"}
+                  </span>
+                </span>
+                <span className="text-xs text-slate-500">Write your solution below</span>
+              </div>
+              <MonacoEditor
+                height="320px"
+                language={q.coding_language || "python"}
+                value={codeAnswer}
+                onChange={(val) => setCodeAnswer(val ?? "")}
+                theme="vs-dark"
+                options={{
+                  fontSize: 14,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  wordWrap: "on",
+                  lineNumbers: "on",
+                  automaticLayout: true,
+                  tabSize: 4,
+                }}
               />
-              {listening
-                ? "Listening... click to stop"
-                : "Start voice transcription"}
-            </button>
+            </div>
+          ) : (
+            <textarea
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              rows={9}
+              className="mt-6 w-full rounded-xl border border-slate-700 bg-slate-950/70 p-4 text-slate-100 outline-none focus:border-cyan-400"
+              placeholder="Speak or type your answer here..."
+            />
+          )}
+          <div className="mt-3 flex flex-wrap justify-between gap-2">
+            {q?.question_type !== "CODING" && (
+              <button
+                onClick={startDictation}
+                aria-pressed={listening}
+                className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold ${listening ? "border-rose-400 bg-rose-500/15 text-rose-200" : "border-slate-600 text-white"}`}
+              >
+                <Mic
+                  className={`h-4 w-4 ${listening ? "animate-pulse text-rose-400" : ""}`}
+                />
+                {listening
+                  ? "Listening... click to stop"
+                  : "Start voice transcription"}
+              </button>
+            )}
+            {q?.question_type === "CODING" && <div />}
             <button
               onClick={() => void submitAnswer()}
               className="rounded-xl bg-cyan-500 px-5 py-2.5 font-bold text-slate-950"

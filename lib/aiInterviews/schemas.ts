@@ -32,12 +32,15 @@ export const createInterviewSchema = z.object({
 });
 
 export const generatedQuestionSchema = z.object({
-  question: z.string().trim().min(5).max(2000),
+  question: z.string().trim().min(5).max(5000),
   skill: z.string().trim().min(1).max(150),
   difficulty: z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]),
   expectedPoints: z.array(z.string().trim().min(1).max(500)).min(1).max(12),
   scoringRubric: z.array(z.object({ criterion: z.string().trim().min(1).max(500), weight: z.number().min(0).max(100) })).min(1).max(12),
   maxScore: z.number().positive().max(100).default(10),
+  question_type: z.enum(["TECHNICAL", "CODING"]).default("TECHNICAL"),
+  starter_code: z.string().max(10000).nullable().optional(),
+  coding_language: z.enum(["python", "javascript", "typescript", "java", "cpp", "go", "rust", "sql"]).default("python"),
 });
 
 export const generatedQuestionsSchema = z.object({ questions: z.array(generatedQuestionSchema).min(1).max(20) });

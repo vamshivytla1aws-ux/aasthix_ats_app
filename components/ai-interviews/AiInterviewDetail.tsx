@@ -25,6 +25,9 @@ type Question = {
   expected_points_json: string[];
   scoring_rubric_json: Array<{ criterion: string; weight: number }>;
   max_score: number;
+  question_type?: "TECHNICAL" | "CODING";
+  starter_code?: string | null;
+  coding_language?: string;
 };
 export default function AiInterviewDetail({ id }: { id: number }) {
   const router = useRouter();
@@ -90,6 +93,9 @@ export default function AiInterviewDetail({ id }: { id: number }) {
         ? q.scoring_rubric_json
         : [{ criterion: "Accuracy and relevance", weight: 100 }],
       maxScore: Number(q.max_score || 10),
+      question_type: q.question_type || "TECHNICAL",
+      starter_code: q.starter_code || null,
+      coding_language: q.coding_language || "python",
     }));
     await action("save", `/api/ai-interviews/${id}/questions`, {
       method: "PUT",
@@ -98,7 +104,7 @@ export default function AiInterviewDetail({ id }: { id: number }) {
     });
   }
   function blankQuestion(): Question {
-    return { question_text: "", skill_name: "General", difficulty: "INTERMEDIATE", expected_points_json: ["Relevant and accurate explanation"], scoring_rubric_json: [{ criterion: "Accuracy and relevance", weight: 100 }], max_score: 10 };
+    return { question_text: "", skill_name: "General", difficulty: "INTERMEDIATE", expected_points_json: ["Relevant and accurate explanation"], scoring_rubric_json: [{ criterion: "Accuracy and relevance", weight: 100 }], max_score: 10, question_type: "TECHNICAL", starter_code: null, coding_language: "python" };
   }
   async function saveRecruiterQuestions() {
     await action("manual-save", `/api/ai-interviews/${id}/recruiter-questions`, {
@@ -423,7 +429,18 @@ export default function AiInterviewDetail({ id }: { id: number }) {
                 }
                 className="w-full rounded-xl border border-slate-200 p-3 text-sm disabled:bg-slate-50"
               />
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                <select
+                  disabled={!editable}
+                  value={q.question_type || "TECHNICAL"}
+                  onChange={(e) =>
+                    update(index, { question_type: e.target.value as "TECHNICAL" | "CODING" })
+                  }
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+                >
+                  <option value="TECHNICAL">Technical / Behavioural</option>
+                  <option value="CODING">💻 Coding (LeetCode-style)</option>
+                </select>
                 <input
                   disabled={!editable}
                   value={q.skill_name || ""}
@@ -448,6 +465,38 @@ export default function AiInterviewDetail({ id }: { id: number }) {
                   placeholder="Expected points separated by ;"
                 />
               </div>
+              {q.question_type === "CODING" && (
+                <div className="mt-3 space-y-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-700">Coding question settings</span>
+                    <select
+                      disabled={!editable}
+                      value={q.coding_language || "python"}
+                      onChange={(e) => update(index, { coding_language: e.target.value })}
+                      className="rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs"
+                    >
+                      <option value="python">Python</option>
+                      <option value="javascript">JavaScript</option>
+                      <option value="typescript">TypeScript</option>
+                      <option value="java">Java</option>
+                      <option value="cpp">C++</option>
+                      <option value="go">Go</option>
+                      <option value="rust">Rust</option>
+                      <option value="sql">SQL</option>
+                    </select>
+                  </div>
+                  <textarea
+                    disabled={!editable}
+                    rows={6}
+                    value={q.starter_code || ""}
+                    onChange={(e) => update(index, { starter_code: e.target.value })}
+                    placeholder={`# Starter code for candidate (optional)\ndef solution():\n    pass`}
+                    className="w-full rounded-xl border border-blue-200 bg-white p-3 font-mono text-xs disabled:bg-slate-50"
+                    spellCheck={false}
+                  />
+                  <p className="text-xs text-blue-600">The candidate will see a Monaco code editor pre-filled with this starter code.</p>
+                </div>
+              )}
             </article>
           ))}
         </div>
