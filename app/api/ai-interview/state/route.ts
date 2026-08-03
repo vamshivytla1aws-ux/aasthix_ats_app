@@ -15,7 +15,7 @@ export async function GET() {
     );
   const [questions, consent, answers] = await Promise.all([
     query(
-      `SELECT id, order_number, question_text, skill_name, difficulty, question_type, starter_code, coding_language FROM ai_interview_questions WHERE interview_id=$1 ORDER BY order_number`,
+      `SELECT id, order_number, question_text, skill_name, difficulty, question_type, starter_code, coding_language, test_cases_json FROM ai_interview_questions WHERE interview_id=$1 ORDER BY order_number`,
       [interview.id],
     ),
     query(

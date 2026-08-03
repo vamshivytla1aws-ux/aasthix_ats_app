@@ -28,6 +28,7 @@ type Question = {
   question_type?: "TECHNICAL" | "CODING";
   starter_code?: string | null;
   coding_language?: string;
+  test_cases_json?: Array<{ input: string; expectedOutput: string }>;
 };
 export default function AiInterviewDetail({ id }: { id: number }) {
   const router = useRouter();
@@ -96,6 +97,7 @@ export default function AiInterviewDetail({ id }: { id: number }) {
       question_type: q.question_type || "TECHNICAL",
       starter_code: q.starter_code || null,
       coding_language: q.coding_language || "python",
+      test_cases: q.test_cases_json || [],
     }));
     await action("save", `/api/ai-interviews/${id}/questions`, {
       method: "PUT",
@@ -104,7 +106,7 @@ export default function AiInterviewDetail({ id }: { id: number }) {
     });
   }
   function blankQuestion(): Question {
-    return { question_text: "", skill_name: "General", difficulty: "INTERMEDIATE", expected_points_json: ["Relevant and accurate explanation"], scoring_rubric_json: [{ criterion: "Accuracy and relevance", weight: 100 }], max_score: 10, question_type: "TECHNICAL", starter_code: null, coding_language: "python" };
+    return { question_text: "", skill_name: "General", difficulty: "INTERMEDIATE", expected_points_json: ["Relevant and accurate explanation"], scoring_rubric_json: [{ criterion: "Accuracy and relevance", weight: 100 }], max_score: 10, question_type: "TECHNICAL", starter_code: null, coding_language: "python", test_cases_json: [] };
   }
   async function saveRecruiterQuestions() {
     await action("manual-save", `/api/ai-interviews/${id}/recruiter-questions`, {
@@ -495,6 +497,71 @@ export default function AiInterviewDetail({ id }: { id: number }) {
                     spellCheck={false}
                   />
                   <p className="text-xs text-blue-600">The candidate will see a Monaco code editor pre-filled with this starter code.</p>
+                  
+                  <div className="mt-4 border-t border-blue-200/50 pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-blue-700">Test Cases</span>
+                      {editable && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const tc = q.test_cases_json || [];
+                            update(index, { test_cases_json: [...tc, { input: "", expectedOutput: "" }] });
+                          }}
+                          className="text-xs font-semibold text-blue-700 hover:underline"
+                        >
+                          + Add test case
+                        </button>
+                      )}
+                    </div>
+                    {(!q.test_cases_json || q.test_cases_json.length === 0) ? (
+                      <p className="text-xs text-slate-500 italic">No test cases added. Code will just run without validation.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {q.test_cases_json.map((tc, tcIndex) => (
+                          <div key={tcIndex} className="flex items-start gap-2 bg-white p-2 rounded-lg border border-blue-100">
+                            <div className="flex-1 space-y-2">
+                              <input
+                                disabled={!editable}
+                                value={tc.input}
+                                onChange={(e) => {
+                                  const newTc = [...(q.test_cases_json || [])];
+                                  newTc[tcIndex] = { ...tc, input: e.target.value };
+                                  update(index, { test_cases_json: newTc });
+                                }}
+                                className="w-full rounded border border-slate-200 px-2 py-1 text-xs font-mono disabled:bg-slate-50"
+                                placeholder="Input (e.g. 1 2 3)"
+                              />
+                              <input
+                                disabled={!editable}
+                                value={tc.expectedOutput}
+                                onChange={(e) => {
+                                  const newTc = [...(q.test_cases_json || [])];
+                                  newTc[tcIndex] = { ...tc, expectedOutput: e.target.value };
+                                  update(index, { test_cases_json: newTc });
+                                }}
+                                className="w-full rounded border border-slate-200 px-2 py-1 text-xs font-mono disabled:bg-slate-50"
+                                placeholder="Expected Output (e.g. 6)"
+                              />
+                            </div>
+                            {editable && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newTc = [...(q.test_cases_json || [])];
+                                  newTc.splice(tcIndex, 1);
+                                  update(index, { test_cases_json: newTc });
+                                }}
+                                className="p-1 text-rose-500 hover:bg-rose-50 rounded"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </article>

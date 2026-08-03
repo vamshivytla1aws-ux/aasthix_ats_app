@@ -41,6 +41,10 @@ export const generatedQuestionSchema = z.object({
   question_type: z.enum(["TECHNICAL", "CODING"]).default("TECHNICAL"),
   starter_code: z.string().max(10000).nullable().optional(),
   coding_language: z.enum(["python", "javascript", "typescript", "java", "cpp", "go", "rust", "sql"]).default("python"),
+  test_cases: z.array(z.object({
+    input: z.string().max(2000),
+    expectedOutput: z.string().max(2000)
+  })).max(10).default([]),
 });
 
 export const generatedQuestionsSchema = z.object({ questions: z.array(generatedQuestionSchema).min(1).max(20) });

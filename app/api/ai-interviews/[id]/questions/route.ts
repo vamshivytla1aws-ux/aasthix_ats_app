@@ -181,7 +181,7 @@ export async function PUT(
          SET question_text=$2, skill_name=$3, difficulty=$4,
              expected_points_json=$5::jsonb, expected_signals_json=$5::jsonb,
              scoring_rubric_json=$6::jsonb, max_score=$7,
-             question_type=$8, starter_code=$9, coding_language=$10,
+             question_type=$8, starter_code=$9, coding_language=$10, test_cases_json=$11::jsonb,
              generated_by_ai=FALSE, updated_at=NOW()
        WHERE id=(SELECT id FROM ai_interview_questions WHERE interview_id=$1 ORDER BY order_number,id LIMIT 1)
        RETURNING *`,
@@ -196,6 +196,7 @@ export async function PUT(
         q.question_type || "TECHNICAL",
         q.starter_code || null,
         q.coding_language || "python",
+        JSON.stringify(q.test_cases || []),
       ],
     );
     return NextResponse.json({ questions: updated.rows });
@@ -213,8 +214,8 @@ export async function PUT(
         `INSERT INTO ai_interview_questions
            (interview_id, order_number, question_text, skill_name, difficulty,
             expected_points_json, scoring_rubric_json, max_score, generated_by_ai,
-            question_type, starter_code, coding_language)
-         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,FALSE,$9,$10,$11)`,
+            question_type, starter_code, coding_language, test_cases_json)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,FALSE,$9,$10,$11,$12::jsonb)`,
         [
           id,
           index + 1,
@@ -227,6 +228,7 @@ export async function PUT(
           q.question_type || "TECHNICAL",
           q.starter_code || null,
           q.coding_language || "python",
+          JSON.stringify(q.test_cases || []),
         ],
       );
     }

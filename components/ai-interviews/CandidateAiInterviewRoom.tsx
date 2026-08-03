@@ -45,6 +45,7 @@ type Question = {
   question_type?: "TECHNICAL" | "CODING";
   starter_code?: string | null;
   coding_language?: string;
+  test_cases_json?: Array<{ input: string; expectedOutput: string }>;
 };
 type Step = "loading" | "intro" | "system" | "interview" | "thanks" | "cancelled" | "error";
 
@@ -79,6 +80,8 @@ export default function CandidateAiInterviewRoom({
   const [cancelling, setCancelling] = useState(false);
   // Code editor state for CODING questions
   const [codeAnswer, setCodeAnswer] = useState("");
+  const [isRunningCode, setIsRunningCode] = useState(false);
+  const [codeResults, setCodeResults] = useState<any[]>([]);
   const mediaRef = useRef<MediaStream | null>(null);
   const screenRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -653,8 +656,10 @@ export default function CandidateAiInterviewRoom({
     const q = questions[index];
     if (q?.question_type === "CODING") {
       setCodeAnswer(q.starter_code || "");
+      setCodeResults([]);
     } else {
       setCodeAnswer("");
+      setCodeResults([]);
     }
     questionStartedAt.current = Date.now();
     if (q) {
@@ -723,8 +728,10 @@ export default function CandidateAiInterviewRoom({
   async function submitAnswer() {
     const q = questions[current];
     const isCoding = q?.question_type === "CODING";
-    // For coding questions, use the code editor value as the transcript
-    const transcript = isCoding ? codeAnswer : answer;
+    // For coding questions, use the code editor value and results as the transcript
+    const transcript = isCoding 
+      ? `[CANDIDATE CODE]\n${codeAnswer}\n\n[EXECUTION RESULTS]\n${JSON.stringify(codeResults, null, 2)}` 
+      : answer;
     recognitionRef.current?.stop?.();
     recognitionRef.current = null;
     setListening(false);
@@ -1060,6 +1067,30 @@ export default function CandidateAiInterviewRoom({
         </div>
       </Shell>
     );
+  async function runCode() {
+    const q = questions[current];
+    if (!q || !codeAnswer) return;
+    setIsRunningCode(true);
+    try {
+      const res = await fetch("/api/ai-interview/run-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: codeAnswer,
+          language: q.coding_language || "python",
+          testCases: q.test_cases_json || [],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Execution failed");
+      setCodeResults(data.results || []);
+    } catch (err: any) {
+      setCodeResults([{ passed: false, compileError: err.message, runOutput: "", runStdout: "", runStderr: "", exitCode: 1 }]);
+    } finally {
+      setIsRunningCode(false);
+    }
+  }
+
   const q = questions[current];
   return (
     <Shell>
@@ -1126,6 +1157,53 @@ export default function CandidateAiInterviewRoom({
                   tabSize: 4,
                 }}
               />
+              
+              {/* Output Console for Code Execution */}
+              {codeResults.length > 0 && (
+                <div className="border-t border-slate-700 bg-slate-900 p-4">
+                  <h3 className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Execution Results</h3>
+                  <div className="space-y-3">
+                    {codeResults.map((res, i) => (
+                      <div key={i} className={`rounded-lg border p-3 ${res.passed ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-rose-500/30 bg-rose-500/10'}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`text-sm font-bold ${res.passed ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {res.passed ? "✅ Passed" : "❌ Failed"}
+                          </span>
+                          <span className="text-xs text-slate-500">Test Case {i + 1}</span>
+                        </div>
+                        
+                        {(q.test_cases_json && q.test_cases_json.length > 0) && (
+                          <div className="grid grid-cols-2 gap-2 mb-2 text-xs font-mono">
+                            <div className="bg-slate-950 p-2 rounded">
+                              <span className="text-slate-500 block mb-1">Input:</span>
+                              <span className="text-slate-300">{res.input || 'none'}</span>
+                            </div>
+                            <div className="bg-slate-950 p-2 rounded">
+                              <span className="text-slate-500 block mb-1">Expected:</span>
+                              <span className="text-slate-300">{res.expectedOutput || 'none'}</span>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {res.compileError && (
+                          <div className="mt-2 text-xs font-mono bg-slate-950 p-2 rounded border border-rose-500/50 text-rose-300 overflow-x-auto whitespace-pre">
+                            <span className="text-rose-500 block mb-1 font-bold">Compile Error:</span>
+                            {res.compileError}
+                          </div>
+                        )}
+                        
+                        {(res.runStdout || res.runStderr) && (
+                          <div className="mt-2 text-xs font-mono bg-slate-950 p-2 rounded border border-slate-700 text-slate-300 overflow-x-auto whitespace-pre">
+                            <span className="text-slate-500 block mb-1 font-bold">Output:</span>
+                            {res.runStdout}
+                            {res.runStderr && <span className="text-rose-400">{res.runStderr}</span>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <textarea
@@ -1151,7 +1229,15 @@ export default function CandidateAiInterviewRoom({
                   : "Start voice transcription"}
               </button>
             )}
-            {q?.question_type === "CODING" && <div />}
+            {q?.question_type === "CODING" ? (
+              <button
+                onClick={runCode}
+                disabled={isRunningCode || !codeAnswer.trim()}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-800 border border-slate-600 px-5 py-2.5 font-bold text-slate-200 disabled:opacity-50 hover:bg-slate-700"
+              >
+                {isRunningCode ? "Running..." : "Run Code"}
+              </button>
+            ) : <div />}
             <button
               onClick={() => void submitAnswer()}
               className="rounded-xl bg-cyan-500 px-5 py-2.5 font-bold text-slate-950"
