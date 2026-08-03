@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { DateTimePicker } from "@/components/ui/DateTimeFields";
+import { DatePicker, TimePicker } from "@/components/ui/DateTimeFields";
 
 type Option = {
   id: number;
@@ -12,16 +12,15 @@ type Option = {
   email?: string;
 };
 
-function getDefaultWindowStart() {
-  // Round up to the next whole hour so the default looks clean.
+function getDefaultWindowStartDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getDefaultWindowStartTime() {
   const date = new Date();
   date.setMinutes(0, 0, 0);
   date.setHours(date.getHours() + 1);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:00`;
+  return String(date.getHours()).padStart(2, "0") + ":00";
 }
 
 export default function AiInterviewCreate() {
@@ -31,7 +30,8 @@ export default function AiInterviewCreate() {
   const paramCandidateId = searchParams.get("candidate_id") || "";
   const paramApplicationId = searchParams.get("application_id") || "";
 
-  const [windowStart, setWindowStart] = useState(getDefaultWindowStart());
+  const [windowStartDate, setWindowStartDate] = useState(getDefaultWindowStartDate());
+  const [windowStartTime, setWindowStartTime] = useState(getDefaultWindowStartTime());
   const [windowHours, setWindowHours] = useState(3);
   const [jobs, setJobs] = useState<Option[]>([]);
   const [candidates, setCandidates] = useState<Option[]>([]);
@@ -96,7 +96,8 @@ export default function AiInterviewCreate() {
     setSaving(true);
     setError("");
     try {
-      const startDate = windowStart ? new Date(windowStart) : new Date();
+      const windowStart = windowStartDate && windowStartTime ? new Date(`${windowStartDate}T${windowStartTime}`) : new Date();
+      const startDate = windowStart;
       const expiryIso = new Date(startDate.getTime() + windowHours * 60 * 60 * 1000).toISOString();
       const payload = {
         ...form,
@@ -278,15 +279,20 @@ export default function AiInterviewCreate() {
             className={input}
           />
         </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Window opens (start date)
-          <input
-            type="datetime-local"
-            value={windowStart}
-            onChange={(e) => setWindowStart(e.target.value)}
-            className={input}
-          />
-        </label>
+        <div className="grid grid-cols-2 gap-4">
+          <label className="text-sm font-semibold text-slate-700">
+            Window opens (date)
+            <div className="mt-1">
+              <DatePicker value={windowStartDate} onChange={setWindowStartDate} />
+            </div>
+          </label>
+          <label className="text-sm font-semibold text-slate-700">
+            Window opens (time)
+            <div className="mt-1">
+              <TimePicker value={windowStartTime} onChange={setWindowStartTime} />
+            </div>
+          </label>
+        </div>
         <label className="text-sm font-semibold text-slate-700">
           Window duration (expires after)
           <select
