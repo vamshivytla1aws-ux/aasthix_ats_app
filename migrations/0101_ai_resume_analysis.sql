@@ -1,0 +1,1 @@
+ALTER TABLE candidates ADD COLUMN IF NOT EXISTS ai_resume_analysis JSONB DEFAULT NULL;

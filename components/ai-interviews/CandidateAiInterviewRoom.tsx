@@ -72,9 +72,15 @@ export default function CandidateAiInterviewRoom({
   const [consent, setConsent] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [warning, setWarning] = useState("");
+  const [timeUp, setTimeUp] = useState(false);
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
+  
+  // Integrity trackers
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [copyPasteCount, setCopyPasteCount] = useState(0);
+  const [backgroundVoicesCount, setBackgroundVoicesCount] = useState(0);
   const [preparing, setPreparing] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -91,12 +97,13 @@ export default function CandidateAiInterviewRoom({
   const uploadIdRef = useRef("");
   const chunkRef = useRef(0);
   const uploadChain = useRef<Promise<unknown>>(Promise.resolve());
-  const startedAt = useRef(0);
-  const questionStartedAt = useRef(0);
   const recognitionRef = useRef<any>(null);
   const snapshotCapturedRef = useRef(false);
   const resumeQuestionIndexRef = useRef(0);
+  const startedAt = useRef<number | null>(null);
+  const questionStartedAt = useRef<number | null>(null);
   const finishInterviewRef = useRef<() => Promise<void>>(async () => {});
+  const cancelInterviewRef = useRef<() => Promise<void>>(async () => {});
   const hiddenAtRef = useRef<number | null>(null);
   const blurAtRef = useRef<number | null>(null);
 
@@ -196,9 +203,11 @@ export default function CandidateAiInterviewRoom({
         stopVoice();
         hiddenAtRef.current = Date.now();
         sendEvent("TAB_HIDDEN");
-        setWarning(
-          "Window switching was detected. Voice input has been paused. Return here and restart voice transcription.",
-        );
+        setTabSwitchCount((c) => {
+          if (c + 1 >= 2) void cancelInterview("TAB_SWITCH_LIMIT");
+          return c + 1;
+        });
+        setWarning("Window switching was detected. Your exam will be cancelled if repeated.");
       } else {
         if (hiddenAtRef.current) {
           const duration = Math.round((Date.now() - hiddenAtRef.current) / 1000);
@@ -211,7 +220,11 @@ export default function CandidateAiInterviewRoom({
       stopVoice();
       blurAtRef.current = Date.now();
       sendEvent("WINDOW_BLUR");
-      setWarning("Window switching was detected. Voice input has been paused.");
+      setTabSwitchCount((c) => {
+        if (c + 1 >= 2) void cancelInterview("TAB_SWITCH_LIMIT");
+        return c + 1;
+      });
+      setWarning("Window switching was detected. Your exam will be cancelled if repeated.");
     };
     const focus = () => {
       if (blurAtRef.current) {
@@ -235,11 +248,32 @@ export default function CandidateAiInterviewRoom({
       e.preventDefault();
       const text = document.getSelection()?.toString() || "";
       sendEvent("COPY_ATTEMPT", { text: text.substring(0, 1000) });
+      setCopyPasteCount((c) => {
+        if (c + 1 >= 2) void cancelInterview("COPY_PASTE_LIMIT");
+        return c + 1;
+      });
+      setWarning("Copying text is strictly prohibited.");
     };
     const paste = (e: ClipboardEvent) => {
       e.preventDefault();
       const text = e.clipboardData?.getData("text") || "";
       sendEvent("PASTE_ATTEMPT", { text: text.substring(0, 1000) });
+      setCopyPasteCount((c) => {
+        if (c + 1 >= 2) void cancelInterview("COPY_PASTE_LIMIT");
+        return c + 1;
+      });
+      setWarning("Pasting text is strictly prohibited.");
+    };
+    const keydown = (e: KeyboardEvent) => {
+      // Block F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
+      if (
+        e.key === "F12" ||
+        (e.ctrlKey && e.shiftKey && (e.key === "I" || e.key === "J" || e.key === "i" || e.key === "j")) ||
+        (e.ctrlKey && (e.key === "U" || e.key === "u"))
+      ) {
+        e.preventDefault();
+        setWarning("Developer tools are prohibited during the exam.");
+      }
     };
     document.addEventListener("visibilitychange", hidden);
     window.addEventListener("blur", blur);
@@ -249,6 +283,7 @@ export default function CandidateAiInterviewRoom({
     window.addEventListener("online", online);
     document.addEventListener("copy", copy);
     document.addEventListener("paste", paste);
+    document.addEventListener("keydown", keydown);
     return () => {
       document.removeEventListener("visibilitychange", hidden);
       window.removeEventListener("blur", blur);
@@ -258,9 +293,15 @@ export default function CandidateAiInterviewRoom({
       window.removeEventListener("online", online);
       document.removeEventListener("copy", copy);
       document.removeEventListener("paste", paste);
+      document.removeEventListener("keydown", keydown);
     };
   }, [step, sendEvent, interview]);
-  useEffect(() => { finishInterviewRef.current = finishInterview; });
+  const listeningRef = useRef(listening);
+  useEffect(() => { listeningRef.current = listening; }, [listening]);
+  useEffect(() => { 
+    finishInterviewRef.current = finishInterview; 
+    cancelInterviewRef.current = cancelInterview;
+  });
   useEffect(() => {
     if (step !== "interview") return;
     const timer = setInterval(
@@ -268,7 +309,7 @@ export default function CandidateAiInterviewRoom({
         setTimeLeft((value) => {
           if (value <= 1) {
             clearInterval(timer);
-            void finishInterviewRef.current();
+            setTimeUp(true);
             return 0;
           }
           return value - 1;
@@ -375,6 +416,7 @@ export default function CandidateAiInterviewRoom({
             if (!multipleLogged && Date.now() - multipleSince > 2000) {
               sendEvent("MULTIPLE_FACES", { approximate: true });
               multipleLogged = true;
+              void cancelInterviewRef.current("MULTIPLE_FACES");
             }
           } else {
             multipleSince = 0;
@@ -417,6 +459,61 @@ export default function CandidateAiInterviewRoom({
       detector?.close();
     };
   }, [step, interview, sendEvent]);
+
+  // Background Voice Audio Monitoring
+  useEffect(() => {
+    if (step !== "interview" || !mediaRef.current) return;
+    
+    let cancelled = false;
+    let audioCtx: AudioContext | null = null;
+    let analyser: AnalyserNode | null = null;
+    let source: MediaStreamAudioSourceNode | null = null;
+    let checkInterval: ReturnType<typeof setInterval> | null = null;
+    let loudCount = 0;
+
+    try {
+      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
+      source = audioCtx.createMediaStreamSource(mediaRef.current);
+      source.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      checkInterval = setInterval(() => {
+        if (cancelled || listeningRef.current) return; // Don't flag if they are using voice dictation
+        analyser!.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+        const avg = sum / bufferLength;
+        
+        if (avg > 35) { // tuned threshold
+          loudCount++;
+          if (loudCount > 4) { // Sustained for 2 seconds (4 * 500ms)
+            setBackgroundVoicesCount((c) => {
+              if (c + 1 >= 2) void cancelInterviewRef.current("BACKGROUND_VOICES");
+              return c + 1;
+            });
+            setWarning("Background voices detected. Ensure you are alone in a quiet room.");
+            loudCount = 0; // reset to avoid immediate 2nd strike
+          }
+        } else {
+          loudCount = Math.max(0, loudCount - 1);
+        }
+      }, 500);
+    } catch (e) {
+      console.warn("Audio analysis unavailable", e);
+    }
+
+    return () => {
+      cancelled = true;
+      if (checkInterval) clearInterval(checkInterval);
+      if (audioCtx?.state !== 'closed') void audioCtx?.close();
+    };
+  }, [step]);
+
   useEffect(
     () => () => {
       answerAudioRecorderRef.current?.stop?.();
@@ -967,7 +1064,7 @@ export default function CandidateAiInterviewRoom({
       );
     }
   }
-  async function cancelInterview() {
+  async function cancelInterview(reason: string = "USER_EXIT") {
     if (cancelling || step === "cancelled") return;
     setCancelling(true);
     try {
@@ -981,13 +1078,16 @@ export default function CandidateAiInterviewRoom({
       await fetch("/api/ai-interview/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: "candidate_cancelled", idempotency_key: `cancel-${interview?.id}` }),
+        body: JSON.stringify({ reason }),
       });
       mediaRef.current?.getTracks().forEach((t) => t.stop());
       screenRef.current?.getTracks().forEach((t) => t.stop());
       if (document.fullscreenElement)
         await document.exitFullscreen().catch(() => {});
       setStep("cancelled");
+      if (reason !== "USER_EXIT") {
+        setWarning(`Interview cancelled automatically. Reason: ${reason}`);
+      }
     } catch {
       setWarning("Cancellation could not be completed. Please close this window.");
       setShowCancelConfirm(false);
@@ -1051,6 +1151,7 @@ export default function CandidateAiInterviewRoom({
             You have exited the interview. All responses recorded up to this
             point have been saved for review.
           </p>
+          {warning && <p className="mx-auto mt-3 max-w-xl text-sm font-semibold text-rose-400">{warning}</p>}
           <p className="mx-auto mt-2 max-w-xl text-sm text-slate-500">
             This interview link has been deactivated. Please contact the
             recruitment team if you believe this was a mistake.
@@ -1496,6 +1597,27 @@ export default function CandidateAiInterviewRoom({
           </p>
         </aside>
       </div>
+
+      {/* Time Up Modal */}
+      {timeUp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-8 shadow-2xl text-center">
+            <h2 className="text-2xl font-bold text-rose-400 mb-3">Time is Up!</h2>
+            <p className="text-slate-300 mb-6">
+              The time limit for this exam has been reached. Please submit your answers to complete the interview.
+            </p>
+            <button
+              onClick={() => {
+                setTimeUp(false);
+                void finishInterview();
+              }}
+              className="w-full rounded-xl bg-cyan-500 py-3 font-bold text-slate-950 hover:bg-cyan-400 transition-colors"
+            >
+              Submit Exam
+            </button>
+          </div>
+        </div>
+      )}
     </Shell>
   );
 }

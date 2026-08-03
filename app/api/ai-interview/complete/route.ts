@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       )
     : 0;
   const expiredByServerTime =
-    elapsedSeconds >= Math.max(1, Number(interview.duration_minutes || 0)) * 60;
+    elapsedSeconds + 60 >= Math.max(1, Number(interview.duration_minutes || 0)) * 60;
   if (
     interview.interview_mode === "ADAPTIVE" &&
     !interview.adaptive_state_json?.completionReady &&

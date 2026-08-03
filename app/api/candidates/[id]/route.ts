@@ -40,6 +40,7 @@ type CandidateProfile = {
   /** Latest application by updated_at — compare with pipeline row for same candidate */
   latest_application_id: number | null;
   onboarding_status?: string | null;
+  ai_resume_analysis?: any;
 };
 
 type TimelineItem = {
@@ -183,6 +184,7 @@ export async function GET(
         c.expected_salary,
         c.resume_url,
         c.experience_summary,
+        c.ai_resume_analysis,
         COALESCE(c.source, 'UI') AS source,
         CASE
           WHEN EXISTS (

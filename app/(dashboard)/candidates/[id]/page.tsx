@@ -148,6 +148,7 @@ const TABS = [
   { id: "interviews", label: "Interviews" },
   { id: "feedback", label: "Feedback" },
   { id: "similar", label: "Similar" },
+  { id: "ai_analysis", label: "AI Analysis" },
   { id: "onboarding", label: "Onboarding" },
 ] as const;
 
@@ -171,6 +172,8 @@ function CandidateProfilePageContent() {
   const [resumeUploadBusy, setResumeUploadBusy] = useState(false);
   const [resumeUploadError, setResumeUploadError] = useState<string | null>(null);
   const [resumeUploadMessage, setResumeUploadMessage] = useState<string | null>(null);
+  const [analyzingResume, setAnalyzingResume] = useState(false);
+  const [aiAnalysisData, setAiAnalysisData] = useState<any>(null);
   const resumeUploadInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
@@ -358,6 +361,116 @@ function CandidateProfilePageContent() {
       setResumeUploadBusy(false);
     }
   }
+
+  const aiAnalysisPanel = (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">AI Resume Analysis</h3>
+        <button
+          disabled={analyzingResume}
+          onClick={async () => {
+            setAnalyzingResume(true);
+            try {
+              const res = await apiFetchJson<any>(`/api/candidates/${c.id}/ai-analysis`, { method: "POST" });
+              if (res.analysis) setAiAnalysisData(res.analysis);
+            } catch (err: any) {
+              window.alert(err.message || "Failed to analyze resume");
+            } finally {
+              setAnalyzingResume(false);
+            }
+          }}
+          className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {analyzingResume ? "Analyzing..." : "Run AI Analysis"}
+        </button>
+      </div>
+
+      {!aiAnalysisData ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
+          No AI analysis available yet. Click the button above to analyze the candidate's resume.
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Personal Details */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Extracted Details</h4>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between border-b border-slate-100 pb-1 dark:border-slate-800">
+                <span className="text-slate-500">Name</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">{aiAnalysisData.name || "N/A"}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-100 pb-1 dark:border-slate-800">
+                <span className="text-slate-500">DOB</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">{aiAnalysisData.dob || "N/A"}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-100 pb-1 dark:border-slate-800">
+                <span className="text-slate-500">Phone</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">{aiAnalysisData.phone || "N/A"}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-100 pb-1 dark:border-slate-800">
+                <span className="text-slate-500">Email</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">{aiAnalysisData.email || "N/A"}</span>
+              </div>
+            </div>
+            
+            <h4 className="mt-4 mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Detected Skills</h4>
+            <div className="flex flex-wrap gap-1.5">
+              {(aiAnalysisData.skills || []).map((skill: string, i: number) => (
+                <span key={i} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  {skill}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Gaps and Breakdown */}
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Career Gaps Detected</h4>
+              {(!aiAnalysisData.gaps || aiAnalysisData.gaps.length === 0) ? (
+                <p className="text-sm text-slate-500">No significant gaps found.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {aiAnalysisData.gaps.map((gap: any, i: number) => (
+                    <li key={i} className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-sm dark:border-rose-900/50 dark:bg-rose-950/20">
+                      <div className="flex items-center gap-2 font-semibold text-rose-700 dark:text-rose-400">
+                        <span className="text-rose-500">←</span> {gap.startDate} to {gap.endDate}
+                      </div>
+                      {gap.reason && <div className="mt-1 text-xs text-rose-600 dark:text-rose-300">Reason: {gap.reason}</div>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Tech Experience Breakdown</h4>
+              {(!aiAnalysisData.experience_breakdown || aiAnalysisData.experience_breakdown.length === 0) ? (
+                <p className="text-sm text-slate-500">No specific technologies mapped.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {aiAnalysisData.experience_breakdown.map((tech: any, i: number) => (
+                    <li key={i} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-800/50">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-900 dark:text-slate-100">{tech.technology}</span>
+                        {tech.is_it && <span className="rounded bg-blue-100 px-1 text-[10px] font-bold text-blue-700 dark:bg-blue-900 dark:text-blue-200">IT</span>}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+                        <span>{tech.years} yrs</span>
+                        <div className="w-16 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                          <div className="h-1.5 bg-blue-500" style={{ width: `${Math.min(100, Math.max(0, tech.percentage_proficiency || 0))}%` }} />
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   const detailsPanel = (
     <div className="space-y-0">
@@ -924,6 +1037,7 @@ function CandidateProfilePageContent() {
               ) : null}
               {tab === "feedback" ? feedbackPanel : null}
               {tab === "similar" ? similarPanel : null}
+              {tab === "ai_analysis" ? aiAnalysisPanel : null}
               {tab === "onboarding" ? (
                 <div className="space-y-3">
                   {onboardingPackets.length === 0 ? (

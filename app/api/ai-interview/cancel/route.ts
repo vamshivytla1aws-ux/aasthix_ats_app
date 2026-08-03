@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { requireCandidateInterview } from "@/lib/aiInterviews/access";
@@ -7,68 +6,46 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const interview = await requireCandidateInterview();
-  if (!interview)
-    return NextResponse.json(
-      { error: "Interview session is invalid" },
-      { status: 401 },
-    );
+  if (!interview) {
+    return NextResponse.json({ error: "Interview session is invalid" }, { status: 401 });
+  }
 
   const body = await request.json().catch(() => ({}));
-  const reason = String(body?.reason || "candidate_cancelled").slice(0, 200);
-  const idempotencyKey = String(body?.idempotency_key || crypto.randomUUID());
+  const reason = String(body?.reason || "USER_EXIT").substring(0, 50);
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-
-    // Only cancel if currently in a cancellable state.
+    
     const result = await client.query(
-      `UPDATE ai_interviews
-          SET status = 'CANCELLED',
-              token_revoked_at = COALESCE(token_revoked_at, NOW()),
-              completed_at = COALESCE(completed_at, NOW()),
-              updated_at = NOW()
-        WHERE id = $1
-          AND status IN ('READY', 'IN_PROGRESS')
-        RETURNING id, status`,
-      [interview.id],
+      `UPDATE ai_interviews 
+       SET status = 'CANCELLED', cancellation_reason = $1, token_revoked_at = NOW(), updated_at = NOW()
+       WHERE id = $2 AND status IN ('DRAFT', 'SCHEDULED', 'READY', 'IN_PROGRESS')
+       RETURNING id, status`,
+      [reason, interview.id]
     );
 
-    if (!result.rowCount) {
-      const existing = await client.query(
-        `SELECT id, status FROM ai_interviews WHERE id = $1`,
-        [interview.id],
-      );
+    if (result.rowCount === 0) {
       await client.query("ROLLBACK");
-      const currentStatus = existing.rows[0]?.status;
-      if (["CANCELLED", "COMPLETED", "PROCESSING"].includes(currentStatus)) {
-        return NextResponse.json({ cancelled: true, status: currentStatus });
-      }
       return NextResponse.json(
-        { error: "Interview cannot be cancelled in its current state" },
-        { status: 409 },
+        { error: "Interview cannot be cancelled from its current state" },
+        { status: 409 }
       );
     }
 
-    // Record audit event.
     await client.query(
-      `INSERT INTO ai_interview_events (interview_id, event_type, severity, occurred_at, deduplication_key, metadata_json)
-       VALUES ($1, 'INTERVIEW_CANCELLED', 'INFO', NOW(), $2, $3::jsonb)
-       ON CONFLICT DO NOTHING`,
-      [
-        interview.id,
-        `cancel-${idempotencyKey}`,
-        JSON.stringify({ reason, cancelled_by: "candidate" }),
-      ],
+      `INSERT INTO ai_interview_events (interview_id, event_type, severity, occurred_at, metadata)
+       VALUES ($1, 'INTERVIEW_CANCELLED', 'WARNING', NOW(), $2) ON CONFLICT DO NOTHING`,
+      [interview.id, JSON.stringify({ reason })]
     );
 
     await client.query("COMMIT");
+    return NextResponse.json({ cancelled: true, reason });
   } catch (error) {
     await client.query("ROLLBACK");
-    throw error;
+    console.error("[ai-interview/cancel] Error:", error);
+    return NextResponse.json({ error: "Failed to cancel interview" }, { status: 500 });
   } finally {
     client.release();
   }
-
-  return NextResponse.json({ cancelled: true, status: "CANCELLED" });
 }

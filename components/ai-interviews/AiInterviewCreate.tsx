@@ -59,10 +59,11 @@ export default function AiInterviewCreate() {
     behavioral_enabled: false,
     allow_fundamentals_for_senior: false,
     recording_enabled: true,
-    screen_share_enabled: false,
+    screen_share_enabled: true,
     fullscreen_required: true,
     face_monitoring_enabled: true,
     gaze_monitoring_enabled: true,
+    ask_gap_justification: false,
   });
 
   useEffect(() => {
@@ -99,15 +100,26 @@ export default function AiInterviewCreate() {
       const windowStart = windowStartDate && windowStartTime ? new Date(`${windowStartDate}T${windowStartTime}`) : new Date();
       const startDate = windowStart;
       const expiryIso = new Date(startDate.getTime() + windowHours * 60 * 60 * 1000).toISOString();
+        const skillsArray = form.skills
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+        
+        if (form.ask_gap_justification) {
+          skillsArray.push("career gap justification");
+        }
+
+        const instructions = form.ask_gap_justification
+          ? `${form.instructions}\n\nPlease justify any gaps in your employment history during the interview.`
+          : form.instructions;
+
       const payload = {
         ...form,
         job_id: Number(form.job_id),
         candidate_id: Number(form.candidate_id),
         application_id: form.application_id ? Number(form.application_id) : null,
-        skills: form.skills
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean),
+        skills: skillsArray,
+        instructions,
         expires_at: expiryIso,
         recruiter_experience_override:
           form.recruiter_experience_override === ""
@@ -242,15 +254,26 @@ export default function AiInterviewCreate() {
             <option value="ADVANCED">Advanced</option>
           </select>
         </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Skills to evaluate
-          <input
-            value={form.skills}
-            onChange={(e) => setForm({ ...form, skills: e.target.value })}
-            placeholder="Python, system design, AWS"
-            className={input}
-          />
-        </label>
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-semibold text-slate-700">
+            Skills to evaluate
+            <input
+              value={form.skills}
+              onChange={(e) => setForm({ ...form, skills: e.target.value })}
+              placeholder="Python, system design, AWS"
+              className={input}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-600 mt-1">
+            <input
+              type="checkbox"
+              checked={form.ask_gap_justification}
+              onChange={(e) => setForm({ ...form, ask_gap_justification: e.target.checked })}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            Ask for gap justification
+          </label>
+        </div>
         <label className="text-sm font-semibold text-slate-700">
           {form.interview_mode === "ADAPTIVE"
             ? "Maximum questions"
