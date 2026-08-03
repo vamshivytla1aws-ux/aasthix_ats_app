@@ -579,6 +579,7 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
       Boolean(String(input.inviteSubject || "").trim()) ||
       Boolean(String(input.inviteBody || "").trim()) ||
       input.inviteMode === "scheduled" ||
+      input.inviteMode === "rescheduled";
     const attendeePayload = shouldNotifyAttendees ? attendees : [];
     const sendUpdates = shouldNotifyAttendees && attendeePayload.length > 0 ? "all" : "none";
     const payload = {
