@@ -458,6 +458,8 @@ type SyncInterviewMeetingInput = {
   inviteSubject?: string | null;
   inviteBody?: string | null;
   inviteMode?: "scheduled" | "rescheduled" | null;
+  /** When true the Google Calendar event is created without a Meet link. */
+  skipConferencing?: boolean;
 };
 
 type SyncTeamCalendarMeetingInput = {
@@ -585,7 +587,7 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
       start: { dateTime: toCalendarLocalDateTime(start), timeZone: ATS_TIMEZONE },
       end: { dateTime: toCalendarLocalDateTime(end), timeZone: ATS_TIMEZONE },
       attendees: attendeePayload.map((email) => ({ email })),
-      conferenceData: input.existingEventId
+      conferenceData: input.skipConferencing || input.existingEventId
         ? undefined
         : {
             createRequest: {
