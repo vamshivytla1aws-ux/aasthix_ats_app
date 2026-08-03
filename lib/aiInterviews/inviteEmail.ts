@@ -52,7 +52,11 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
 
   const token = createSecureInterviewToken();
   const publicUrl = buildPublicUrl(`/ai-interview/${token}`);
-  const windowStart = adaptiveConfig.windowStart ? new Date(adaptiveConfig.windowStart) : new Date();
+  let windowStart = new Date();
+  if (adaptiveConfig.windowStart) {
+    const parsed = new Date(adaptiveConfig.windowStart);
+    if (!isNaN(parsed.getTime())) windowStart = parsed;
+  }
   const windowEnd = new Date(row.expires_at);
   const windowLine = `${fmtIst(windowStart)} IST  →  ${fmtIst(windowEnd)} IST`;
   const subject = `AI Interview Invitation: ${row.job_title} – AASTHIX`;

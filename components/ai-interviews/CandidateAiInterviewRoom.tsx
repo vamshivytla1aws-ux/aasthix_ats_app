@@ -575,13 +575,21 @@ export default function CandidateAiInterviewRoom({
       video.srcObject = screenRef.current;
       video.muted = true;
       video.playsInline = true;
-      await video.play();
+      
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = reject;
+        setTimeout(resolve, 2000); // fallback timeout
+      });
+      await video.play().catch(() => {});
 
       const maxWidth = 1920;
-      const scale = Math.min(1, maxWidth / (video.videoWidth || 1920));
+      const vWidth = video.videoWidth || 1920;
+      const vHeight = video.videoHeight || 1080;
+      const scale = Math.min(1, maxWidth / vWidth);
       const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round((video.videoWidth || 1920) * scale));
-      canvas.height = Math.max(1, Math.round((video.videoHeight || 1080) * scale));
+      canvas.width = Math.max(1, Math.round(vWidth * scale));
+      canvas.height = Math.max(1, Math.round(vHeight * scale));
       
       canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
       video.pause();
