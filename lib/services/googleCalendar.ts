@@ -166,14 +166,15 @@ function toCalendarLocalDateTime(value: string | Date, timeZone = ATS_TIMEZONE) 
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   })
     .formatToParts(date)
     .reduce<Record<string, string>>((acc, part) => {
       if (part.type !== "literal") acc[part.type] = part.value;
       return acc;
     }, {});
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+  const hour = parts.hour === "24" ? "00" : parts.hour;
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}`;
 }
 
 async function exchangeCodeForTokens(code: string) {
@@ -578,9 +579,8 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
       Boolean(String(input.inviteSubject || "").trim()) ||
       Boolean(String(input.inviteBody || "").trim()) ||
       input.inviteMode === "scheduled" ||
-      input.inviteMode === "rescheduled";
-    const sendUpdates = shouldNotifyAttendees ? "all" : "none";
     const attendeePayload = shouldNotifyAttendees ? attendees : [];
+    const sendUpdates = shouldNotifyAttendees && attendeePayload.length > 0 ? "all" : "none";
     const payload = {
       summary: summaryText,
       description: descriptionLines.join("\n"),
@@ -744,11 +744,11 @@ export async function syncTeamCalendarMeeting(input: SyncTeamCalendarMeetingInpu
             },
           },
     };
-
     const method = input.existingEventId ? "PATCH" : "POST";
+    const sendUpdates = attendees.length > 0 ? "all" : "none";
     const path = input.existingEventId
-      ? `/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.existingEventId)}?conferenceDataVersion=1&sendUpdates=all`
-      : `/calendar/v3/calendars/${calendarId}/events?conferenceDataVersion=1&sendUpdates=all`;
+      ? `/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.existingEventId)}?conferenceDataVersion=1&sendUpdates=${sendUpdates}`
+      : `/calendar/v3/calendars/${calendarId}/events?conferenceDataVersion=1&sendUpdates=${sendUpdates}`;
 
     const event = await googleApi<{
       id?: string;
