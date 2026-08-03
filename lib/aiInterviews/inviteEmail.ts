@@ -28,7 +28,7 @@ function fmtIst(value: string | Date) {
 
 export async function sendAiInterviewInviteEmail(interviewId: number, actorUserId: number) {
   const result = await query(
-    `SELECT ai.id, ai.title, ai.duration_minutes, ai.expires_at, ai.status, ai.application_id,
+    `SELECT ai.id, ai.title, ai.duration_minutes, ai.expires_at, ai.status, ai.application_id, ai.adaptive_config_json,
             c.full_name AS candidate_name, c.email AS candidate_email,
             j.title AS job_title, j.company AS job_company, j.location AS job_location
        FROM ai_interviews ai
@@ -41,6 +41,7 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
     return { ok: false, status: 404, error: "AI interview not found" };
   }
   const row = result.rows[0];
+  const adaptiveConfig = row.adaptive_config_json || {};
   const recipient = String(row.candidate_email || "").trim().toLowerCase();
   if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
     return { ok: false, status: 400, error: "Candidate email is missing or invalid" };
@@ -51,7 +52,7 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
 
   const token = createSecureInterviewToken();
   const publicUrl = buildPublicUrl(`/ai-interview/${token}`);
-  const windowStart = new Date(); // invitation sent now = window opens now
+  const windowStart = adaptiveConfig.windowStart ? new Date(adaptiveConfig.windowStart) : new Date();
   const windowEnd = new Date(row.expires_at);
   const windowLine = `${fmtIst(windowStart)} IST  →  ${fmtIst(windowEnd)} IST`;
   const subject = `AI Interview Invitation: ${row.job_title} – AASTHIX`;

@@ -1,0 +1,9 @@
+BEGIN;
+
+ALTER TABLE ai_interview_questions
+  ADD COLUMN IF NOT EXISTS question_type   VARCHAR(20) NOT NULL DEFAULT 'TECHNICAL',
+  ADD COLUMN IF NOT EXISTS starter_code    TEXT,
+  ADD COLUMN IF NOT EXISTS coding_language VARCHAR(50) NOT NULL DEFAULT 'python',
+  ADD COLUMN IF NOT EXISTS test_cases_json JSONB;
+
+COMMIT;
