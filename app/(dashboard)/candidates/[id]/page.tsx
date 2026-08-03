@@ -387,7 +387,7 @@ function CandidateProfilePageContent() {
 
       {!aiAnalysisData ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
-          No AI analysis available yet. Click the button above to analyze the candidate's resume.
+          No AI analysis available yet. Click the button above to analyze the candidate&apos;s resume.
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">

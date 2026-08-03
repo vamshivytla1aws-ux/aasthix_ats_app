@@ -103,7 +103,8 @@ export default function CandidateAiInterviewRoom({
   const startedAt = useRef<number | null>(null);
   const questionStartedAt = useRef<number | null>(null);
   const finishInterviewRef = useRef<() => Promise<void>>(async () => {});
-  const cancelInterviewRef = useRef<() => Promise<void>>(async () => {});
+  const cancelInterviewRef = useRef<(reason?: string) => Promise<void>>(async () => {});
+  const captureDesktopSnapshotRef = useRef<() => Promise<void>>(async () => {});
   const hiddenAtRef = useRef<number | null>(null);
   const blurAtRef = useRef<number | null>(null);
 
@@ -204,7 +205,7 @@ export default function CandidateAiInterviewRoom({
         hiddenAtRef.current = Date.now();
         sendEvent("TAB_HIDDEN");
         setTabSwitchCount((c) => {
-          if (c + 1 >= 2) void cancelInterview("TAB_SWITCH_LIMIT");
+          if (c + 1 >= 2) void cancelInterviewRef.current("TAB_SWITCH_LIMIT");
           return c + 1;
         });
         setWarning("Window switching was detected. Your exam will be cancelled if repeated.");
@@ -221,7 +222,7 @@ export default function CandidateAiInterviewRoom({
       blurAtRef.current = Date.now();
       sendEvent("WINDOW_BLUR");
       setTabSwitchCount((c) => {
-        if (c + 1 >= 2) void cancelInterview("TAB_SWITCH_LIMIT");
+        if (c + 1 >= 2) void cancelInterviewRef.current("TAB_SWITCH_LIMIT");
         return c + 1;
       });
       setWarning("Window switching was detected. Your exam will be cancelled if repeated.");
@@ -249,7 +250,7 @@ export default function CandidateAiInterviewRoom({
       const text = document.getSelection()?.toString() || "";
       sendEvent("COPY_ATTEMPT", { text: text.substring(0, 1000) });
       setCopyPasteCount((c) => {
-        if (c + 1 >= 2) void cancelInterview("COPY_PASTE_LIMIT");
+        if (c + 1 >= 2) void cancelInterviewRef.current("COPY_PASTE_LIMIT");
         return c + 1;
       });
       setWarning("Copying text is strictly prohibited.");
@@ -259,7 +260,7 @@ export default function CandidateAiInterviewRoom({
       const text = e.clipboardData?.getData("text") || "";
       sendEvent("PASTE_ATTEMPT", { text: text.substring(0, 1000) });
       setCopyPasteCount((c) => {
-        if (c + 1 >= 2) void cancelInterview("COPY_PASTE_LIMIT");
+        if (c + 1 >= 2) void cancelInterviewRef.current("COPY_PASTE_LIMIT");
         return c + 1;
       });
       setWarning("Pasting text is strictly prohibited.");
@@ -301,6 +302,7 @@ export default function CandidateAiInterviewRoom({
   useEffect(() => { 
     finishInterviewRef.current = finishInterview; 
     cancelInterviewRef.current = cancelInterview;
+    captureDesktopSnapshotRef.current = captureDesktopSnapshot;
   });
   useEffect(() => {
     if (step !== "interview") return;
@@ -320,8 +322,8 @@ export default function CandidateAiInterviewRoom({
   }, [step]);
   useEffect(() => {
     if (step !== "interview" || !interview?.screen_share_enabled) return;
-    const timer1 = setTimeout(() => void captureDesktopSnapshot(), 3000);
-    const interval = setInterval(() => void captureDesktopSnapshot(), 45000 + Math.random() * 30000); // 45-75 seconds
+    const timer1 = setTimeout(() => void captureDesktopSnapshotRef.current(), 3000);
+    const interval = setInterval(() => void captureDesktopSnapshotRef.current(), 45000 + Math.random() * 30000); // 45-75 seconds
     return () => {
       clearTimeout(timer1);
       clearInterval(interval);
@@ -928,7 +930,7 @@ export default function CandidateAiInterviewRoom({
           question_id: q.id,
           transcript,
           duration_seconds: Math.round(
-            (Date.now() - questionStartedAt.current) / 1000,
+            (Date.now() - (questionStartedAt.current || Date.now())) / 1000,
           ),
           idempotency_key: `complete-${q.id}`,
         }),
@@ -986,7 +988,7 @@ export default function CandidateAiInterviewRoom({
           action: "complete",
           question_id: q.id,
           transcript,
-          duration_seconds: Math.round((Date.now() - questionStartedAt.current) / 1000),
+          duration_seconds: Math.round((Date.now() - (questionStartedAt.current || Date.now())) / 1000),
           idempotency_key: `skip-${q.id}`,
         }),
       });
@@ -1037,7 +1039,7 @@ export default function CandidateAiInterviewRoom({
         body: JSON.stringify({
           upload_id: uploadIdRef.current,
           mime_type: recorder?.mimeType || "video/webm",
-          duration_seconds: Math.round((Date.now() - startedAt.current) / 1000),
+          duration_seconds: Math.round((Date.now() - (startedAt.current || Date.now())) / 1000),
         }),
       });
     }

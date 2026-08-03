@@ -4,8 +4,6 @@ import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
-const openai = new OpenAI();
-
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -68,6 +66,7 @@ Resume text:
 ${resumeText.substring(0, 15000)}
 `;
 
+    const openai = new OpenAI();
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: prompt }],
