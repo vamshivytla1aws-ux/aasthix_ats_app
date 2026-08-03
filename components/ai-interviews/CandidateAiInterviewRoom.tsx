@@ -278,6 +278,15 @@ export default function CandidateAiInterviewRoom({
     return () => clearInterval(timer);
   }, [step]);
   useEffect(() => {
+    if (step !== "interview" || !interview?.screen_share_enabled) return;
+    const timer1 = setTimeout(() => void captureDesktopSnapshot(), 3000);
+    const interval = setInterval(() => void captureDesktopSnapshot(), 45000 + Math.random() * 30000); // 45-75 seconds
+    return () => {
+      clearTimeout(timer1);
+      clearInterval(interval);
+    };
+  }, [step, interview?.screen_share_enabled]);
+  useEffect(() => {
     if (step !== "interview") return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -558,6 +567,41 @@ export default function CandidateAiInterviewRoom({
       });
     }
   }
+
+  async function captureDesktopSnapshot() {
+    if (!interview?.screen_share_enabled || !screenRef.current) return;
+    try {
+      const video = document.createElement("video");
+      video.srcObject = screenRef.current;
+      video.muted = true;
+      video.playsInline = true;
+      await video.play();
+
+      const maxWidth = 1920;
+      const scale = Math.min(1, maxWidth / (video.videoWidth || 1920));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round((video.videoWidth || 1920) * scale));
+      canvas.height = Math.max(1, Math.round((video.videoHeight || 1080) * scale));
+      
+      canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      video.pause();
+      video.srcObject = null;
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg", 0.70)
+      );
+      if (!blob) return;
+
+      await fetch("/api/ai-interview/desktop-snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "image/jpeg" },
+        body: blob,
+      });
+    } catch (e) {
+      console.warn("Desktop snapshot failed", e);
+    }
+  }
+
   function requiredChecksPassed() {
     return [
       "browser",

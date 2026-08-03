@@ -101,6 +101,23 @@ export async function storeInterviewSnapshot(input: { interviewId: number; bytes
   return { path: finalPath, size: input.bytes.byteLength };
 }
 
+export async function storeDesktopSnapshot(input: { interviewId: number; bytes: Buffer; mimeType: string }) {
+  if (input.mimeType !== "image/jpeg") throw new Error("Only JPEG desktop snapshots are supported");
+  if (!input.bytes.byteLength || input.bytes.byteLength > aiInterviewConfig.maxSnapshotBytes) {
+    throw new Error("Desktop snapshot exceeds the configured size limit");
+  }
+  const finalDir = ensureInsideRoot(path.join(rootPath(), "desktop_snapshots"));
+  await fs.mkdir(finalDir, { recursive: true });
+  const finalPath = ensureInsideRoot(path.join(finalDir, `desktop-${input.interviewId}-${crypto.randomUUID()}.jpg`));
+  await fs.writeFile(finalPath, input.bytes, { flag: "wx" });
+  await query(
+    `INSERT INTO ai_interview_desktop_snapshots (interview_id, snapshot_path, snapshot_mime_type, snapshot_size)
+     VALUES ($1, $2, $3, $4)`,
+    [input.interviewId, finalPath, input.mimeType, input.bytes.byteLength]
+  );
+  return { path: finalPath, size: input.bytes.byteLength };
+}
+
 export async function storeAnswerAudio(input: { interviewId: number; questionId: number; bytes: Buffer; mimeType: string }) {
   if (!input.mimeType.startsWith("audio/") && !input.mimeType.startsWith("video/webm")) throw new Error("Unsupported answer audio type");
   if (!input.bytes.byteLength || input.bytes.byteLength > aiInterviewConfig.maxAnswerAudioBytes) throw new Error("Answer audio exceeds the configured size limit");

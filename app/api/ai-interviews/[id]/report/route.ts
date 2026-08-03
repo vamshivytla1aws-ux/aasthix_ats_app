@@ -17,7 +17,7 @@ export async function GET(
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   if (!(await canAccessAiInterview(auth.access, id)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const [interview, answers, evaluation, events] = await Promise.all([
+  const [interview, answers, evaluation, events, desktopSnapshots] = await Promise.all([
     query(
       `SELECT ai.*,c.full_name AS candidate_name,c.email AS candidate_email,c.phone AS candidate_phone,c.experience_summary,
                   j.title AS job_title,j.experience_requirement,u.full_name AS recruiter_name
@@ -41,6 +41,10 @@ export async function GET(
     query(
       `SELECT event_type,severity,occurred_at,duration_seconds,evidence_timestamp_seconds,warning_number,metadata_json
              FROM ai_interview_events WHERE interview_id=$1 ORDER BY occurred_at`,
+      [id],
+    ),
+    query(
+      `SELECT id, created_at, snapshot_size FROM ai_interview_desktop_snapshots WHERE interview_id=$1 ORDER BY created_at`,
       [id],
     ),
   ]);
@@ -72,6 +76,7 @@ export async function GET(
     answers: answers.rows,
     evaluation: evaluation.rows[0] || null,
     events: events.rows,
+    desktop_snapshots: desktopSnapshots.rows,
     integrity_counts: counts,
     recording_available: recordingAvailable,
     recording_availability_reason: recordingAvailabilityReason,

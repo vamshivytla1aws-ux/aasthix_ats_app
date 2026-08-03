@@ -496,6 +496,36 @@ export default function AiInterviewReport({ id }: { id: number }) {
         </section>
       )}
 
+      {data.desktop_snapshots?.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 print:hidden">
+          <h2 className="font-bold">Desktop Snapshots (Screen Captures)</h2>
+          <p className="text-sm text-slate-500 mt-1 mb-4">
+            Periodic screenshots captured during the interview. Click to view full size.
+          </p>
+          <div className="flex gap-4 overflow-x-auto pb-4 snap-x">
+            {data.desktop_snapshots.map((snap: any, index: number) => (
+              <a
+                key={snap.id}
+                href={`/api/ai-interviews/${id}/desktop-snapshots/${snap.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 snap-start block hover:opacity-90 transition-opacity"
+              >
+                <img
+                  src={`/api/ai-interviews/${id}/desktop-snapshots/${snap.id}`}
+                  alt={`Desktop Snapshot ${index + 1}`}
+                  className="h-32 md:h-48 w-auto rounded-lg border border-slate-200 object-cover bg-slate-50"
+                  loading="lazy"
+                />
+                <span className="block mt-2 text-xs font-medium text-slate-500 text-center">
+                  {formatIst(snap.created_at)}
+                </span>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
       {false && interview.video_status === "UPLOADED" && data.recording_available && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-3">
