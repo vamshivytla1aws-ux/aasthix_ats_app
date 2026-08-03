@@ -201,6 +201,9 @@ function CandidateProfilePageContent() {
       try {
         const res = await apiFetchJson<CandidateProfileResponse>(`/api/candidates/${candidateId}${scopeQs}`);
         setData(res);
+        if (res.candidate?.ai_resume_analysis) {
+          setAiAnalysisData(res.candidate.ai_resume_analysis);
+        }
       } catch (err: any) {
         setError(err.message || "Failed to load candidate profile");
       } finally {
@@ -366,23 +369,25 @@ function CandidateProfilePageContent() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">AI Resume Analysis</h3>
-        <button
-          disabled={analyzingResume}
-          onClick={async () => {
-            setAnalyzingResume(true);
-            try {
-              const res = await apiFetchJson<any>(`/api/candidates/${c.id}/ai-analysis`, { method: "POST" });
-              if (res.analysis) setAiAnalysisData(res.analysis);
-            } catch (err: any) {
-              window.alert(err.message || "Failed to analyze resume");
-            } finally {
-              setAnalyzingResume(false);
-            }
-          }}
-          className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {analyzingResume ? "Analyzing..." : "Run AI Analysis"}
-        </button>
+        {!aiAnalysisData && (
+          <button
+            disabled={analyzingResume}
+            onClick={async () => {
+              setAnalyzingResume(true);
+              try {
+                const res = await apiFetchJson<any>(`/api/candidates/${c.id}/ai-analysis`, { method: "POST" });
+                if (res.analysis) setAiAnalysisData(res.analysis);
+              } catch (err: any) {
+                window.alert(err.message || "Failed to analyze resume");
+              } finally {
+                setAnalyzingResume(false);
+              }
+            }}
+            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {analyzingResume ? "Analyzing..." : "Run AI Analysis"}
+          </button>
+        )}
       </div>
 
       {!aiAnalysisData ? (
