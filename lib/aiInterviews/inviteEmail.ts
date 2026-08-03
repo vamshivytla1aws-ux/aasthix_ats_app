@@ -13,6 +13,19 @@ function formatIst(value: string | Date) {
   }).format(new Date(value));
 }
 
+/** Returns e.g. "3 August 2026 at 9:30 am" in IST */
+function fmtIst(value: string | Date) {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  }).format(new Date(value));
+}
+
 export async function sendAiInterviewInviteEmail(interviewId: number, actorUserId: number) {
   const result = await query(
     `SELECT ai.id, ai.title, ai.duration_minutes, ai.expires_at, ai.status, ai.application_id,
@@ -38,7 +51,9 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
 
   const token = createSecureInterviewToken();
   const publicUrl = buildPublicUrl(`/ai-interview/${token}`);
-  const expiry = `${formatIst(row.expires_at)} IST`;
+  const windowStart = new Date(); // invitation sent now = window opens now
+  const windowEnd = new Date(row.expires_at);
+  const windowLine = `${fmtIst(windowStart)} IST  →  ${fmtIst(windowEnd)} IST`;
   const subject = `AI Interview Invitation: ${row.job_title} at ${row.job_company || "AASTHIX"}`;
 
   let deliveredVia: "google_calendar" | "resend" | "smtp" | null = null;
@@ -52,13 +67,15 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
     `You are invited to complete an AI-powered technical & behavioural interview for the position of ${row.job_title} at ${row.job_company || "AASTHIX"}.`,
     "",
     `Interview duration: ${row.duration_minutes} minutes`,
-    `Link expires: ${expiry}`,
+    `Interview window: ${windowLine}`,
     "",
     `Start your secure AI Interview: ${publicUrl}`,
     "",
     "Important: This link is single-use. Once you submit your answers the link is permanently deactivated.",
     "",
     "Please complete the interview on a laptop or desktop using Chrome or Edge with camera and microphone. Recording and integrity monitoring begin after your consent.",
+    "",
+    "Our recruiters will reach out to you based on the evaluation.",
     "",
     "Regards,",
     "AASTHIX Talent Team",
@@ -102,8 +119,9 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
       candidateName: row.candidate_name,
       paragraphs: [
         `You are invited to complete an AI-powered technical and behavioural interview for the position of <strong>${row.job_title}</strong> at ${row.job_company || "AASTHIX"}.`,
-        `<strong>Interview duration:</strong> ${Number(row.duration_minutes)} minutes<br><strong>Link expires:</strong> ${expiry}`,
+        `<strong>Interview duration:</strong> ${Number(row.duration_minutes)} minutes<br><strong>Interview window:</strong> ${windowLine}`,
         `Please complete the interview independently on a laptop or desktop with a working camera, microphone, and Chrome or Edge browser. Recording and browser integrity monitoring will begin after your consent.`,
+        `Our recruiters will reach out to you based on the evaluation.`,
         `<em>This link is single-use — once you submit the interview it cannot be reopened.</em>`,
       ],
       cta: {

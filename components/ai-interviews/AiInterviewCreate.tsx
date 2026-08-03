@@ -12,15 +12,16 @@ type Option = {
   email?: string;
 };
 
-function getDefaultExpiry() {
-  const date = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  date.setHours(18, 0, 0, 0);
+function getDefaultWindowStart() {
+  // Round up to the next whole hour so the default looks clean.
+  const date = new Date();
+  date.setMinutes(0, 0, 0);
+  date.setHours(date.getHours() + 1);
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+  return `${year}-${month}-${day}T${hours}:00`;
 }
 
 export default function AiInterviewCreate() {
@@ -30,6 +31,8 @@ export default function AiInterviewCreate() {
   const paramCandidateId = searchParams.get("candidate_id") || "";
   const paramApplicationId = searchParams.get("application_id") || "";
 
+  const [windowStart, setWindowStart] = useState(getDefaultWindowStart());
+  const [windowHours, setWindowHours] = useState(3);
   const [jobs, setJobs] = useState<Option[]>([]);
   const [candidates, setCandidates] = useState<Option[]>([]);
   const [saving, setSaving] = useState(false);
@@ -45,7 +48,6 @@ export default function AiInterviewCreate() {
     skills: "",
     question_count: 7,
     duration_minutes: 40,
-    expires_at: getDefaultExpiry(),
     send_email: true,
     interview_mode: "ADAPTIVE",
     project_questions_enabled: true,
@@ -94,7 +96,8 @@ export default function AiInterviewCreate() {
     setSaving(true);
     setError("");
     try {
-      const expiryIso = form.expires_at ? new Date(form.expires_at).toISOString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const startDate = windowStart ? new Date(windowStart) : new Date();
+      const expiryIso = new Date(startDate.getTime() + windowHours * 60 * 60 * 1000).toISOString();
       const payload = {
         ...form,
         job_id: Number(form.job_id),
@@ -275,10 +278,41 @@ export default function AiInterviewCreate() {
             className={input}
           />
         </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Link expiry
-          <DateTimePicker value={form.expires_at} onChange={(value) => setForm({ ...form, expires_at: value })} />
-        </label>
+        <div className="text-sm font-semibold text-slate-700 md:col-span-2">
+          Interview window
+          <div className="mt-1 grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-normal text-slate-500">Window opens (candidate can start from)</span>
+              <input
+                type="datetime-local"
+                value={windowStart}
+                onChange={(e) => setWindowStart(e.target.value)}
+                className={input}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-normal text-slate-500">Window duration (link expires after)</span>
+              <select
+                value={windowHours}
+                onChange={(e) => setWindowHours(Number(e.target.value))}
+                className={input}
+              >
+                <option value={1}>1 hour</option>
+                <option value={2}>2 hours</option>
+                <option value={3}>3 hours</option>
+                <option value={4}>4 hours</option>
+                <option value={6}>6 hours</option>
+                <option value={12}>12 hours</option>
+                <option value={24}>24 hours</option>
+                <option value={48}>2 days</option>
+                <option value={168}>7 days</option>
+              </select>
+            </label>
+          </div>
+          <p className="mt-1 text-xs font-normal text-slate-500">
+            The candidate can start the interview any time within this window. The actual interview duration ({form.duration_minutes} min) does not change.
+          </p>
+        </div>
         <label className="text-sm font-semibold text-slate-700 md:col-span-2">
           Instructions
           <textarea
