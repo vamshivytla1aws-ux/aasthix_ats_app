@@ -97,6 +97,8 @@ export default function CandidateAiInterviewRoom({
   const snapshotCapturedRef = useRef(false);
   const resumeQuestionIndexRef = useRef(0);
   const finishInterviewRef = useRef<() => Promise<void>>(async () => {});
+  const hiddenAtRef = useRef<number | null>(null);
+  const blurAtRef = useRef<number | null>(null);
 
   const loadState = useCallback(async () => {
     const r = await fetch("/api/ai-interview/state", { cache: "no-store" });
@@ -192,16 +194,31 @@ export default function CandidateAiInterviewRoom({
     const hidden = () => {
       if (document.hidden) {
         stopVoice();
+        hiddenAtRef.current = Date.now();
         sendEvent("TAB_HIDDEN");
         setWarning(
           "Window switching was detected. Voice input has been paused. Return here and restart voice transcription.",
         );
+      } else {
+        if (hiddenAtRef.current) {
+          const duration = Math.round((Date.now() - hiddenAtRef.current) / 1000);
+          sendEvent("TAB_RESTORED", { duration_seconds: duration });
+          hiddenAtRef.current = null;
+        }
       }
     };
     const blur = () => {
       stopVoice();
+      blurAtRef.current = Date.now();
       sendEvent("WINDOW_BLUR");
       setWarning("Window switching was detected. Voice input has been paused.");
+    };
+    const focus = () => {
+      if (blurAtRef.current) {
+        const duration = Math.round((Date.now() - blurAtRef.current) / 1000);
+        sendEvent("WINDOW_FOCUS", { duration_seconds: duration });
+        blurAtRef.current = null;
+      }
     };
     const fullscreen = () => {
       if (interview?.fullscreen_required && !document.fullscreenElement) {
@@ -216,14 +233,17 @@ export default function CandidateAiInterviewRoom({
     const online = () => sendEvent("CONNECTION_RESTORED");
     const copy = (e: ClipboardEvent) => {
       e.preventDefault();
-      sendEvent("COPY_ATTEMPT");
+      const text = document.getSelection()?.toString() || "";
+      sendEvent("COPY_ATTEMPT", { text: text.substring(0, 1000) });
     };
     const paste = (e: ClipboardEvent) => {
       e.preventDefault();
-      sendEvent("PASTE_ATTEMPT");
+      const text = e.clipboardData?.getData("text") || "";
+      sendEvent("PASTE_ATTEMPT", { text: text.substring(0, 1000) });
     };
     document.addEventListener("visibilitychange", hidden);
     window.addEventListener("blur", blur);
+    window.addEventListener("focus", focus);
     document.addEventListener("fullscreenchange", fullscreen);
     window.addEventListener("offline", offline);
     window.addEventListener("online", online);
@@ -232,6 +252,7 @@ export default function CandidateAiInterviewRoom({
     return () => {
       document.removeEventListener("visibilitychange", hidden);
       window.removeEventListener("blur", blur);
+      window.removeEventListener("focus", focus);
       document.removeEventListener("fullscreenchange", fullscreen);
       window.removeEventListener("offline", offline);
       window.removeEventListener("online", online);

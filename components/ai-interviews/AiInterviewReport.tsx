@@ -476,8 +476,18 @@ export default function AiInterviewReport({ id }: { id: number }) {
                   <span className="block text-xs text-slate-500">
                     {formatIst(event.occurred_at)}
                   </span>
+                  {event.metadata_json?.duration_seconds != null && (
+                    <span className="block mt-1 text-xs text-rose-600 font-medium">
+                      Away for {event.metadata_json.duration_seconds} seconds
+                    </span>
+                  )}
+                  {event.metadata_json?.text && (
+                    <span className="block mt-1 text-xs text-slate-600 bg-slate-50 p-1 rounded border border-slate-200 max-h-24 overflow-y-auto">
+                      <span className="font-semibold text-slate-700">Captured text:</span> {event.metadata_json.text}
+                    </span>
+                  )}
                 </span>
-                <span className="text-xs font-semibold text-amber-700">
+                <span className="text-xs font-semibold text-amber-700 ml-4 whitespace-nowrap">
                   {event.severity}
                 </span>
               </button>
