@@ -48,6 +48,7 @@ type Candidate = {
   calendar_sync_error?: string | null;
   calendar_organizer_email?: string | null;
   onboarding_status?: string | null;
+  ai_resume_analysis?: any;
 };
 
 type TimelineItem = {
