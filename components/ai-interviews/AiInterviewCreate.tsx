@@ -278,41 +278,33 @@ export default function AiInterviewCreate() {
             className={input}
           />
         </label>
-        <div className="text-sm font-semibold text-slate-700 md:col-span-2">
-          Interview window
-          <div className="mt-1 grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-normal text-slate-500">Window opens (candidate can start from)</span>
-              <input
-                type="datetime-local"
-                value={windowStart}
-                onChange={(e) => setWindowStart(e.target.value)}
-                className={input}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-normal text-slate-500">Window duration (link expires after)</span>
-              <select
-                value={windowHours}
-                onChange={(e) => setWindowHours(Number(e.target.value))}
-                className={input}
-              >
-                <option value={1}>1 hour</option>
-                <option value={2}>2 hours</option>
-                <option value={3}>3 hours</option>
-                <option value={4}>4 hours</option>
-                <option value={6}>6 hours</option>
-                <option value={12}>12 hours</option>
-                <option value={24}>24 hours</option>
-                <option value={48}>2 days</option>
-                <option value={168}>7 days</option>
-              </select>
-            </label>
-          </div>
-          <p className="mt-1 text-xs font-normal text-slate-500">
-            The candidate can start the interview any time within this window. The actual interview duration ({form.duration_minutes} min) does not change.
-          </p>
-        </div>
+        <label className="text-sm font-semibold text-slate-700">
+          Window opens (start date)
+          <input
+            type="datetime-local"
+            value={windowStart}
+            onChange={(e) => setWindowStart(e.target.value)}
+            className={input}
+          />
+        </label>
+        <label className="text-sm font-semibold text-slate-700">
+          Window duration (expires after)
+          <select
+            value={windowHours}
+            onChange={(e) => setWindowHours(Number(e.target.value))}
+            className={input}
+          >
+            <option value={1}>1 hour</option>
+            <option value={2}>2 hours</option>
+            <option value={3}>3 hours</option>
+            <option value={4}>4 hours</option>
+            <option value={6}>6 hours</option>
+            <option value={12}>12 hours</option>
+            <option value={24}>24 hours</option>
+            <option value={48}>2 days</option>
+            <option value={168}>7 days</option>
+          </select>
+        </label>
         <label className="text-sm font-semibold text-slate-700 md:col-span-2">
           Instructions
           <textarea

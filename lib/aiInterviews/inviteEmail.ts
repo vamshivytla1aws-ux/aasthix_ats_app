@@ -86,19 +86,22 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
   const gcalStatus = await getSharedGoogleCalendarStatus();
   if (gcalStatus.configured && gcalStatus.connected) {
     try {
+      const windowDurationMinutes = Math.max(1, Math.round((windowEnd.getTime() - windowStart.getTime()) / 60000));
+      
       const syncResult = await syncInterviewMeeting({
         action: "upsert",
         applicationId: row.application_id ? Number(row.application_id) : undefined,
-        title: `AI Interview – ${row.job_title}`,
+        title: `AI Interview Window – ${row.job_title}`,
         candidateName: row.candidate_name,
         candidateEmail: recipient,
-        interviewDatetime: row.expires_at || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        interviewDatetime: windowStart.toISOString(),
         internalAttendeeEmails: [],
-        durationMinutes: Number(row.duration_minutes || 40),
+        durationMinutes: windowDurationMinutes,
         inviteSubject: subject,
         inviteBody: plainBody,
         inviteMode: "scheduled",
-        skipConferencing: true,   // ← no Meet link
+        skipConferencing: true,
+        isWindowEvent: true,
       });
 
       if (syncResult.status === "invite_sent" || syncResult.status === "meet_created") {

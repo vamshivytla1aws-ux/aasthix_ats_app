@@ -460,6 +460,8 @@ type SyncInterviewMeetingInput = {
   inviteMode?: "scheduled" | "rescheduled" | null;
   /** When true the Google Calendar event is created without a Meet link. */
   skipConferencing?: boolean;
+  /** When true the event represents a time window (e.g. 24h). It will be marked transparent (Free) and not cap duration to 60m. */
+  isWindowEvent?: boolean;
 };
 
 type SyncTeamCalendarMeetingInput = {
@@ -549,11 +551,9 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
     }
 
     const start = new Date(input.interviewDatetime);
-    const normalizedDuration =
-      input.durationMinutes === 15 ||
-      input.durationMinutes === 30 ||
-      input.durationMinutes === 45 ||
-      input.durationMinutes === 60
+    const normalizedDuration = input.isWindowEvent
+      ? input.durationMinutes || 60
+      : (input.durationMinutes === 15 || input.durationMinutes === 30 || input.durationMinutes === 45 || input.durationMinutes === 60)
         ? input.durationMinutes
         : 60;
     const end = new Date(start.getTime() + normalizedDuration * 60 * 1000);
@@ -586,6 +586,7 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
       description: descriptionLines.join("\n"),
       start: { dateTime: toCalendarLocalDateTime(start), timeZone: ATS_TIMEZONE },
       end: { dateTime: toCalendarLocalDateTime(end), timeZone: ATS_TIMEZONE },
+      transparency: input.isWindowEvent ? "transparent" : "opaque",
       attendees: attendeePayload.map((email) => ({ email })),
       conferenceData: input.skipConferencing || input.existingEventId
         ? undefined
