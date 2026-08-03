@@ -287,7 +287,21 @@ export default function AiInterviewReport({ id }: { id: number }) {
             Integrity risk
           </p>
           <p className="mt-1 font-bold">{label(interview.integrity_risk)}</p>
-          <p className="mt-2 text-xs text-slate-500">
+          <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-700 border border-slate-100 space-y-1.5">
+            <div className="flex justify-between">
+              <span className="font-semibold">Desktop Snapshots</span>
+              <strong>{data.desktop_snapshots?.length || 0} captured</strong>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold">Tab Switches</span>
+              <strong>{data.integrity_counts?.TAB_HIDDEN || 0}</strong>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-semibold">Copy/Paste Attempts</span>
+              <strong>{(data.integrity_counts?.COPY_ATTEMPT || 0) + (data.integrity_counts?.PASTE_ATTEMPT || 0)}</strong>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
             Integrity signals remain separate from performance scoring and
             require human review.
           </p>
@@ -396,7 +410,13 @@ export default function AiInterviewReport({ id }: { id: number }) {
               <p className="mt-3 whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
                 <strong>Candidate answer:</strong>
                 <br />
-                {answer.transcript || "No answer submitted."}
+                {answer.transcript === "[Candidate skipped this question]" ? (
+                  <span className="inline-block mt-1 rounded bg-rose-100 text-rose-800 px-2 py-1 font-semibold text-xs border border-rose-200">
+                    Skipped question
+                  </span>
+                ) : (
+                  answer.transcript || "No answer submitted."
+                )}
               </p>
               {answer.evaluator_feedback && (
                 <p className="mt-2 text-sm text-slate-700">
@@ -497,24 +517,24 @@ export default function AiInterviewReport({ id }: { id: number }) {
       )}
 
       {data.desktop_snapshots?.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 print:hidden">
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 print:p-4 ai-print-card">
           <h2 className="font-bold">Desktop Snapshots (Screen Captures)</h2>
           <p className="text-sm text-slate-500 mt-1 mb-4">
             Periodic screenshots captured during the interview. Click to view full size.
           </p>
-          <div className="flex gap-4 overflow-x-auto pb-4 snap-x">
+          <div className="flex flex-wrap gap-4 print:grid print:grid-cols-2">
             {data.desktop_snapshots.map((snap: any, index: number) => (
               <a
                 key={snap.id}
                 href={`/api/ai-interviews/${id}/desktop-snapshots/${snap.id}`}
                 target="_blank"
                 rel="noreferrer"
-                className="shrink-0 snap-start block hover:opacity-90 transition-opacity"
+                className="block hover:opacity-90 transition-opacity print:break-inside-avoid"
               >
                 <img
                   src={`/api/ai-interviews/${id}/desktop-snapshots/${snap.id}`}
                   alt={`Desktop Snapshot ${index + 1}`}
-                  className="h-32 md:h-48 w-auto rounded-lg border border-slate-200 object-cover bg-slate-50"
+                  className="h-32 md:h-48 print:h-auto print:w-full w-auto rounded-lg border border-slate-200 object-cover bg-slate-50"
                   loading="lazy"
                 />
                 <span className="block mt-2 text-xs font-medium text-slate-500 text-center">
