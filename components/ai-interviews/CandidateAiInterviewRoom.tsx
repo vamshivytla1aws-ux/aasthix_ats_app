@@ -40,7 +40,7 @@ type Question = {
   skill_name: string;
   difficulty: string;
 };
-type Step = "loading" | "intro" | "system" | "interview" | "thanks" | "error";
+type Step = "loading" | "intro" | "system" | "interview" | "thanks" | "cancelled" | "error";
 
 declare global {
   interface Window {
@@ -69,6 +69,8 @@ export default function CandidateAiInterviewRoom({
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const mediaRef = useRef<MediaStream | null>(null);
   const screenRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -804,6 +806,34 @@ export default function CandidateAiInterviewRoom({
       );
     }
   }
+  async function cancelInterview() {
+    if (cancelling || step === "cancelled") return;
+    setCancelling(true);
+    try {
+      // Stop voice input and recording before cancelling.
+      recognitionRef.current?.stop?.();
+      recognitionRef.current = null;
+      setListening(false);
+      const activeQuestion = questions[current];
+      if (activeQuestion) await stopAndUploadAnswerAudio(activeQuestion.id);
+      await finishRecording();
+      await fetch("/api/ai-interview/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "candidate_cancelled", idempotency_key: `cancel-${interview?.id}` }),
+      });
+      mediaRef.current?.getTracks().forEach((t) => t.stop());
+      screenRef.current?.getTracks().forEach((t) => t.stop());
+      if (document.fullscreenElement)
+        await document.exitFullscreen().catch(() => {});
+      setStep("cancelled");
+    } catch {
+      setWarning("Cancellation could not be completed. Please close this window.");
+      setShowCancelConfirm(false);
+    } finally {
+      setCancelling(false);
+    }
+  }
   const card =
     "rounded-2xl border border-slate-700/70 bg-slate-900/80 p-5 shadow-xl shadow-black/10";
   if (step === "loading")
@@ -834,10 +864,36 @@ export default function CandidateAiInterviewRoom({
             Interview submitted successfully
           </h1>
           <p className="mx-auto mt-3 max-w-xl text-slate-300">
-            Thank you for completing the interview. Our recruitment team will
-            review your responses and get back to you.
+            Thank you for completing the interview. Your responses have been
+            recorded and our recruitment team will review them shortly.
+          </p>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-slate-500">
+            This interview link has been deactivated and cannot be reopened.
           </p>
           {warning && <p className="mt-3 text-sm text-amber-300">{warning}</p>}
+        </div>
+      </Shell>
+    );
+  if (step === "cancelled")
+    return (
+      <Shell>
+        <div className={`${card} text-center`}>
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2 border-slate-600 text-slate-400">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h1 className="mt-4 text-2xl font-bold text-white">
+            Interview cancelled
+          </h1>
+          <p className="mx-auto mt-3 max-w-xl text-slate-300">
+            You have exited the interview. All responses recorded up to this
+            point have been saved for review.
+          </p>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-slate-500">
+            This interview link has been deactivated. Please contact the
+            recruitment team if you believe this was a mistake.
+          </p>
         </div>
       </Shell>
     );
@@ -1054,6 +1110,43 @@ export default function CandidateAiInterviewRoom({
                   ? "Submit interview"
                   : "Save and next"}
             </button>
+          </div>
+          {/* Cancel & Exit — shown below the answer actions */}
+          <div className="mt-4 border-t border-slate-800 pt-4">
+            {!showCancelConfirm ? (
+              <button
+                onClick={() => setShowCancelConfirm(true)}
+                className="text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-rose-400 transition-colors"
+              >
+                Cancel exam and exit
+              </button>
+            ) : (
+              <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4">
+                <p className="text-sm font-semibold text-rose-300">
+                  Are you sure you want to cancel and exit?
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  All answers recorded so far will be saved, but this interview
+                  link will be permanently deactivated.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    disabled={cancelling}
+                    onClick={() => void cancelInterview()}
+                    className="rounded-lg bg-rose-600 px-4 py-1.5 text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    {cancelling ? "Exiting..." : "Yes, cancel interview"}
+                  </button>
+                  <button
+                    disabled={cancelling}
+                    onClick={() => setShowCancelConfirm(false)}
+                    className="rounded-lg border border-slate-600 px-4 py-1.5 text-sm font-semibold text-slate-200 disabled:opacity-50"
+                  >
+                    Go back
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           {listening && (
             <p className="mt-2 text-sm font-semibold text-rose-300">

@@ -68,6 +68,11 @@ export async function POST(request: Request) {
        VALUES ($1,'INTERVIEW_COMPLETED','INFO',NOW(),$2) ON CONFLICT DO NOTHING`,
       [interview.id, `complete-${idempotencyKey}`],
     );
+    // Revoke the secure token immediately so the interview link is single-use.
+    await client.query(
+      `UPDATE ai_interviews SET token_revoked_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [interview.id],
+    );
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
