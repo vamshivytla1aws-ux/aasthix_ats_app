@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { DatePicker, TimePicker } from "@/components/ui/DateTimeFields";
+import SearchableSelect from "@/components/ui/SearchableSelect";
 
 type Option = {
   id: number;
@@ -202,19 +203,16 @@ export default function AiInterviewCreate() {
         </label>
         <label className="text-sm font-semibold text-slate-700">
           Candidate
-          <select
-            required
+          <SearchableSelect
+            options={candidates.map(c => ({
+              value: String(c.id),
+              label: `${c.full_name} ${c.email ? `· ${c.email}` : ""}`
+            }))}
             value={form.candidate_id}
-            onChange={(e) => setForm({ ...form, candidate_id: e.target.value })}
-            className={input}
-          >
-            <option value="">Select candidate</option>
-            {candidates.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.full_name} {c.email ? `· ${c.email}` : ""}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setForm({ ...form, candidate_id: val })}
+            placeholder="Select candidate"
+            className="mt-1"
+          />
         </label>
         <label className="text-sm font-semibold text-slate-700 md:col-span-2">
           Interview title

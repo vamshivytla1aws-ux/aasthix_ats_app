@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Briefcase, Loader2, RefreshCw, UserRound } from "lucide-react";
 import { apiFetchJson } from "@/lib/apiClient";
 import Toast from "@/components/Toast";
+import SearchableSelect from "@/components/ui/SearchableSelect";
 
 const PIPELINE_STAGES = [
   "Applied",
@@ -207,28 +208,20 @@ export default function AssignApplicationForm({
               ))}
             </select>
           </div>
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                <UserRound className="h-4 w-4" aria-hidden />
-              </span>
-              Candidate
-            </label>
-            <select
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 disabled:bg-slate-50"
-              value={candidateId}
-              onChange={(e) => setCandidateId(e.target.value)}
-              disabled={loading || submitting}
-            >
-              <option value="">Select candidate…</option>
-              {candidates.map((c) => (
-                <option key={c.id} value={String(c.id)}>
-                  {c.full_name}
-                  {c.email ? ` (${c.email})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div className="space-y-1">
+          <label className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+            Select Candidate
+          </label>
+          <SearchableSelect
+            options={candidates.map((c) => ({
+              value: String(c.id),
+              label: `${c.full_name} ${c.email ? `(${c.email})` : ""}`
+            }))}
+            value={candidateId}
+            onChange={(val) => setCandidateId(val)}
+            placeholder="Select a candidate"
+          />
+        </div>
 
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
