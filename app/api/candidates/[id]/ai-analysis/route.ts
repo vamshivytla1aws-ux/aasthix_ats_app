@@ -16,7 +16,7 @@ export async function POST(
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT id, name, resume_url, resume_text, ai_resume_analysis FROM candidates WHERE id = $1`,
+      `SELECT id, full_name, resume_url, resume_text, ai_resume_analysis FROM candidates WHERE id = $1`,
       [candidateId]
     );
 
