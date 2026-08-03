@@ -1234,8 +1234,8 @@ export default function CandidateAiInterviewRoom({
         <main className={card}>
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
             <span>
-              {interview?.interview_mode === "ADAPTIVE"
-                ? `Question ${current + 1}`
+              {interview?.interview_mode === "ADAPTIVE" && interview?.question_count
+                ? `Question ${current + 1} of ${interview.question_count}`
                 : `Question ${current + 1} of ${questions.length}`}
             </span>
             <span className="flex items-center gap-2">
@@ -1377,13 +1377,15 @@ export default function CandidateAiInterviewRoom({
             <div className="flex gap-2">
               <button
                 onClick={() => void skipAnswer()}
-                className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-700"
+                disabled={preparing}
+                className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-700 disabled:opacity-50"
               >
                 Skip question
               </button>
               <button
                 onClick={() => void submitAnswer()}
-                className="rounded-xl bg-cyan-500 px-5 py-2.5 font-bold text-slate-950"
+                disabled={preparing}
+                className="rounded-xl bg-cyan-500 px-5 py-2.5 font-bold text-slate-950 disabled:opacity-50"
               >
                 {interview?.interview_mode === "ADAPTIVE"
                   ? "Submit answer"
