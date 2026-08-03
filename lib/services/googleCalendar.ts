@@ -444,7 +444,7 @@ async function ensureUsableGoogleAccessToken(connection: SharedGoogleConnection)
 
 type SyncInterviewMeetingInput = {
   action: "upsert" | "cancel";
-  applicationId: number;
+  applicationId?: number;
   title: string;
   candidateName: string;
   candidateEmail: string | null;

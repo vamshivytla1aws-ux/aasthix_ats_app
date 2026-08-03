@@ -3,6 +3,7 @@ import { createSecureInterviewToken, hashInterviewToken } from "@/lib/aiIntervie
 import { buildPublicUrl } from "@/lib/publicUrl";
 import { sendTransactionalEmail } from "@/lib/sendTransactionalEmail";
 import { buildCandidateEmailTemplate } from "@/lib/candidateEmailTemplate";
+import { getSharedGoogleCalendarStatus, syncInterviewMeeting } from "@/lib/services/googleCalendar";
 
 function formatIst(value: string | Date) {
   return new Intl.DateTimeFormat("en-IN", {
@@ -14,7 +15,7 @@ function formatIst(value: string | Date) {
 
 export async function sendAiInterviewInviteEmail(interviewId: number, actorUserId: number) {
   const result = await query(
-    `SELECT ai.id, ai.title, ai.duration_minutes, ai.expires_at, ai.status,
+    `SELECT ai.id, ai.title, ai.duration_minutes, ai.expires_at, ai.status, ai.application_id,
             c.full_name AS candidate_name, c.email AS candidate_email,
             j.title AS job_title, j.company AS job_company, j.location AS job_location
        FROM ai_interviews ai
@@ -38,41 +39,105 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
   const token = createSecureInterviewToken();
   const publicUrl = buildPublicUrl(`/ai-interview/${token}`);
   const expiry = `${formatIst(row.expires_at)} IST`;
-
   const subject = `AI Interview Invitation: ${row.job_title} - AASTHIX`;
 
-  const emailTemplate = buildCandidateEmailTemplate({
-    candidateName: row.candidate_name,
-    paragraphs: [
-      `You are invited to complete an AI-powered technical and behavioral interview for the position of ${row.job_title}.`,
-      `Interview Duration: ${Number(row.duration_minutes)} minutes | Invitation Expiry: ${expiry}`,
-      `Instructions: Please complete the interview independently on a laptop or desktop with a working camera, microphone, and Chrome or Edge browser. Recording and browser integrity monitoring will begin after your consent.`
-    ],
-    cta: {
-      label: "Start AI Interview",
-      url: publicUrl,
-    },
-    job: {
-      title: row.job_title,
-      company: row.job_company || "AASTHIX",
-      location: row.job_location,
-    },
-  });
+  let deliveredVia: "google_calendar" | "resend" | "smtp" | null = null;
+  let deliveryMessageId: string | null = null;
+  let lastErrorDetail: string | null = null;
 
-  const email = await sendTransactionalEmail({
-    to: [recipient],
-    subject,
-    text: emailTemplate.text,
-    html: emailTemplate.html,
-  });
+  // 1. Primary path: Try Google Calendar (same email delivery mechanism as Pipeline & Reschedule interviews)
+  const gcalStatus = await getSharedGoogleCalendarStatus();
+  if (gcalStatus.configured && gcalStatus.connected) {
+    try {
+      const inviteBody = [
+        `Dear ${row.candidate_name},`,
+        "",
+        `You are invited to complete an AI-powered technical & behavioral interview for ${row.job_title}.`,
+        "",
+        `Interview duration: ${row.duration_minutes} minutes`,
+        `Link expires: ${expiry}`,
+        "",
+        `Start your secure AI Interview: ${publicUrl}`,
+        "",
+        "Instructions: Complete the interview independently on a desktop/laptop using Chrome or Edge with camera and microphone. Integrity monitoring begins after consent.",
+        "",
+        "Regards,",
+        "AASTHIX Talent Team",
+      ].join("\n");
 
-  if (!email.sent) {
+      const syncResult = await syncInterviewMeeting({
+        action: "upsert",
+        applicationId: row.application_id ? Number(row.application_id) : undefined,
+        title: `${row.job_title} (AI Interview)`,
+        candidateName: row.candidate_name,
+        candidateEmail: recipient,
+        interviewDatetime: row.expires_at || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        internalAttendeeEmails: [],
+        durationMinutes: Number(row.duration_minutes || 40),
+        inviteSubject: subject,
+        inviteBody: inviteBody,
+        inviteMode: "scheduled",
+      });
+
+      if (syncResult.status === "invite_sent" || syncResult.status === "meet_created") {
+        deliveredVia = "google_calendar";
+        deliveryMessageId = syncResult.external_calendar_event_id;
+      } else if (syncResult.error) {
+        lastErrorDetail = syncResult.error;
+      }
+    } catch (e) {
+      console.warn("Google Calendar delivery for AI interview failed, attempting email fallback:", e);
+    }
+  }
+
+  // 2. Fallback path: Transactional email (Resend / SMTP)
+  if (!deliveredVia) {
+    const emailTemplate = buildCandidateEmailTemplate({
+      candidateName: row.candidate_name,
+      paragraphs: [
+        `You are invited to complete an AI-powered technical and behavioral interview for the position of ${row.job_title}.`,
+        `Interview Duration: ${Number(row.duration_minutes)} minutes | Invitation Expiry: ${expiry}`,
+        `Instructions: Please complete the interview independently on a laptop or desktop with a working camera, microphone, and Chrome or Edge browser. Recording and browser integrity monitoring will begin after your consent.`
+      ],
+      cta: {
+        label: "Start AI Interview",
+        url: publicUrl,
+      },
+      job: {
+        title: row.job_title,
+        company: row.job_company || "AASTHIX",
+        location: row.job_location,
+      },
+    });
+
+    const email = await sendTransactionalEmail({
+      to: [recipient],
+      subject,
+      text: emailTemplate.text,
+      html: emailTemplate.html,
+    });
+
+    if (email.sent) {
+      deliveredVia = email.provider;
+      deliveryMessageId = email.messageId || null;
+    } else {
+      lastErrorDetail = email.detail || lastErrorDetail || "Failed to deliver email invitation";
+    }
+  }
+
+  if (!deliveredVia) {
     await query(
       `INSERT INTO ai_interview_audit_events (interview_id, actor_user_id, event_type, metadata_json)
        VALUES ($1, $2, 'INVITATION_SEND_FAILED', $3::jsonb)`,
-      [interviewId, actorUserId, JSON.stringify({ recipient, reason: email.reason, detail: email.detail || null })]
+      [interviewId, actorUserId, JSON.stringify({ recipient, detail: lastErrorDetail || null })]
     );
-    return { ok: false, status: 503, error: "Invitation email could not be sent. The existing candidate link remains active.", detail: email.detail, recipient };
+    return {
+      ok: false,
+      status: 503,
+      error: "Invitation email could not be sent. Connect shared Google Calendar in Settings or verify Resend sender domain.",
+      detail: lastErrorDetail,
+      recipient,
+    };
   }
 
   await query(
@@ -85,7 +150,7 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
   await query(
     `INSERT INTO ai_interview_audit_events (interview_id, actor_user_id, event_type, metadata_json)
      VALUES ($1, $2, 'INVITATION_SENT', $3::jsonb)`,
-    [interviewId, actorUserId, JSON.stringify({ recipient, provider: email.provider, message_id: email.messageId || null, expires_at: row.expires_at })]
+    [interviewId, actorUserId, JSON.stringify({ recipient, provider: deliveredVia, message_id: deliveryMessageId, expires_at: row.expires_at })]
   );
 
   return {
@@ -94,7 +159,7 @@ export async function sendAiInterviewInviteEmail(interviewId: number, actorUserI
     public_url: publicUrl,
     recipient,
     expires_at: row.expires_at,
-    provider: email.provider,
-    message_id: email.messageId || null,
+    provider: deliveredVia,
+    message_id: deliveryMessageId,
   };
 }
