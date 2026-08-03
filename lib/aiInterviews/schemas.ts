@@ -16,7 +16,7 @@ export const createInterviewSchema = z.object({
   tab_switch_warning_limit: z.coerce.number().int().min(1).max(50).default(3),
   face_missing_threshold_seconds: z.coerce.number().int().min(3).max(60).default(5),
   recording_enabled: z.boolean().default(true),
-  screen_share_enabled: z.boolean().default(false),
+  screen_share_enabled: z.boolean().default(true),
   fullscreen_required: z.boolean().default(true),
   face_monitoring_enabled: z.boolean().default(true),
   gaze_monitoring_enabled: z.boolean().default(true),
