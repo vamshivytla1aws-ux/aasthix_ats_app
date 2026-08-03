@@ -787,6 +787,57 @@ export default function CandidateAiInterviewRoom({
       setPreparing(false);
     }
   }
+  async function skipAnswer() {
+    if (!window.confirm("Are you sure you want to skip this question? You will receive a score of 0 for it.")) return;
+    const q = questions[current];
+    const transcript = "[Candidate skipped this question]";
+    recognitionRef.current?.stop?.();
+    recognitionRef.current = null;
+    setListening(false);
+    setPreparing(interview?.interview_mode === "ADAPTIVE");
+    await stopAndUploadAnswerAudio(q.id);
+    try {
+      const r = await fetch("/api/ai-interview/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "complete",
+          question_id: q.id,
+          transcript,
+          duration_seconds: Math.round((Date.now() - questionStartedAt.current) / 1000),
+          idempotency_key: `skip-${q.id}`,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setError(d.error || "Answer could not be saved");
+        return;
+      }
+      if (d.interview_complete) {
+        await finishInterview();
+        return;
+      }
+      if (interview?.interview_mode === "ADAPTIVE" && d.next_question) {
+        const next = d.next_question as Question;
+        setQuestions((value) => value.some((item) => item.id === next.id) ? value : [...value, next]);
+        setCurrent(current + 1);
+        setAnswer("");
+        setCodeAnswer(next.starter_code || "");
+        questionStartedAt.current = Date.now();
+        await fetch("/api/ai-interview/answer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "start", question_id: next.id, idempotency_key: `start-${next.id}` }),
+        });
+        startAnswerAudioRecording();
+        return;
+      }
+      if (current < questions.length - 1) await beginQuestion(current + 1);
+      else await finishInterview();
+    } finally {
+      setPreparing(false);
+    }
+  }
   async function finishRecording() {
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== "inactive") {
@@ -1238,16 +1289,24 @@ export default function CandidateAiInterviewRoom({
                 {isRunningCode ? "Running..." : "Run Code"}
               </button>
             ) : <div />}
-            <button
-              onClick={() => void submitAnswer()}
-              className="rounded-xl bg-cyan-500 px-5 py-2.5 font-bold text-slate-950"
-            >
-              {interview?.interview_mode === "ADAPTIVE"
-                ? "Submit answer"
-                : current === questions.length - 1
-                  ? "Submit interview"
-                  : "Save and next"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => void skipAnswer()}
+                className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-700"
+              >
+                Skip question
+              </button>
+              <button
+                onClick={() => void submitAnswer()}
+                className="rounded-xl bg-cyan-500 px-5 py-2.5 font-bold text-slate-950"
+              >
+                {interview?.interview_mode === "ADAPTIVE"
+                  ? "Submit answer"
+                  : current === questions.length - 1
+                    ? "Submit interview"
+                    : "Save and next"}
+              </button>
+            </div>
           </div>
           {/* Cancel & Exit — shown below the answer actions */}
           <div className="mt-4 border-t border-slate-800 pt-4">
