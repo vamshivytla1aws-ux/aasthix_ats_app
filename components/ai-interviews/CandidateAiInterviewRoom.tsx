@@ -100,7 +100,13 @@ export default function CandidateAiInterviewRoom({
 
   const loadState = useCallback(async () => {
     const r = await fetch("/api/ai-interview/state", { cache: "no-store" });
-    const d = await r.json();
+    const text = await r.text();
+    let d;
+    try {
+      d = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(r.status >= 400 ? `Error ${r.status}: ${text || r.statusText}` : "Invalid response from server");
+    }
     if (!r.ok) throw new Error(d.error || "Unable to load interview");
     setInterview(d.interview);
     const loadedQuestions: Question[] = d.questions || [];
@@ -140,7 +146,13 @@ export default function CandidateAiInterviewRoom({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token: secureToken }),
           });
-          const d = await r.json();
+          const text = await r.text();
+          let d;
+          try {
+            d = text ? JSON.parse(text) : {};
+          } catch {
+            throw new Error(r.status >= 400 ? `Error ${r.status}: ${text || r.statusText}` : "Invalid response from server");
+          }
           if (!r.ok) throw new Error(d.error || "Unable to open interview");
           window.history.replaceState({}, "", "/ai-interview/session");
         }

@@ -169,6 +169,7 @@ export async function POST(request: Request) {
       codingEnabled: parsed.coding_enabled,
       behavioralEnabled: parsed.behavioral_enabled,
       allowFundamentalsForSenior: parsed.allow_fundamentals_for_senior,
+      windowStart: parsed.windowStart,
     };
     const adaptivePlan =
       parsed.interview_mode === "ADAPTIVE"

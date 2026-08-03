@@ -16,7 +16,7 @@ export async function POST(request: Request) {
       `SELECT ai.id,ai.candidate_id,ai.status,ai.title,ai.instructions,ai.duration_minutes,ai.expires_at,
               ai.camera_required,ai.microphone_required,ai.recording_enabled,ai.screen_share_enabled,
               ai.fullscreen_required,ai.face_monitoring_enabled,ai.gaze_monitoring_enabled,
-              c.full_name AS candidate_name,j.title AS job_title
+              c.full_name AS candidate_name,j.title AS job_title,ai.adaptive_config_json
          FROM ai_interviews ai JOIN candidates c ON c.id=ai.candidate_id JOIN jobs j ON j.id=ai.job_id
         WHERE ai.secure_token_hash=$1 AND ai.token_revoked_at IS NULL LIMIT 1`,
       [hashInterviewToken(token)]
@@ -29,6 +29,14 @@ export async function POST(request: Request) {
     }
     if (["COMPLETED","CANCELLED","EXPIRED"].includes(row.status)) return NextResponse.json({ error: `This interview is ${String(row.status).toLowerCase()}.` }, { status: 409 });
     if (row.status === "DRAFT") return NextResponse.json({ error: "This interview has not been activated yet." }, { status: 409 });
+    
+    if (row.adaptive_config_json?.windowStart) {
+      const windowStart = new Date(row.adaptive_config_json.windowStart).getTime();
+      if (windowStart > Date.now()) {
+        const opensAt = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date(windowStart));
+        return NextResponse.json({ error: `This interview window has not opened yet. It will open on ${opensAt}.` }, { status: 403 });
+      }
+    }
     const tokenHash = hashInterviewToken(token);
     const session = await createCandidateSession({ interviewId: Number(row.id), candidateId: Number(row.candidate_id), tokenHash, expiresAt: new Date(row.expires_at) });
     const response = NextResponse.json({

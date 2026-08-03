@@ -11,6 +11,7 @@ export const createInterviewSchema = z.object({
   question_count: z.coerce.number().int().min(1).max(20).default(7),
   duration_minutes: z.coerce.number().int().min(5).max(180).default(40),
   expires_at: z.string().datetime(),
+  windowStart: z.string().datetime().optional(),
   look_away_warning_limit: z.coerce.number().int().min(1).max(50).default(5),
   tab_switch_warning_limit: z.coerce.number().int().min(1).max(50).default(3),
   face_missing_threshold_seconds: z.coerce.number().int().min(3).max(60).default(5),

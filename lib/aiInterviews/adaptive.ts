@@ -139,6 +139,7 @@ export type AdaptiveConfig = {
   behavioralEnabled: boolean;
   allowFundamentalsForSenior: boolean;
   recruiterExperienceOverride: number | null;
+  windowStart?: string;
 };
 export type AdaptiveState = {
   currentDifficulty: AdaptiveDepth;
