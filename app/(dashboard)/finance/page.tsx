@@ -16,6 +16,8 @@ import {
   Legend,
   ComposedChart,
 } from "recharts";
+import SearchableSelect from "@/components/ui/SearchableSelect";
+import { DatePicker } from "@/components/ui/DateTimeFields";
 
 type Tab = "dashboard" | "partners" | "partner_accounts" | "investments" | "company_account" | "direct_others" | "ledger" | "import_audit";
 type Preset = "full" | "monthly" | "yearly" | "custom";
@@ -109,6 +111,10 @@ function thisYear() {
   return String(new Date().getFullYear());
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function entrySortValue(date: string) {
   const parsed = new Date(`${date}T00:00:00`);
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
@@ -129,7 +135,7 @@ export default function FinancePage() {
   const [partnerEmail, setPartnerEmail] = useState("");
   const [partnerRole, setPartnerRole] = useState("");
 
-  const [txDate, setTxDate] = useState(todayDdMmYyyy());
+  const [txDate, setTxDate] = useState(todayIso());
   const [txDesc, setTxDesc] = useState("");
   const [txCategory, setTxCategory] = useState("General");
   const [txAmount, setTxAmount] = useState("");
@@ -330,7 +336,7 @@ export default function FinancePage() {
     const activeKind = tab === "company_account" ? "company_account_entry" : tab === "direct_others" ? "direct_others_account_entry" : "partner_investment";
     const payload: Record<string, unknown> = {
       kind: activeKind,
-      date: toApiDate(txDate),
+      date: txDate,
       description: txDesc || "Entry",
       category: txCategory,
       amount: txAmount,
@@ -352,7 +358,7 @@ export default function FinancePage() {
         method: "POST",
         body: JSON.stringify({
           kind: postToDirectOthers ? "direct_others_account_entry" : "company_account_entry",
-          date: toApiDate(txDate),
+          date: txDate,
           description: txDesc || `Partner investment mirrored to ${postToDirectOthers ? "direct/others" : "company account"}`,
           category: txCategory,
           amount: txAmount,
@@ -370,7 +376,7 @@ export default function FinancePage() {
     setTxAmount("");
     setEditingTxId(null);
     setPostToDirectOthers(false);
-    setTxDate(todayDdMmYyyy());
+    setTxDate(todayIso());
     setMessage(editingTxId ? "Entry updated." : "Saved.");
     await refreshBase();
     await refreshAnalytics();
@@ -493,7 +499,7 @@ export default function FinancePage() {
 
   function editTx(tx: Tx) {
     setEditingTxId(tx.id);
-    setTxDate(toDisplayDate(tx.date));
+    setTxDate(tx.date);
     setTxDesc(tx.description ?? "");
     setTxCategory(tx.category ?? "General");
     setTxAmount((Number(tx.totalMinor ?? 0) / 100).toString());
@@ -865,7 +871,7 @@ export default function FinancePage() {
                   <tbody className="divide-y divide-[var(--ats-border)]">
                     {(partnerStatement.rows ?? []).map((row: any) => (
                       <tr className="transition-colors hover:bg-[var(--ats-bg-subtle)]" key={row.txId}>
-                        <td className="px-4 py-3 font-medium text-[var(--ats-text)]">{toDisplayDate(row.date)}</td>
+                        <td className="px-4 py-3 font-medium text-[var(--ats-text)] whitespace-nowrap">{toDisplayDate(row.date)}</td>
                         <td className="px-4 py-3 text-[var(--ats-text)]">{row.narration}</td>
                         <td className="px-4 py-3"><span className="inline-flex rounded-md bg-[var(--ats-bg-subtle)] px-2 py-1 text-xs font-medium text-[var(--ats-text-muted)]">{row.category}</span></td>
                         <td className="px-4 py-3 text-right font-medium text-[var(--ats-text)]">{inr(row.investedMinor)}</td>
@@ -914,7 +920,7 @@ export default function FinancePage() {
                           {p.isActive ? "Active" : "Inactive"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
                         <button className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]" type="button" onClick={() => togglePartner(p)}>
                           {p.isActive ? "Deactivate" : "Reactivate"}
                         </button>
@@ -935,16 +941,21 @@ export default function FinancePage() {
               {tab === "investments" ? "Add Investment" : tab === "company_account" ? "Add Company Entry" : "Add Direct/Others Entry"}
             </h3>
             <form className="space-y-3" onSubmit={saveTx}>
-              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" value={txDate} onChange={(e) => setTxDate(e.target.value)} placeholder="dd-mm-yyyy" />
+              <DatePicker value={txDate} onChange={setTxDate} placeholder="Select date" />
               {tab === "investments" ? (
-                <select className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" value={txPartnerId} onChange={(e) => setTxPartnerId(e.target.value)}>
-                  <option value="">Select partner</option>
-                  {partners.filter((p) => p.isActive).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                <SearchableSelect
+                  options={partners.filter((p) => p.isActive).map((p) => ({ label: p.name, value: String(p.id) }))}
+                  value={txPartnerId}
+                  onChange={setTxPartnerId}
+                  placeholder="Select partner"
+                />
               ) : (
-                <select className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" value={txAccountType} onChange={(e) => setTxAccountType(e.target.value as "debit" | "credit")}>
-                  <option value="debit">Debit</option><option value="credit">Credit</option>
-                </select>
+                <SearchableSelect
+                  options={[{ label: "Debit", value: "debit" }, { label: "Credit", value: "credit" }]}
+                  value={txAccountType}
+                  onChange={(val) => setTxAccountType(val as "debit" | "credit")}
+                  placeholder="Select type"
+                />
               )}
               <input className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" placeholder="Description" value={txDesc} onChange={(e) => setTxDesc(e.target.value)} />
               <input className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" placeholder="Category" value={txCategory} onChange={(e) => setTxCategory(e.target.value)} />
@@ -956,7 +967,7 @@ export default function FinancePage() {
                 </label>
               ) : null}
               <button className="w-full rounded-xl bg-[var(--ats-primary)] px-3 py-2.5 text-sm font-semibold text-[var(--ats-primary-foreground)] shadow-sm transition-opacity hover:opacity-90" type="submit">{editingTxId ? "Update entry" : "Save entry"}</button>
-              {editingTxId ? <button className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2.5 text-sm font-semibold text-[var(--ats-text)] transition-colors hover:bg-[var(--ats-bg-subtle)]" type="button" onClick={() => { setEditingTxId(null); setTxDate(todayDdMmYyyy()); setTxDesc(""); setTxCategory("General"); setTxAmount(""); setTxPartnerId(""); setTxAccountType("debit"); setPostToDirectOthers(false); }}>Cancel edit</button> : null}
+              {editingTxId ? <button className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2.5 text-sm font-semibold text-[var(--ats-text)] transition-colors hover:bg-[var(--ats-bg-subtle)]" type="button" onClick={() => { setEditingTxId(null); setTxDate(todayIso()); setTxDesc(""); setTxCategory("General"); setTxAmount(""); setTxPartnerId(""); setTxAccountType("debit"); setPostToDirectOthers(false); }}>Cancel edit</button> : null}
             </form>
           </article>
           <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] shadow-sm lg:col-span-2 overflow-hidden">
@@ -975,12 +986,12 @@ export default function FinancePage() {
                 <tbody className="divide-y divide-[var(--ats-border)]">
                   {ledger.filter((tx) => (tab === "investments" ? tx.kind === "partner_investment" || tx.kind === "expense" : tab === "direct_others" ? tx.kind === "direct_others_account_entry" : tx.kind === "company_account_entry")).map((tx) => (
                     <tr className="transition-colors hover:bg-[var(--ats-bg-subtle)]" key={tx.id}>
-                      <td className="px-4 py-3 font-medium text-[var(--ats-text)]">{toDisplayDate(tx.date)}</td>
+                      <td className="px-4 py-3 font-medium text-[var(--ats-text)] whitespace-nowrap">{toDisplayDate(tx.date)}</td>
                       <td className="px-4 py-3 text-[var(--ats-text)]">{tx.description}</td>
                       <td className="px-4 py-3 text-[var(--ats-text)]">{tx.partnerId ? partnerById.get(tx.partnerId)?.name ?? "-" : "-"}</td>
                       <td className="px-4 py-3"><span className="inline-flex rounded bg-[var(--ats-bg-subtle)] px-2 py-1 text-xs font-medium text-[var(--ats-text-muted)]">{tx.accountEntryType ?? tx.kind}</span></td>
                       <td className="px-4 py-3 text-right font-semibold text-[var(--ats-text)]">{inr(tx.totalMinor)}</td>
-                      <td className="px-4 py-3 text-right space-x-2">
+                      <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap flex justify-end">
                         <button className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]" type="button" onClick={() => editTx(tx)}>Edit</button>
                         <button className="rounded-lg border border-red-500/20 bg-red-50/50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20" type="button" onClick={() => removeTx(tx.id)}>Delete</button>
                       </td>
@@ -1020,7 +1031,7 @@ export default function FinancePage() {
                   return (
                     <Fragment key={entry.groupId}>
                       <tr className="transition-colors hover:bg-[var(--ats-bg-subtle)]">
-                        <td className="px-4 py-3 font-medium text-[var(--ats-text)]">{toDisplayDate(entry.date)}</td>
+                        <td className="px-4 py-3 font-medium text-[var(--ats-text)] whitespace-nowrap">{toDisplayDate(entry.date)}</td>
                         <td className="px-4 py-3">
                           <div className="font-semibold text-[var(--ats-text)]">{entry.description}</div>
                           {entry.isGrouped ? <div className="mt-1 text-xs font-medium text-[var(--ats-text-muted)]">{entry.linkedTransactions.length} linked accounting rows</div> : null}
@@ -1029,7 +1040,7 @@ export default function FinancePage() {
                         <td className="px-4 py-3"><span className="inline-flex rounded-md border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-2 py-1 text-xs font-medium text-[var(--ats-text)]">{entry.displayKindLabel}</span></td>
                         <td className="px-4 py-3 text-[var(--ats-text)]">{entry.accountContext ?? "-"}</td>
                         <td className="px-4 py-3 text-right font-display text-[15px] font-bold text-[var(--ats-text)]">{inr(entry.totalMinor)}</td>
-                        <td className="px-4 py-3 text-right space-x-2">
+                        <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap flex justify-end">
                           {isAdmin && entry.isGrouped ? (
                             <button className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--ats-bg-subtle)]" type="button" onClick={() => toggleLedgerGroup(entry.groupId)}>
                               {isExpanded ? "Hide detail" : "Show detail"}
