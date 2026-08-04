@@ -158,23 +158,7 @@ function toCalendarLocalDateTime(value: string | Date, timeZone = ATS_TIMEZONE) 
   if (Number.isNaN(date.getTime())) {
     throw new Error("Invalid calendar datetime");
   }
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  })
-    .formatToParts(date)
-    .reduce<Record<string, string>>((acc, part) => {
-      if (part.type !== "literal") acc[part.type] = part.value;
-      return acc;
-    }, {});
-  const hour = parts.hour === "24" ? "00" : parts.hour;
-  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}`;
+  return date.toISOString();
 }
 
 async function exchangeCodeForTokens(code: string) {
@@ -588,7 +572,7 @@ export async function syncInterviewMeeting(input: SyncInterviewMeetingInput): Pr
       start: { dateTime: toCalendarLocalDateTime(start), timeZone: ATS_TIMEZONE },
       end: { dateTime: toCalendarLocalDateTime(end), timeZone: ATS_TIMEZONE },
       transparency: input.isWindowEvent ? "transparent" : "opaque",
-      attendees: attendeePayload.map((email) => ({ email })),
+      attendees: attendeePayload.length > 0 ? attendeePayload.map((email) => ({ email })) : undefined,
       conferenceData: input.skipConferencing || input.existingEventId
         ? undefined
         : {
@@ -734,7 +718,7 @@ export async function syncTeamCalendarMeeting(input: SyncTeamCalendarMeetingInpu
       description: String(input.description || "").trim(),
       start: { dateTime: toCalendarLocalDateTime(input.startAt), timeZone: ATS_TIMEZONE },
       end: { dateTime: toCalendarLocalDateTime(input.endAt), timeZone: ATS_TIMEZONE },
-      attendees: attendees.map((email) => ({ email })),
+      attendees: attendees.length > 0 ? attendees.map((email) => ({ email })) : undefined,
       recurrence: buildRecurrenceRule(input.recurrence || "none", input.recurrenceUntil),
       conferenceData: input.existingEventId
         ? undefined

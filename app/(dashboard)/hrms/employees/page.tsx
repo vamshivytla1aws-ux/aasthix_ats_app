@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import useSWR from "swr";
@@ -351,8 +351,10 @@ export default function EmployeeDirectoryPage() {
                 {employees.map((employee) => (
                   <tr key={employee.id} className="border-t border-[var(--ats-border)]">
                     <td className="px-2 py-2">
-                      <div className="font-semibold text-[var(--ats-text)]">{employee.full_name}</div>
-                      <div className="text-xs text-[var(--ats-text-muted)]">
+                      <a href={`/hrms/employees/${employee.id}`} className="font-semibold text-cyan-400 hover:underline block">
+                        {employee.full_name}
+                      </a>
+                      <div className="text-xs text-[var(--ats-text-muted)] mt-0.5">
                         {employee.employee_code} · {employee.email}
                       </div>
                     </td>
@@ -367,6 +369,9 @@ export default function EmployeeDirectoryPage() {
                     </td>
                     <td className="px-2 py-2">
                       <div className="flex gap-2">
+                        <a href={`/hrms/employees/${employee.id}`} className={UI.primaryButton + " py-1.5 px-3 text-xs"}>
+                          View 360
+                        </a>
                         <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => startEdit(employee)}>
                           Edit
                         </button>

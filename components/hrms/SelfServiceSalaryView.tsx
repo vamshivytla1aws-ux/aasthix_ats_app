@@ -6,6 +6,43 @@ import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
+import ModernPayslipView from "./ModernPayslipView";
+
+function PayslipModal({ payslipId, onClose }: { payslipId: number; onClose: () => void }) {
+  const { data, error } = useSWR<any>(`/api/payslips/${payslipId}/data`, dashboardFetcher);
+  
+  if (error) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl w-full max-w-sm">
+          <p className="text-rose-400 font-bold mb-2">Error</p>
+          <p className="text-slate-300 text-sm mb-4">Failed to load payslip data.</p>
+          <button onClick={onClose} className={UI.secondaryButton}>Close</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto pt-24 pb-12">
+      <div className="w-full max-w-4xl relative mt-auto mb-auto">
+        <button
+          onClick={onClose}
+          className="absolute -top-12 right-0 text-slate-400 hover:text-white bg-slate-900 border border-slate-700 px-4 py-2 rounded-full text-sm font-bold shadow-lg transition"
+        >
+          ✕ Close
+        </button>
+        {!data ? (
+          <div className="bg-slate-900 border border-[var(--ats-border)] rounded-2xl h-[400px] flex items-center justify-center text-slate-400 shadow-2xl">
+            Loading...
+          </div>
+        ) : (
+          <ModernPayslipView data={data.data} onDownload={() => window.location.href = `/api/payslips/${payslipId}/download`} />
+        )}
+      </div>
+    </div>
+  );
+}
 
 type AuthPayload = {
   user?: { id?: number; full_name?: string };
@@ -55,6 +92,7 @@ function monthLabel(month: number, year: number) {
 }
 
 export default function SelfServiceSalaryView() {
+  const [viewingPayslip, setViewingPayslip] = React.useState<number | null>(null);
   const [startYear, setStartYear] = React.useState<number | null>(null);
   const { data: me } = useSWR<AuthPayload>("/api/auth/me", dashboardFetcher, { revalidateOnFocus: false });
   const employeeId = me?.user?.id;
@@ -123,9 +161,15 @@ export default function SelfServiceSalaryView() {
                     <td className="px-2 py-2">₹{inr(row.gross_monthly)}</td>
                     <td className="px-2 py-2">₹{inr(row.total_deductions)}</td>
                     <td className="px-2 py-2 font-medium text-[var(--ats-text)]">₹{inr(row.net_salary)}</td>
-                    <td className="px-2 py-2">
-                      <a className="text-[var(--ats-accent)] hover:underline" href={`/api/payslips/${row.id}/download`}>
-                        Download
+                    <td className="px-2 py-2 flex items-center gap-3">
+                      <button
+                        onClick={() => setViewingPayslip(row.id)}
+                        className="text-[var(--ats-accent)] hover:underline"
+                      >
+                        View
+                      </button>
+                      <a className="text-[var(--ats-text-muted)] hover:text-[var(--ats-text)] transition" href={`/api/payslips/${row.id}/download`}>
+                        PDF
                       </a>
                     </td>
                   </tr>
@@ -135,6 +179,10 @@ export default function SelfServiceSalaryView() {
           </table>
         </div>
       </section>
+
+      {viewingPayslip && (
+        <PayslipModal payslipId={viewingPayslip} onClose={() => setViewingPayslip(null)} />
+      )}
 
       <section className={UI.card + " mt-4 p-4 sm:p-5"}>
         <div className="flex flex-wrap items-center justify-between gap-3">

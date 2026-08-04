@@ -94,7 +94,7 @@ export async function GET(request: Request) {
         END AS application_job_title,
         CASE
           WHEN de.entity_type = 'application' THEN (
-            SELECT c.name FROM applications a JOIN candidates c ON c.id = a.candidate_id WHERE a.id = de.entity_id LIMIT 1
+            SELECT c.full_name FROM applications a JOIN candidates c ON c.id = a.candidate_id WHERE a.id = de.entity_id LIMIT 1
           )
           ELSE NULL
         END AS application_candidate_name

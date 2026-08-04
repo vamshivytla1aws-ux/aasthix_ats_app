@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Wifi,
 } from "lucide-react";
+import AudioWaveform from "./AudioWaveform";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -81,6 +82,8 @@ export default function CandidateAiInterviewRoom({
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [copyPasteCount, setCopyPasteCount] = useState(0);
   const [backgroundVoicesCount, setBackgroundVoicesCount] = useState(0);
+  const [backgroundAnalyser, setBackgroundAnalyser] = useState<AnalyserNode | null>(null);
+  const [scrambledWaveform, setScrambledWaveform] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -107,6 +110,36 @@ export default function CandidateAiInterviewRoom({
   const captureDesktopSnapshotRef = useRef<() => Promise<void>>(async () => {});
   const hiddenAtRef = useRef<number | null>(null);
   const blurAtRef = useRef<number | null>(null);
+
+  const captureIncidentSnapshot = useCallback(async () => {
+    if (!videoRef.current || videoRef.current.readyState < 2) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      fetch("/api/ai-interview/incident-snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "image/jpeg" },
+        body: blob,
+      }).catch(console.error);
+    }, "image/jpeg", 0.7);
+  }, []);
+
+  // Random snapshot interval
+  useEffect(() => {
+    if (step !== "interview") return;
+    const interval = setInterval(() => {
+      // randomly 20% chance every 15 seconds -> on avg once per ~75 seconds
+      if (Math.random() < 0.20) {
+        captureIncidentSnapshot();
+      }
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [step, captureIncidentSnapshot]);
 
   const loadState = useCallback(async () => {
     const r = await fetch("/api/ai-interview/state", { cache: "no-store" });
@@ -418,6 +451,7 @@ export default function CandidateAiInterviewRoom({
             if (!multipleLogged && Date.now() - multipleSince > 2000) {
               sendEvent("MULTIPLE_FACES", { approximate: true });
               multipleLogged = true;
+              captureIncidentSnapshot(); // strictly capture proof
               void cancelInterviewRef.current("MULTIPLE_FACES");
             }
           } else {
@@ -462,7 +496,7 @@ export default function CandidateAiInterviewRoom({
     };
   }, [step, interview, sendEvent]);
 
-  // Background Voice Audio Monitoring
+      // Background Voice Audio Monitoring
   useEffect(() => {
     if (step !== "interview" || !mediaRef.current) return;
     
@@ -480,12 +514,14 @@ export default function CandidateAiInterviewRoom({
       analyser.smoothingTimeConstant = 0.8;
       source = audioCtx.createMediaStreamSource(mediaRef.current);
       source.connect(analyser);
+      
+      setBackgroundAnalyser(analyser);
 
       const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 
       checkInterval = setInterval(() => {
-        if (cancelled || listeningRef.current) return; // Don't flag if they are using voice dictation
+        if (cancelled) return;
         analyser!.getByteFrequencyData(dataArray);
         let sum = 0;
         for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
@@ -494,15 +530,20 @@ export default function CandidateAiInterviewRoom({
         if (avg > 35) { // tuned threshold
           loudCount++;
           if (loudCount > 4) { // Sustained for 2 seconds (4 * 500ms)
+            setScrambledWaveform(true);
             setBackgroundVoicesCount((c) => {
-              if (c + 1 >= 2) void cancelInterviewRef.current("BACKGROUND_VOICES");
+              if (c + 1 >= 3) {
+                 captureIncidentSnapshot();
+                 void cancelInterviewRef.current("BACKGROUND_VOICES");
+              }
               return c + 1;
             });
             setWarning("Background voices detected. Ensure you are alone in a quiet room.");
-            loudCount = 0; // reset to avoid immediate 2nd strike
+            loudCount = 0; // reset to avoid immediate consecutive strike
           }
         } else {
           loudCount = Math.max(0, loudCount - 1);
+          if (loudCount === 0) setScrambledWaveform(false);
         }
       }, 500);
     } catch (e) {
@@ -1551,6 +1592,7 @@ export default function CandidateAiInterviewRoom({
             playsInline
             className="aspect-video w-full rounded-xl bg-black object-cover"
           />
+          <AudioWaveform analyser={backgroundAnalyser} scrambled={scrambledWaveform} />
           <div className="mt-4 space-y-2 text-sm text-slate-300">
             <div className="flex justify-between">
               <span>Camera</span>
