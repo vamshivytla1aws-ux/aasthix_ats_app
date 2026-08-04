@@ -15,7 +15,7 @@ export async function validatePat(token: string) {
   const token_hash = generatePatHash(token);
   
   const res = await query(
-    `SELECT p.id, p.user_id, p.expires_at, u.role, u.email, u.full_name
+    `SELECT p.id, p.user_id, p.expires_at, u.role, u.email, u.full_name, u.token_version
      FROM personal_access_tokens p
      JOIN users u ON u.id = p.user_id
      WHERE p.token_hash = $1
@@ -37,5 +37,6 @@ export async function validatePat(token: string) {
     user_id: Number(row.user_id),
     role: String(row.role || "user"),
     email: String(row.email || ""),
+    token_version: Number(row.token_version || 1),
   };
 }
