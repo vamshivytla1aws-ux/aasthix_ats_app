@@ -847,7 +847,7 @@ export default function FinancePage() {
             <SearchableSelect
               wrapperClassName="w-[200px]"
               value={selectedPartnerId ? String(selectedPartnerId) : ""}
-              onChange={(val) => setSelectedPartnerId(val ? Number(val) : null)}
+              onChange={(val) => setSelectedPartnerId(val ? Number(val) : 0)}
               options={[
                 { value: "", label: "Select partner" },
                 ...partners.filter((p) => p.isActive).map((p) => ({ value: String(p.id), label: p.name })),
