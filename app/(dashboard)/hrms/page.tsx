@@ -26,7 +26,7 @@ export default function HrmsHomePage() {
   const { data: me } = useSWR<{ user?: { role?: string } }>("/api/auth/me", dashboardFetcher, { revalidateOnFocus: false });
   const { data } = useSWR<{ summary: any }>("/api/hrms/summary", dashboardFetcher, { revalidateOnFocus: false });
   const role = String(me?.user?.role || "user").toLowerCase();
-  const isAdmin = role === "admin";
+  const isAdmin = ["admin", "workspace_owner", "hr"].includes(role);
   const summary = data?.summary;
   const approvals = summary?.pending_approvals;
   const payroll = summary?.payroll;

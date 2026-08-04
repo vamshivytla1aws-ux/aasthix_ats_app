@@ -1,0 +1,3 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_code TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS employment_status TEXT DEFAULT 'active';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reporting_manager_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;

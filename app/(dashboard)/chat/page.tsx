@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import useSWR from "swr";
@@ -991,28 +991,28 @@ export default function ChatPage() {
           </div>
           <div className="chat-scrollbar flex-1 overflow-y-auto">
             {threadInbox.length > 0 ? (
-              <div className="border-b border-slate-700 px-3 py-2">
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Thread inbox</p>
+              <div className="border-b border-[var(--chat-border)] px-3 py-2">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--chat-muted)]">Thread inbox</p>
                 <div className="space-y-1">
                   {threadInbox.slice(0, 3).map((item) => (
                     <button
                       key={`${item.conversation_id}-${item.parent_message_id}`}
                       type="button"
                       onClick={() => setActiveConvId(item.conversation_id)}
-                      className="w-full rounded-md border border-slate-700 bg-[#151922] px-2 py-1.5 text-left hover:bg-[#1b2230]"
+                      className="w-full rounded-md border border-[var(--chat-border)] bg-white px-2 py-1.5 text-left shadow-sm hover:bg-slate-50"
                     >
-                      <p className="truncate text-[11px] font-medium text-slate-100">
+                      <p className="truncate text-[11px] font-medium text-[var(--chat-text)]">
                         {(item.conversation_name || "Conversation").trim()} • {item.reply_count} replies
                       </p>
-                      <p className="truncate text-[10px] text-slate-400">{item.parent_content || "Thread update"}</p>
+                      <p className="truncate text-[10px] text-[var(--chat-muted)]">{item.parent_content || "Thread update"}</p>
                     </button>
                   ))}
                 </div>
               </div>
             ) : null}
             {upcomingCalendar.length > 0 ? (
-              <div className="border-b border-slate-700 px-3 py-2">
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Calendar</p>
+              <div className="border-b border-[var(--chat-border)] px-3 py-2">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--chat-muted)]">Calendar</p>
                 <div className="space-y-1.5">
                   {upcomingCalendar.slice(0, 4).map((event) => (
                     <button
@@ -1021,10 +1021,10 @@ export default function ChatPage() {
                       onClick={() => {
                         if (event.conversation_id) setActiveConvId(event.conversation_id);
                       }}
-                      className="w-full rounded-md border border-slate-700 bg-[#151922] px-2 py-1.5 text-left hover:bg-[#1b2230]"
+                      className="w-full rounded-md border border-[var(--chat-border)] bg-white px-2 py-1.5 text-left shadow-sm hover:bg-slate-50"
                     >
-                      <p className="truncate text-[11px] font-medium text-slate-100">{event.title}</p>
-                      <p className="truncate text-[10px] text-slate-400">
+                      <p className="truncate text-[11px] font-medium text-[var(--chat-text)]">{event.title}</p>
+                      <p className="truncate text-[10px] text-[var(--chat-muted)]">
                         {new Date(event.start_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </p>
                     </button>
@@ -1033,8 +1033,8 @@ export default function ChatPage() {
               </div>
             ) : null}
             {recentCalendar.length > 0 ? (
-              <div className="border-b border-slate-700 px-3 py-2">
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Recent calls</p>
+              <div className="border-b border-[var(--chat-border)] px-3 py-2">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--chat-muted)]">Recent calls</p>
                 <div className="space-y-1.5">
                   {recentCalendar.slice(0, 3).map((event) => (
                     <button
@@ -1043,10 +1043,10 @@ export default function ChatPage() {
                       onClick={() => {
                         if (event.conversation_id) setActiveConvId(event.conversation_id);
                       }}
-                      className="w-full rounded-md border border-slate-700 bg-[#121725] px-2 py-1.5 text-left hover:bg-[#1b2230]"
+                      className="w-full rounded-md border border-[var(--chat-border)] bg-white px-2 py-1.5 text-left shadow-sm hover:bg-slate-50"
                     >
-                      <p className="truncate text-[11px] font-medium text-slate-100">{event.title}</p>
-                      <p className="truncate text-[10px] text-slate-400">
+                      <p className="truncate text-[11px] font-medium text-[var(--chat-text)]">{event.title}</p>
+                      <p className="truncate text-[10px] text-[var(--chat-muted)]">
                         Ended {new Date(event.end_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </p>
                     </button>
