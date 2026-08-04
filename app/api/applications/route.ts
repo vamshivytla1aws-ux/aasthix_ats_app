@@ -1307,10 +1307,10 @@ export async function PATCH(request: Request) {
       }
     }
 
-    const movedAppliedToScreening = prevStage === "Applied" && updated.stage === "Screening";
+    const movedToScreening = prevStage !== "Screening" && updated.stage === "Screening";
     const movedAppliedToInterview = prevStage === "Applied" && updated.stage === "Interview";
 
-    if (movedAppliedToScreening) {
+    if (movedToScreening) {
       try {
         const origin = new URL(request.url).origin;
         await createAndSendScreeningTest({

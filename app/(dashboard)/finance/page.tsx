@@ -3,6 +3,19 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetchJson } from "@/lib/apiClient";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+  Legend,
+  ComposedChart,
+} from "recharts";
 
 type Tab = "dashboard" | "partners" | "partner_accounts" | "investments" | "company_account" | "direct_others" | "ledger" | "import_audit";
 type Preset = "full" | "monthly" | "yearly" | "custom";
@@ -144,6 +157,10 @@ export default function FinancePage() {
   const [contributionTargetMinor, setContributionTargetMinor] = useState<number>(100000000);
   const [expandedLedgerGroups, setExpandedLedgerGroups] = useState<string[]>([]);
 
+  const [scenarioActive, setScenarioActive] = useState(false);
+  const [scenarioInvestments, setScenarioInvestments] = useState<string>("");
+  const [scenarioExpenses, setScenarioExpenses] = useState<string>("");
+
   const rangeQuery = useMemo(() => {
     const p = new URLSearchParams();
     p.set("preset", rangePreset);
@@ -176,10 +193,17 @@ export default function FinancePage() {
     const avgMonthlyOutflowMinor = monthExpenses.length
       ? Math.round(monthExpenses.reduce((sum: number, v: number) => sum + v, 0) / monthExpenses.length)
       : 0;
-    const companyBalanceMinor = Number(dashboard?.companyAccountBalanceMinor ?? 0);
+    
+    let companyBalanceMinor = Number(dashboard?.companyAccountBalanceMinor ?? 0);
+    
+    if (scenarioActive) {
+      companyBalanceMinor += (Number(scenarioInvestments) || 0) * 100;
+      companyBalanceMinor -= (Number(scenarioExpenses) || 0) * 100;
+    }
+
     const runwayMonths = avgMonthlyOutflowMinor > 0 ? companyBalanceMinor / avgMonthlyOutflowMinor : 0;
-    return { avgMonthlyOutflowMinor, runwayMonths };
-  }, [analytics, dashboard]);
+    return { avgMonthlyOutflowMinor, runwayMonths, companyBalanceMinor };
+  }, [analytics, dashboard, scenarioActive, scenarioInvestments, scenarioExpenses]);
   const sortedGroupedLedger = useMemo(
     () =>
       [...groupedLedger].sort((a, b) => {
@@ -198,6 +222,22 @@ export default function FinancePage() {
       }),
     [analytics?.groupedRecentLedger]
   );
+  const categoryAverages = useMemo(() => {
+    const map = new Map<string, number>();
+    const mix = analytics?.categorySpendMix ?? [];
+    for (const c of mix) {
+      if (c.amountMinor > 0) map.set(c.category, c.amountMinor / Math.max(1, (analytics?.monthlyInvestedVsExpenses?.length || 1)));
+    }
+    return map;
+  }, [analytics]);
+
+  const isAnomaly = (entry: any) => {
+    if (entry.displayDirection !== "debit") return false;
+    const avg = categoryAverages.get(entry.category);
+    if (!avg || avg < 500000) return false; // Ignore small categories (under 5k INR)
+    return entry.totalMinor > avg * 2.5; // Spikes > 2.5x the average monthly spend in that category
+  };
+
   const isAdmin = String(me?.user?.role || "user").toLowerCase() === "admin";
 
   useEffect(() => {
@@ -384,6 +424,30 @@ export default function FinancePage() {
     setMessage("Finance backup exported.");
   }
 
+  function exportAccounting() {
+    if (!ledger.length) return setMessage("No ledger data to export.");
+    const header = "Date,Account,Description,Category,Debit,Credit\n";
+    const rows = ledger.map((tx: any) => {
+      const date = toDisplayDate(tx.date);
+      const account = tx.kind === "company_account_entry" ? "Company Account" : (tx.kind === "direct_others_account_entry" ? "Direct/Others" : "Partner Investment");
+      const desc = `"${(tx.description || "").replace(/"/g, '""')}"`;
+      const cat = `"${(tx.category || "").replace(/"/g, '""')}"`;
+      const amt = Number(tx.totalMinor) / 100;
+      const isDebit = tx.accountEntryType === "debit" || (tx.kind === "partner_investment" && !tx.accountEntryType);
+      const debit = isDebit ? amt : "";
+      const credit = !isDebit ? amt : "";
+      return `${date},"${account}",${desc},${cat},${debit},${credit}`;
+    }).join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `finance-accounting-export-${todayDdMmYyyy()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setMessage("Accounting CSV exported successfully (QuickBooks/Tally format).");
+  }
+
   async function handleRestoreFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -563,15 +627,52 @@ export default function FinancePage() {
           <section className="rounded-2xl border border-[var(--ats-primary)] bg-[var(--ats-primary)]/10 p-5 shadow-sm">
             <h3 className="font-display text-2xl font-semibold text-[var(--ats-text)]">Cash Position Strip</h3>
             <div className="mt-3 flex flex-wrap gap-2">
-              <span className="rounded-full bg-[var(--ats-primary)]/20 px-3 py-1 text-sm font-semibold text-[var(--ats-primary)]">
-                Runway: {Number.isFinite(cashStrip.runwayMonths) ? cashStrip.runwayMonths.toFixed(1) : "0.0"} months
+              <span className={`rounded-full px-3 py-1 text-sm font-semibold ${scenarioActive ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "bg-[var(--ats-primary)]/20 text-[var(--ats-primary)]"}`}>
+                Runway: {Number.isFinite(cashStrip.runwayMonths) ? cashStrip.runwayMonths.toFixed(1) : "0.0"} months {scenarioActive ? "(Simulated)" : ""}
               </span>
               <span className="rounded-full bg-[var(--ats-primary)]/20 px-3 py-1 text-sm font-semibold text-[var(--ats-primary)]">
                 Avg Monthly Outflow: {inr(cashStrip.avgMonthlyOutflowMinor)}
               </span>
-              <span className="rounded-full bg-[var(--ats-primary)]/20 px-3 py-1 text-sm font-semibold text-[var(--ats-primary)]">
-                Partner Invested (supporting): {inr(Number(dashboard?.totalPartnerInvestedMinor ?? 0))}
+              <span className={`rounded-full px-3 py-1 text-sm font-semibold ${scenarioActive ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "bg-[var(--ats-primary)]/20 text-[var(--ats-primary)]"}`}>
+                Est. Balance: {inr(cashStrip.companyBalanceMinor)} {scenarioActive ? "(Simulated)" : ""}
               </span>
+            </div>
+            
+            <div className="mt-4 border-t border-[var(--ats-primary)]/20 pt-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-[var(--ats-text)]">What-If Scenario Modeling</h4>
+                <button
+                  type="button"
+                  onClick={() => { setScenarioActive(!scenarioActive); setScenarioInvestments(""); setScenarioExpenses(""); }}
+                  className={`rounded-lg px-3 py-1 text-xs font-semibold ${scenarioActive ? "bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-400" : "bg-[var(--ats-bg-panel)] text-[var(--ats-text)] border border-[var(--ats-border)] hover:bg-[var(--ats-bg-subtle)]"}`}
+                >
+                  {scenarioActive ? "Reset / Disable" : "Enable Scratchpad"}
+                </button>
+              </div>
+              {scenarioActive && (
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--ats-text-muted)]">Hypothetical Investment (₹)</label>
+                    <input
+                      type="number"
+                      className="mt-1 w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-100"
+                      placeholder="e.g. 500000"
+                      value={scenarioInvestments}
+                      onChange={(e) => setScenarioInvestments(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--ats-text-muted)]">Upcoming Large Expense (₹)</label>
+                    <input
+                      type="number"
+                      className="mt-1 w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-100"
+                      placeholder="e.g. 200000"
+                      value={scenarioExpenses}
+                      onChange={(e) => setScenarioExpenses(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -713,15 +814,19 @@ export default function FinancePage() {
             <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
               <h3 className="font-display text-xl font-semibold text-[var(--ats-text)]">Recent ledger</h3>
               <div className="mt-4 space-y-2">
-                {sortedGroupedRecentLedger.map((r: any) => (
-                  <button key={`${r.groupId}-${r.date}`} type="button" onClick={() => { setSearch(r.description); setTab("ledger"); }} className="flex w-full items-center justify-between rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]">
-                    <span className="truncate pr-4 font-medium text-[var(--ats-text)]">
-                      <span className="text-[var(--ats-text-muted)]">{toDisplayDate(r.date)}</span> <span className="mx-1 text-[var(--ats-border-strong)]">|</span> {r.description}
-                      {r.displayKindLabel ? <span className="ml-2 rounded border border-[var(--ats-border)] bg-[var(--ats-bg-subtle)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-[var(--ats-text-muted)]">{r.displayKindLabel}</span> : ""}
-                    </span>
-                    <span className="shrink-0 font-semibold text-[var(--ats-text)]">{inr(r.totalMinor)}</span>
-                  </button>
-                ))}
+                {sortedGroupedRecentLedger.map((r: any) => {
+                  const anomaly = isAnomaly(r);
+                  return (
+                    <button key={`${r.groupId}-${r.date}`} type="button" onClick={() => { setSearch(r.description); setTab("ledger"); }} className={`flex w-full items-center justify-between rounded-lg border ${anomaly ? "border-rose-300 bg-rose-50 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10" : "border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] hover:bg-[var(--ats-bg-subtle)]"} px-3 py-2 text-left text-sm transition-colors hover:text-[var(--ats-primary)]`}>
+                      <span className="truncate pr-4 font-medium text-[var(--ats-text)]">
+                        <span className="text-[var(--ats-text-muted)]">{toDisplayDate(r.date)}</span> <span className="mx-1 text-[var(--ats-border-strong)]">|</span> {r.description}
+                        {r.displayKindLabel ? <span className={`ml-2 rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${anomaly ? "border-rose-400 bg-rose-100 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/20 dark:text-rose-300" : "border-[var(--ats-border)] bg-[var(--ats-bg-subtle)] text-[var(--ats-text-muted)]"}`}>{r.displayKindLabel}</span> : ""}
+                        {anomaly && <span className="ml-2 inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">Unusual Spike</span>}
+                      </span>
+                      <span className={`shrink-0 font-semibold ${anomaly ? "text-rose-700 dark:text-rose-400" : "text-[var(--ats-text)]"}`}>{inr(r.totalMinor)}</span>
+                    </button>
+                  );
+                })}
               </div>
             </article>
           </section>
@@ -988,6 +1093,7 @@ export default function FinancePage() {
             <h3 className="font-display text-xl font-semibold text-[var(--ats-text)]">Backup & Restore</h3>
             <div className="mt-4 flex flex-wrap gap-3">
               <button className="rounded-xl bg-[var(--ats-primary)] px-4 py-2 text-sm font-semibold text-[var(--ats-primary-foreground)] shadow-sm transition-opacity hover:opacity-90" type="button" onClick={exportBackup}>Export Finance Backup</button>
+              <button className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 dark:bg-teal-500" type="button" onClick={exportAccounting}>Export Accounting CSV</button>
               <button className="rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-4 py-2 text-sm font-semibold text-[var(--ats-text)] shadow-sm transition-colors hover:bg-[var(--ats-bg-subtle)]" type="button" onClick={triggerBackupImportPicker}>
                 Import JSON Backup
               </button>

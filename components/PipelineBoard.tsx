@@ -18,6 +18,7 @@ import { ATS_TIMEZONE, ATS_TIMEZONE_LABEL, kolkataLocalToUtcIso } from "@/lib/ti
 import { DatePicker, TimePicker } from "@/components/ui/DateTimeFields";
 import { toToastTone, toastMsForTone } from "@/lib/operationFeedback";
 import ViewportPortal from "@/components/ui/ViewportPortal";
+import SearchableSelect from "@/components/ui/SearchableSelect";
 
 const STAGES = ["Applied", "Screening", "Screening Failed", "Interview", "Selected", "Rejected"] as const;
 type Stage = (typeof STAGES)[number];
@@ -1755,18 +1756,19 @@ export default function PipelineBoard({
               {changeRecruiterApp.candidate_full_name} — {changeRecruiterApp.job_title}
             </p>
             <label className="mt-4 block text-sm font-medium text-slate-700">Accountable recruiter</label>
-            <select
-              className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            <SearchableSelect
+              className="mt-2 w-full"
               value={changeRecruiterUserId}
-              onChange={(e) => setChangeRecruiterUserId(e.target.value)}
-            >
-              <option value="">Unassigned</option>
-              {recruiters.map((r) => (
-                <option key={r.id} value={String(r.id)}>
-                  {r.full_name}
-                </option>
-              ))}
-            </select>
+              onChange={setChangeRecruiterUserId}
+              placeholder="Select recruiter"
+              options={[
+                { value: "", label: "Unassigned" },
+                ...recruiters.map((r) => ({
+                  value: String(r.id),
+                  label: r.full_name,
+                })),
+              ]}
+            />
             <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"
@@ -1891,18 +1893,17 @@ export default function PipelineBoard({
                   <TimePicker value={scheduleTime} onChange={setScheduleTime} disabled={busyId === scheduleApp.id} />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm text-gray-600">Duration</label>
-                  <select
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  <SearchableSelect
+                    className="w-full mt-2"
                     value={String(scheduleDurationMinutes)}
-                    onChange={(e) => setScheduleDurationMinutes(Number(e.target.value) as 15 | 30 | 45 | 60)}
-                    disabled={busyId === scheduleApp.id}
-                  >
-                    <option value="15">15 minutes</option>
-                    <option value="30">30 minutes</option>
-                    <option value="45">45 minutes</option>
-                    <option value="60">1 hour</option>
-                  </select>
+                    onChange={(val) => setScheduleDurationMinutes(Number(val) as 15 | 30 | 45 | 60)}
+                    options={[
+                      { value: "15", label: "15 minutes" },
+                      { value: "30", label: "30 minutes" },
+                      { value: "45", label: "45 minutes" },
+                      { value: "60", label: "1 hour" },
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -1918,18 +1919,17 @@ export default function PipelineBoard({
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm text-gray-600">Interview mode</label>
-                  <select
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  <SearchableSelect
+                    className="w-full mt-2"
                     value={scheduleMeetingMode}
-                    onChange={(e) => setScheduleMeetingMode(e.target.value)}
-                    disabled={busyId === scheduleApp.id}
-                  >
-                    <option value="Google Meet">Google Meet</option>
-                    <option value="Phone">Phone</option>
-                    <option value="On-site">On-site</option>
-                    <option value="Virtual">Virtual</option>
-                  </select>
+                    onChange={setScheduleMeetingMode}
+                    options={[
+                      { value: "Google Meet", label: "Google Meet" },
+                      { value: "Phone", label: "Phone" },
+                      { value: "On-site", label: "On-site" },
+                      { value: "Virtual", label: "Virtual" },
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -2001,26 +2001,22 @@ export default function PipelineBoard({
                         }
                       />
                       <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
-                        <span className="shrink-0">Score (1–5)</span>
-                        <select
-                          className="rounded border border-slate-200 bg-white px-2 py-0.5 dark:bg-slate-900"
+                        <SearchableSelect
+                          className="mt-1 min-w-[120px]"
                           value={item.rating != null ? String(item.rating) : ""}
-                          onChange={(e) => {
-                            const v = e.target.value;
+                          onChange={(val) => {
                             setChecklist((prev) =>
                               prev.map((x, i) =>
-                                i === idx ? { ...x, rating: v === "" ? null : Number(v) } : x
+                                i === idx ? { ...x, rating: val === "" ? null : Number(val) } : x
                               )
                             );
                           }}
-                        >
-                          <option value="">—</option>
-                          {[1, 2, 3, 4, 5].map((n) => (
-                            <option key={n} value={n}>
-                              {n}
-                            </option>
-                          ))}
-                        </select>
+                          placeholder="—"
+                          options={[
+                            { value: "", label: "—" },
+                            ...[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
+                          ]}
+                        />
                       </div>
                     </div>
                   ))}
@@ -2181,18 +2177,17 @@ export default function PipelineBoard({
                   <TimePicker value={rescheduleTime} onChange={setRescheduleTime} disabled={busyId === rescheduleApp.id} />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm text-gray-600">Duration</label>
-                  <select
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  <SearchableSelect
+                    className="w-full mt-2"
                     value={String(rescheduleDurationMinutes)}
-                    onChange={(e) => setRescheduleDurationMinutes(Number(e.target.value) as 15 | 30 | 45 | 60)}
-                    disabled={busyId === rescheduleApp.id}
-                  >
-                    <option value="15">15 minutes</option>
-                    <option value="30">30 minutes</option>
-                    <option value="45">45 minutes</option>
-                    <option value="60">1 hour</option>
-                  </select>
+                    onChange={(val) => setRescheduleDurationMinutes(Number(val) as 15 | 30 | 45 | 60)}
+                    options={[
+                      { value: "15", label: "15 minutes" },
+                      { value: "30", label: "30 minutes" },
+                      { value: "45", label: "45 minutes" },
+                      { value: "60", label: "1 hour" },
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -2208,18 +2203,17 @@ export default function PipelineBoard({
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm text-gray-600">Interview mode</label>
-                  <select
-                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  <SearchableSelect
+                    className="w-full mt-2"
                     value={rescheduleMeetingMode}
-                    onChange={(e) => setRescheduleMeetingMode(e.target.value)}
-                    disabled={busyId === rescheduleApp.id}
-                  >
-                    <option value="Google Meet">Google Meet</option>
-                    <option value="Phone">Phone</option>
-                    <option value="On-site">On-site</option>
-                    <option value="Virtual">Virtual</option>
-                  </select>
+                    onChange={setRescheduleMeetingMode}
+                    options={[
+                      { value: "Google Meet", label: "Google Meet" },
+                      { value: "Phone", label: "Phone" },
+                      { value: "On-site", label: "On-site" },
+                      { value: "Virtual", label: "Virtual" },
+                    ]}
+                  />
                 </div>
               </div>
 
