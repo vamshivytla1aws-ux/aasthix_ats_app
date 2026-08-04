@@ -26,7 +26,26 @@ export default function AiInterviewList(){
     {error&&<div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
     <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
       <table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Job</th><th className="px-4 py-3">Interview</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Score</th><th className="px-4 py-3">Integrity</th><th className="px-4 py-3">Action</th></tr></thead>
-      <tbody className="divide-y divide-slate-100">{loading?<tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">Loading AI interviews...</td></tr>:rows.length===0?<tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">No AI interviews created yet.</td></tr>:rows.map(row=><tr key={row.id} className="hover:bg-slate-50/70"><td className="px-4 py-3"><div className="font-semibold text-slate-900">{row.candidate_name}</div><div className="text-xs text-slate-500">{row.candidate_email}</div></td><td className="px-4 py-3 text-slate-700">{row.job_title}</td><td className="px-4 py-3"><div className="font-medium text-slate-800">{row.title}</div><div className="text-xs text-slate-500">{row.question_count} questions · {row.duration_minutes} min</div></td><td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${badge(row.status)}`}>{row.status.replaceAll("_"," ")}</span></td><td className="px-4 py-3 font-semibold text-slate-900">{row.overall_score==null?"—":`${Math.round(Number(row.overall_score))}%`}</td><td className="px-4 py-3 text-xs font-semibold text-slate-600">{row.integrity_risk||"—"}</td><td className="px-4 py-3"><div className="flex items-center gap-3"><Link href={`/ai-interviews/${row.id}`} className="font-semibold text-blue-700 hover:text-blue-900">Open</Link>{row.status==="COMPLETED"&&<Link href={`/ai-interviews/${row.id}/report`} className="font-semibold text-emerald-700">Report</Link>}{canDelete&&<button onClick={()=>void remove(row)} aria-label={`Delete interview for ${row.candidate_name}`} className="text-rose-600 hover:text-rose-800"><Trash2 className="h-4 w-4"/></button>}</div></td></tr>)}</tbody></table>
+          <tbody className="divide-y divide-[var(--ats-border)]">
+            {loading ? (
+              <tr><td colSpan={7} className="px-4 py-12 text-center text-[var(--ats-text-muted)]">Loading AI interviews...</td></tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="p-8">
+                  <div className="mx-auto flex max-w-sm flex-col items-center justify-center text-center rounded-2xl border border-dashed border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-8">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-500 mb-4 dark:bg-slate-800">
+                      <BrainCircuit className="h-6 w-6" />
+                    </div>
+                    <h3 className="font-display font-semibold text-[var(--ats-text)] text-lg">No AI interviews yet</h3>
+                    <p className="mt-2 text-sm text-[var(--ats-text-muted)]">
+                      Create an AI interview to autonomously screen and evaluate your candidates.
+                    </p>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => (
+                <tr key={row.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50"><td className="px-4 py-3"><div className="font-semibold text-slate-900">{row.candidate_name}</div><div className="text-xs text-slate-500">{row.candidate_email}</div></td><td className="px-4 py-3 text-slate-700">{row.job_title}</td><td className="px-4 py-3"><div className="font-medium text-slate-800">{row.title}</div><div className="text-xs text-slate-500">{row.question_count} questions · {row.duration_minutes} min</div></td><td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${badge(row.status)}`}>{row.status.replaceAll("_"," ")}</span></td><td className="px-4 py-3 font-semibold text-slate-900">{row.overall_score==null?"—":`${Math.round(Number(row.overall_score))}%`}</td><td className="px-4 py-3 text-xs font-semibold text-slate-600">{row.integrity_risk||"—"}</td><td className="px-4 py-3"><div className="flex items-center gap-3"><Link href={`/ai-interviews/${row.id}`} className="font-semibold text-blue-700 hover:text-blue-900">Open</Link>{row.status==="COMPLETED"&&<Link href={`/ai-interviews/${row.id}/report`} className="font-semibold text-emerald-700">Report</Link>}{canDelete&&<button onClick={()=>void remove(row)} aria-label={`Delete interview for ${row.candidate_name}`} className="text-rose-600 hover:text-rose-800"><Trash2 className="h-4 w-4"/></button>}</div></td></tr>))}</tbody></table>
     </div>
   </div>;
 }
