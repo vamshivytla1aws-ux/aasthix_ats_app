@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     
     const result = await client.query(
       `UPDATE ai_interviews 
-       SET status = 'CANCELLED', cancellation_reason = $1, token_revoked_at = NOW(), updated_at = NOW()
+       SET status = 'CANCELLED', evaluation_status = 'CANCELLED', cancellation_reason = $1, token_revoked_at = NOW(), updated_at = NOW()
        WHERE id = $2 AND status IN ('DRAFT', 'SCHEDULED', 'READY', 'IN_PROGRESS')
        RETURNING id, status`,
       [reason, interview.id]
