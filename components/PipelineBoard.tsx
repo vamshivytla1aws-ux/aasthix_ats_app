@@ -1743,92 +1743,96 @@ export default function PipelineBoard({
       />
 
       {changeRecruiterApp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close"
-            onClick={() => setChangeRecruiterApp(null)}
-          />
-          <div className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-slate-900">Change recruiter (owner)</h3>
-            <p className="mt-1 text-sm text-slate-600">
-              {changeRecruiterApp.candidate_full_name} — {changeRecruiterApp.job_title}
-            </p>
-            <label className="mt-4 block text-sm font-medium text-slate-700">Accountable recruiter</label>
-            <SearchableSelect
-              className="mt-2 w-full"
-              value={changeRecruiterUserId}
-              onChange={setChangeRecruiterUserId}
-              placeholder="Select recruiter"
-              options={[
-                { value: "", label: "Unassigned" },
-                ...recruiters.map((r) => ({
-                  value: String(r.id),
-                  label: r.full_name,
-                })),
-              ]}
+        <ViewportPortal onClose={() => setChangeRecruiterApp(null)} busy={busyId === changeRecruiterApp.id}>
+          <div className="fixed inset-0 z-[var(--ats-layer-dialog,50)] flex items-center justify-center p-4">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/40"
+              aria-label="Close"
+              data-viewport-close
             />
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                onClick={() => setChangeRecruiterApp(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-                disabled={busyId === changeRecruiterApp.id}
-                onClick={() =>
-                  void patchAssignedRecruiter(
-                    changeRecruiterApp,
-                    changeRecruiterUserId === "" ? null : Number(changeRecruiterUserId)
-                  )
-                }
-              >
-                Save
-              </button>
+            <div className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+              <h3 className="text-lg font-semibold text-slate-900">Change recruiter (owner)</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                {changeRecruiterApp.candidate_full_name} — {changeRecruiterApp.job_title}
+              </p>
+              <label className="mt-4 block text-sm font-medium text-slate-700">Accountable recruiter</label>
+              <SearchableSelect
+                className="mt-2 w-full"
+                value={changeRecruiterUserId}
+                onChange={setChangeRecruiterUserId}
+                placeholder="Select recruiter"
+                options={[
+                  { value: "", label: "Unassigned" },
+                  ...recruiters.map((r) => ({
+                    value: String(r.id),
+                    label: r.full_name,
+                  })),
+                ]}
+              />
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  onClick={() => setChangeRecruiterApp(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  disabled={busyId === changeRecruiterApp.id}
+                  onClick={() =>
+                    void patchAssignedRecruiter(
+                      changeRecruiterApp,
+                      changeRecruiterUserId === "" ? null : Number(changeRecruiterUserId)
+                    )
+                  }
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ViewportPortal>
       )}
 
       {removeConfirmApp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close"
-            onClick={() => setRemoveConfirmApp(null)}
-          />
-          <div className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-slate-900">Remove from pipeline?</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              This removes the application for{" "}
-              <strong>{removeConfirmApp.candidate_full_name}</strong> on{" "}
-              <strong>{removeConfirmApp.job_title}</strong>. The candidate profile is not deleted.
-            </p>
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                onClick={() => setRemoveConfirmApp(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
-                disabled={busyId === removeConfirmApp.id}
-                onClick={() => void confirmRemoveFromPipeline(removeConfirmApp)}
-              >
-                Remove
-              </button>
+        <ViewportPortal onClose={() => setRemoveConfirmApp(null)} busy={busyId === removeConfirmApp.id}>
+          <div className="fixed inset-0 z-[var(--ats-layer-dialog,50)] flex items-center justify-center p-4">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/40"
+              aria-label="Close"
+              data-viewport-close
+            />
+            <div className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+              <h3 className="text-lg font-semibold text-slate-900">Remove from pipeline?</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                This removes the application for{" "}
+                <strong>{removeConfirmApp.candidate_full_name}</strong> on{" "}
+                <strong>{removeConfirmApp.job_title}</strong>. The candidate profile is not deleted.
+              </p>
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  onClick={() => setRemoveConfirmApp(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                  disabled={busyId === removeConfirmApp.id}
+                  onClick={() => void confirmRemoveFromPipeline(removeConfirmApp)}
+                >
+                  Remove
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ViewportPortal>
       )}
 
       {success && (
