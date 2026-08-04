@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetchJson } from "@/lib/apiClient";
+import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 
 type Tab = "dashboard" | "partners" | "partner_accounts" | "investments" | "company_account" | "direct_others" | "ledger" | "import_audit";
 type Preset = "full" | "monthly" | "yearly" | "custom";
@@ -449,97 +450,151 @@ export default function FinancePage() {
     );
   }
 
+  const TABS: [Tab, string][] = [
+    ["dashboard", "Dashboard"],
+    ["partners", "Partners"],
+    ["partner_accounts", "Partner Accounts"],
+    ["investments", "Partner Investments"],
+    ["company_account", "Company Account"],
+    ["direct_others", "Direct/Others"],
+    ["ledger", "Ledger"],
+    ["import_audit", "Import & Audit"],
+  ];
+
   return (
-    <div className="space-y-4">
-      <section className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-        <h1 className="text-2xl font-semibold text-[var(--ats-text)]">Finance</h1>
-        <p className="text-sm text-[var(--ats-text-muted)]">Native ATS enterprise finance workspace (Postgres-backed).</p>
-        {message ? <p className="mt-2 text-sm text-emerald-600">{message}</p> : null}
-      </section>
+    <ModulePageFrame
+      title="Finance"
+      subtitle="Native ATS enterprise finance workspace (Postgres-backed)."
+      toolbar={
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap items-center gap-1">
+            {TABS.map(([key, label]) => (
+              <button
+                key={key}
+                className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                  tab === key
+                    ? "bg-[var(--ats-primary)] text-[var(--ats-primary-foreground)]"
+                    : "text-[var(--ats-text-muted)] hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-text)]"
+                }`}
+                onClick={() => setTab(key)}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-      <section className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-3">
-        <div className="flex flex-wrap gap-2">
-          {[
-            ["dashboard", "Dashboard"],
-            ["partners", "Partners"],
-            ["partner_accounts", "Partner Accounts"],
-            ["investments", "Partner Investments"],
-            ["company_account", "Company Account"],
-            ["direct_others", "Direct/Others Account"],
-            ["ledger", "Ledger"],
-            ["import_audit", "Import & Audit"],
-          ].map(([key, label]) => (
-            <button key={key} className={`rounded-xl px-3 py-2 text-sm font-semibold ${tab === key ? "bg-indigo-600 text-white" : "border border-[var(--ats-border)]"}`} onClick={() => setTab(key as Tab)} type="button">
-              {label}
-            </button>
-          ))}
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ats-text-muted)]">Range</span>
+            <select
+              className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-[var(--ats-primary)]"
+              value={rangePreset}
+              onChange={(e) => setRangePreset(e.target.value as Preset)}
+            >
+              <option value="full">Full</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+              <option value="custom">Custom</option>
+            </select>
+            {rangePreset === "monthly" && (
+              <input
+                className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-[var(--ats-primary)]"
+                value={rangeMonth}
+                onChange={(e) => setRangeMonth(e.target.value)}
+                placeholder="YYYY-MM"
+              />
+            )}
+            {rangePreset === "yearly" && (
+              <input
+                className="w-24 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-[var(--ats-primary)]"
+                value={rangeYear}
+                onChange={(e) => setRangeYear(e.target.value)}
+                placeholder="YYYY"
+              />
+            )}
+            {rangePreset === "custom" && (
+              <>
+                <input
+                  className="w-32 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-[var(--ats-primary)]"
+                  value={rangeFrom}
+                  onChange={(e) => setRangeFrom(e.target.value)}
+                  placeholder="From dd-mm"
+                />
+                <input
+                  className="w-32 rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-[var(--ats-primary)]"
+                  value={rangeTo}
+                  onChange={(e) => setRangeTo(e.target.value)}
+                  placeholder="To dd-mm"
+                />
+              </>
+            )}
+          </div>
         </div>
-      </section>
-
-      <section className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[var(--ats-text-muted)]">Range</span>
-          <select className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={rangePreset} onChange={(e) => setRangePreset(e.target.value as Preset)}>
-            <option value="full">Full</option>
-            <option value="monthly">Monthly</option>
-            <option value="yearly">Yearly</option>
-            <option value="custom">Custom</option>
-          </select>
-          {rangePreset === "monthly" ? <input className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={rangeMonth} onChange={(e) => setRangeMonth(e.target.value)} placeholder="YYYY-MM" /> : null}
-          {rangePreset === "yearly" ? <input className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={rangeYear} onChange={(e) => setRangeYear(e.target.value)} placeholder="YYYY" /> : null}
-          {rangePreset === "custom" ? (
-            <>
-              <input className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} placeholder="From dd-mm-yyyy" />
-              <input className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} placeholder="To dd-mm-yyyy" />
-            </>
-          ) : null}
+      }
+    >
+      {message && (
+        <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-50/50 p-3 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+          {message}
         </div>
-      </section>
+      )}
 
       {tab === "dashboard" && (
         <div className="space-y-4">
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">Account balance</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.companyAccountBalanceMinor ?? 0)}</p><p className="mt-1 text-xs text-[var(--ats-text-muted)]">As of: {dashboard?.accountBalanceAsOf ? toDisplayDate(dashboard.accountBalanceAsOf) : "-"}</p></article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">This month inflow</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.thisMonthInflowMinor ?? 0)}</p></article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">This month outflow</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.thisMonthOutflowMinor ?? 0)}</p></article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4"><p className="text-xs text-[var(--ats-text-muted)]">Total partners invested</p><p className="mt-2 text-xl font-semibold">{inr(dashboard?.totalPartnerInvestedMinor ?? 0)}</p></article>
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--ats-text-muted)]">Account balance</p>
+              <p className="mt-2 font-display text-3xl font-semibold text-[var(--ats-text)]">{inr(dashboard?.companyAccountBalanceMinor ?? 0)}</p>
+              <p className="mt-1 text-xs font-medium text-[var(--ats-text-muted)]">As of: {dashboard?.accountBalanceAsOf ? toDisplayDate(dashboard.accountBalanceAsOf) : "-"}</p>
+            </article>
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--ats-text-muted)]">This month inflow</p>
+              <p className="mt-2 font-display text-3xl font-semibold text-[var(--ats-text)]">{inr(dashboard?.thisMonthInflowMinor ?? 0)}</p>
+            </article>
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--ats-text-muted)]">This month outflow</p>
+              <p className="mt-2 font-display text-3xl font-semibold text-[var(--ats-text)]">{inr(dashboard?.thisMonthOutflowMinor ?? 0)}</p>
+            </article>
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--ats-text-muted)]">Total partners invested</p>
+              <p className="mt-2 font-display text-3xl font-semibold text-[var(--ats-text)]">{inr(dashboard?.totalPartnerInvestedMinor ?? 0)}</p>
+            </article>
           </section>
 
-          <section className="rounded-2xl border border-cyan-500/30 bg-gradient-to-r from-slate-950 to-slate-900 p-4 text-slate-100 shadow-sm">
-            <h3 className="text-2xl font-semibold">Cash Position Strip</h3>
+          <section className="rounded-2xl border border-[var(--ats-primary)] bg-[var(--ats-primary)]/10 p-5 shadow-sm">
+            <h3 className="font-display text-2xl font-semibold text-[var(--ats-text)]">Cash Position Strip</h3>
             <div className="mt-3 flex flex-wrap gap-2">
-              <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-semibold text-emerald-300">
+              <span className="rounded-full bg-[var(--ats-primary)]/20 px-3 py-1 text-sm font-semibold text-[var(--ats-primary)]">
                 Runway: {Number.isFinite(cashStrip.runwayMonths) ? cashStrip.runwayMonths.toFixed(1) : "0.0"} months
               </span>
-              <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-semibold text-emerald-300">
+              <span className="rounded-full bg-[var(--ats-primary)]/20 px-3 py-1 text-sm font-semibold text-[var(--ats-primary)]">
                 Avg Monthly Outflow: {inr(cashStrip.avgMonthlyOutflowMinor)}
               </span>
-              <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-semibold text-emerald-300">
+              <span className="rounded-full bg-[var(--ats-primary)]/20 px-3 py-1 text-sm font-semibold text-[var(--ats-primary)]">
                 Partner Invested (supporting): {inr(Number(dashboard?.totalPartnerInvestedMinor ?? 0))}
               </span>
             </div>
           </section>
 
-          <section className="grid gap-3 lg:grid-cols-3">
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-3xl font-semibold leading-tight">Monthly Invested vs Company Expenses</h3>
-              <div className="mt-2 space-y-1">
+          <section className="grid gap-4 lg:grid-cols-3">
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+              <h3 className="font-display text-xl font-semibold text-[var(--ats-text)] leading-tight">Monthly Invested vs Company Expenses</h3>
+              <div className="mt-4 space-y-2">
                 {(analytics?.monthlyInvestedVsExpenses ?? []).map((r: any) => (
-                  <button key={r.month} type="button" onClick={() => applyLedgerDrill("partner_investment")} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
+                  <button key={r.month} type="button" onClick={() => applyLedgerDrill("partner_investment")} className="flex w-full items-center justify-between rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]">
                     <span>{String(r.month).slice(5, 7)}</span>
-                    <div className="mx-3 h-3 flex-1 overflow-hidden rounded-full bg-slate-900/60">
-                      <div className="h-full rounded-full bg-sky-400" style={{ width: `${Math.max((Math.max(Number(r.investedMinor ?? 0), Number(r.expensesMinor ?? 0)) / maxMonthlyExpenseMinor) * 100, 4)}%` }} />
+                    <div className="mx-3 h-2.5 flex-1 overflow-hidden rounded-full bg-[var(--ats-bg-subtle)]">
+                      <div className="h-full rounded-full bg-[var(--ats-primary)]" style={{ width: `${Math.max((Math.max(Number(r.investedMinor ?? 0), Number(r.expensesMinor ?? 0)) / maxMonthlyExpenseMinor) * 100, 4)}%` }} />
                     </div>
-                    <span className="tabular-nums">{inr(r.investedMinor)} / {inr(r.expensesMinor)}</span>
+                    <span className="tabular-nums font-semibold">{inr(r.investedMinor)} <span className="font-normal text-[var(--ats-text-muted)]">/</span> {inr(r.expensesMinor)}</span>
                   </button>
                 ))}
               </div>
             </article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-3xl font-semibold leading-tight">Partner Contribution Share</h3>
-              <div className="mt-3">
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+              <h3 className="font-display text-xl font-semibold text-[var(--ats-text)] leading-tight">Partner Contribution Share</h3>
+              <div className="mt-4">
                 <input
-                  className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-subtle)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]"
                   value={(contributionTargetMinor / 100).toString()}
                   onChange={(e) => {
                     const amount = Number(e.target.value);
@@ -547,55 +602,61 @@ export default function FinancePage() {
                   }}
                   placeholder="Contribution target"
                 />
-                <p className="mt-2 text-sm text-[var(--ats-text-muted)]">100% is reached at {inr(contributionTargetMinor)}</p>
+                <p className="mt-2 text-xs font-medium text-[var(--ats-text-muted)]">100% is reached at <span className="font-semibold text-[var(--ats-text)]">{inr(contributionTargetMinor)}</span></p>
               </div>
-              <div className="mt-2 space-y-1">
+              <div className="mt-4 space-y-2">
                 {(analytics?.partnerContributionShare ?? []).map((r: any) => (
-                  <button key={r.partnerId} type="button" onClick={() => { setSelectedPartnerId(r.partnerId); setTab("partner_accounts"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
+                  <button key={r.partnerId} type="button" onClick={() => { setSelectedPartnerId(r.partnerId); setTab("partner_accounts"); }} className="flex w-full items-center justify-between rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]">
                     <span>{r.partnerName}</span>
-                    <span>{Math.min(999, (Number(r.investedMinor ?? 0) / Math.max(contributionTargetMinor, 1)) * 100).toFixed(1)}%</span>
+                    <span className="font-semibold">{Math.min(999, (Number(r.investedMinor ?? 0) / Math.max(contributionTargetMinor, 1)) * 100).toFixed(1)}%</span>
                   </button>
                 ))}
               </div>
             </article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-3xl font-semibold leading-tight">Equalization Gap by Partner</h3>
-              <div className="mt-2 space-y-1">
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+              <h3 className="font-display text-xl font-semibold text-[var(--ats-text)] leading-tight">Equalization Gap by Partner</h3>
+              <div className="mt-4 space-y-2">
                 {(analytics?.equalizationGapByPartner ?? []).map((r: any) => (
-                  <button key={r.partnerId} type="button" onClick={() => { setSelectedPartnerId(r.partnerId); setTab("partner_accounts"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
+                  <button key={r.partnerId} type="button" onClick={() => { setSelectedPartnerId(r.partnerId); setTab("partner_accounts"); }} className="flex w-full items-center justify-between rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]">
                     <span>{r.partnerName}</span>
-                    <div className="mx-3 h-3 flex-1 overflow-hidden rounded-full bg-slate-900/60">
-                      <div className="h-full rounded-full bg-teal-400" style={{ width: `${Math.max((Math.abs(Number(r.deltaMinor ?? 0)) / maxEqualizationMinor) * 100, 4)}%` }} />
+                    <div className="mx-3 h-2.5 flex-1 overflow-hidden rounded-full bg-[var(--ats-bg-subtle)]">
+                      <div className="h-full rounded-full bg-[var(--ats-primary)]" style={{ width: `${Math.max((Math.abs(Number(r.deltaMinor ?? 0)) / maxEqualizationMinor) * 100, 4)}%` }} />
                     </div>
-                    <span>{inr(r.deltaMinor)}</span>
+                    <span className="font-semibold">{inr(r.deltaMinor)}</span>
                   </button>
                 ))}
               </div>
             </article>
           </section>
 
-          <section className="rounded-2xl border border-[var(--ats-border)] bg-slate-950/70 p-4 text-slate-100">
-            <h3 className="text-2xl font-semibold">Equalization board</h3>
-            <p className="mt-2 text-sm text-slate-300">
-              Total partner invested: {inr(Number(dashboard?.totalPartnerInvestedMinor ?? 0))} · Active partners: {(dashboard?.equalization ?? []).length} · Benchmark (highest invested): {inr(Math.max(...(dashboard?.equalization ?? []).map((r: any) => Number(r.investedMinor ?? 0)), 0))}
+          <section className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+            <h3 className="font-display text-2xl font-semibold text-[var(--ats-text)]">Equalization Board</h3>
+            <p className="mt-1 text-sm font-medium text-[var(--ats-text-muted)]">
+              Total partner invested: <span className="font-semibold text-[var(--ats-text)]">{inr(Number(dashboard?.totalPartnerInvestedMinor ?? 0))}</span> · Active partners: <span className="font-semibold text-[var(--ats-text)]">{(dashboard?.equalization ?? []).length}</span> · Benchmark (highest invested): <span className="font-semibold text-[var(--ats-text)]">{inr(Math.max(...(dashboard?.equalization ?? []).map((r: any) => Number(r.investedMinor ?? 0)), 0))}</span>
             </p>
-            <div className="mt-3 overflow-auto rounded-xl border border-slate-700/60">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-900/70 text-left text-slate-300">
+            <div className="mt-4 overflow-x-auto rounded-xl border border-[var(--ats-border)] bg-white shadow-sm dark:bg-[var(--ats-bg-elevated)]">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-[var(--ats-bg-subtle)] text-xs uppercase tracking-wide text-[var(--ats-text-muted)]">
                   <tr>
-                    <th className="px-3 py-2">Partner</th>
-                    <th className="px-3 py-2 text-right">Invested till now</th>
-                    <th className="px-3 py-2 text-right">Delta to equal</th>
-                    <th className="px-3 py-2">Status</th>
+                    <th className="px-4 py-3">Partner</th>
+                    <th className="px-4 py-3 text-right">Invested till now</th>
+                    <th className="px-4 py-3 text-right">Delta to equal</th>
+                    <th className="px-4 py-3">Status</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-[var(--ats-border)]">
                   {(dashboard?.equalization ?? []).map((row: any) => (
-                    <tr key={row.partnerId} className="border-t border-slate-700/60">
-                      <td className="px-3 py-2">{row.partnerName}</td>
-                      <td className="px-3 py-2 text-right">{inr(row.investedMinor)}</td>
-                      <td className="px-3 py-2 text-right">{inr(row.deltaToEqualMinor)}</td>
-                      <td className="px-3 py-2">{Number(row.deltaToEqualMinor) > 0 ? `Owes company ${inr(row.deltaToEqualMinor)}` : "Benchmark matched"}</td>
+                    <tr key={row.partnerId} className="transition-colors hover:bg-[var(--ats-bg-subtle)]">
+                      <td className="px-4 py-3 font-semibold text-[var(--ats-text)]">{row.partnerName}</td>
+                      <td className="px-4 py-3 text-right font-medium text-[var(--ats-text)]">{inr(row.investedMinor)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-[var(--ats-text)]">{inr(row.deltaToEqualMinor)}</td>
+                      <td className="px-4 py-3 font-medium">
+                        {Number(row.deltaToEqualMinor) > 0 ? (
+                          <span className="text-amber-600 dark:text-amber-400">Owes company {inr(row.deltaToEqualMinor)}</span>
+                        ) : (
+                          <span className="text-emerald-600 dark:text-emerald-400">Benchmark matched</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -603,62 +664,62 @@ export default function FinancePage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-[var(--ats-border)] bg-slate-950/70 p-4 text-slate-100">
-            <h3 className="text-2xl font-semibold">Splitwise member totals</h3>
-            <div className="mt-3 overflow-auto rounded-xl border border-slate-700/60">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-900/70 text-left text-slate-300">
+          <section className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+            <h3 className="font-display text-2xl font-semibold text-[var(--ats-text)]">Splitwise Member Totals</h3>
+            <div className="mt-4 overflow-x-auto rounded-xl border border-[var(--ats-border)] bg-white shadow-sm dark:bg-[var(--ats-bg-elevated)]">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-[var(--ats-bg-subtle)] text-xs uppercase tracking-wide text-[var(--ats-text-muted)]">
                   <tr>
-                    <th className="px-3 py-2">Member</th>
-                    <th className="px-3 py-2 text-right">Paid</th>
-                    <th className="px-3 py-2 text-right">Share/Owes</th>
-                    <th className="px-3 py-2 text-right">Balance</th>
+                    <th className="px-4 py-3">Member</th>
+                    <th className="px-4 py-3 text-right">Paid</th>
+                    <th className="px-4 py-3 text-right">Share/Owes</th>
+                    <th className="px-4 py-3 text-right">Balance</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-[var(--ats-border)]">
                   {Object.entries(dashboard?.splitwiseSummary?.memberTotals ?? {}).map(([member, totals]: any) => (
-                    <tr key={member} className="border-t border-slate-700/60">
-                      <td className="px-3 py-2">{member}</td>
-                      <td className="px-3 py-2 text-right">{inr(totals.paidCents)}</td>
-                      <td className="px-3 py-2 text-right">{inr(totals.shareCents)}</td>
-                      <td className="px-3 py-2 text-right">{inr(totals.balanceCents)}</td>
+                    <tr key={member} className="transition-colors hover:bg-[var(--ats-bg-subtle)]">
+                      <td className="px-4 py-3 font-semibold text-[var(--ats-text)]">{member}</td>
+                      <td className="px-4 py-3 text-right font-medium text-[var(--ats-text)]">{inr(totals.paidCents)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-[var(--ats-text)]">{inr(totals.shareCents)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-[var(--ats-text)]">{inr(totals.balanceCents)}</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="border-t border-slate-600/70 bg-slate-900/40 font-semibold">
+                <tfoot className="border-t border-[var(--ats-border)] bg-[var(--ats-bg-subtle)] font-semibold text-[var(--ats-text)]">
                   <tr>
-                    <td className="px-3 py-2">Total</td>
-                    <td className="px-3 py-2 text-right">{inr(Number(dashboard?.splitwiseSummary?.totalPaidCents ?? 0))}</td>
-                    <td className="px-3 py-2 text-right">{inr(Number(dashboard?.splitwiseSummary?.totalShareCents ?? 0))}</td>
-                    <td className="px-3 py-2 text-right">{inr(Number(dashboard?.splitwiseSummary?.totalBalanceCents ?? 0))}</td>
+                    <td className="px-4 py-3">Total</td>
+                    <td className="px-4 py-3 text-right">{inr(Number(dashboard?.splitwiseSummary?.totalPaidCents ?? 0))}</td>
+                    <td className="px-4 py-3 text-right">{inr(Number(dashboard?.splitwiseSummary?.totalShareCents ?? 0))}</td>
+                    <td className="px-4 py-3 text-right">{inr(Number(dashboard?.splitwiseSummary?.totalBalanceCents ?? 0))}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
           </section>
 
-          <section className="grid gap-3 md:grid-cols-2">
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-base font-semibold">Category spend mix</h3>
-              <div className="mt-2 space-y-1">
+          <section className="grid gap-4 md:grid-cols-2">
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+              <h3 className="font-display text-xl font-semibold text-[var(--ats-text)]">Category spend mix</h3>
+              <div className="mt-4 space-y-2">
                 {(analytics?.categorySpendMix ?? []).map((r: any) => (
-                  <button key={r.category} type="button" onClick={() => { setKindFilter("company_expense"); setSearch(r.category); setTab("ledger"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
-                    <span>{r.category}</span>
-                    <span>{inr(r.amountMinor)}</span>
+                  <button key={r.category} type="button" onClick={() => { setKindFilter("company_expense"); setSearch(r.category); setTab("ledger"); }} className="flex w-full items-center justify-between rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]">
+                    <span className="text-[var(--ats-text)]">{r.category}</span>
+                    <span className="font-semibold text-[var(--ats-text)]">{inr(r.amountMinor)}</span>
                   </button>
                 ))}
               </div>
             </article>
-            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-              <h3 className="text-base font-semibold">Recent ledger</h3>
-              <div className="mt-2 space-y-1">
+            <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+              <h3 className="font-display text-xl font-semibold text-[var(--ats-text)]">Recent ledger</h3>
+              <div className="mt-4 space-y-2">
                 {sortedGroupedRecentLedger.map((r: any) => (
-                  <button key={`${r.groupId}-${r.date}`} type="button" onClick={() => { setSearch(r.description); setTab("ledger"); }} className="flex w-full justify-between rounded-lg border border-[var(--ats-border)] px-2 py-1 text-left text-sm">
-                    <span className="truncate pr-2">
-                      {toDisplayDate(r.date)} - {r.description}
-                      {r.displayKindLabel ? ` · ${r.displayKindLabel}` : ""}
+                  <button key={`${r.groupId}-${r.date}`} type="button" onClick={() => { setSearch(r.description); setTab("ledger"); }} className="flex w-full items-center justify-between rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]">
+                    <span className="truncate pr-4 font-medium text-[var(--ats-text)]">
+                      <span className="text-[var(--ats-text-muted)]">{toDisplayDate(r.date)}</span> <span className="mx-1 text-[var(--ats-border-strong)]">|</span> {r.description}
+                      {r.displayKindLabel ? <span className="ml-2 rounded border border-[var(--ats-border)] bg-[var(--ats-bg-subtle)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-[var(--ats-text-muted)]">{r.displayKindLabel}</span> : ""}
                     </span>
-                    <span>{inr(r.totalMinor)}</span>
+                    <span className="shrink-0 font-semibold text-[var(--ats-text)]">{inr(r.totalMinor)}</span>
                   </button>
                 ))}
               </div>
@@ -668,239 +729,336 @@ export default function FinancePage() {
       )}
 
       {tab === "partner_accounts" && (
-        <section className="space-y-3 rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <select className="rounded-lg border border-[var(--ats-border)] bg-transparent px-2 py-1 text-sm" value={selectedPartnerId || ""} onChange={(e) => setSelectedPartnerId(Number(e.target.value))}>
+        <section className="space-y-4 rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3 border-b border-[var(--ats-border)] pb-4">
+            <select className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" value={selectedPartnerId || ""} onChange={(e) => setSelectedPartnerId(Number(e.target.value))}>
               <option value="">Select partner</option>
               {partners.filter((p) => p.isActive).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <button type="button" className="rounded-lg border border-[var(--ats-border)] px-2 py-1 text-sm" onClick={() => openPartnerExport("csv")} disabled={!selectedPartnerId}>Export CSV</button>
-            <button type="button" className="rounded-lg border border-[var(--ats-border)] px-2 py-1 text-sm" onClick={() => openPartnerExport("pdf")} disabled={!selectedPartnerId}>Export PDF</button>
+            <button type="button" className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--ats-bg-subtle)] disabled:opacity-50" onClick={() => openPartnerExport("csv")} disabled={!selectedPartnerId}>Export CSV</button>
+            <button type="button" className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--ats-bg-subtle)] disabled:opacity-50" onClick={() => openPartnerExport("pdf")} disabled={!selectedPartnerId}>Export PDF</button>
           </div>
-          {!partnerStatement ? <p className="text-sm text-[var(--ats-text-muted)]">Select a partner to view statement.</p> : (
-            <>
-              <div className="grid gap-2 md:grid-cols-4">
-                <div className="rounded-xl border border-[var(--ats-border)] p-2 text-sm"><div className="text-xs text-[var(--ats-text-muted)]">Invested</div><div className="font-semibold">{inr(partnerStatement.totalInvestedMinor)}</div></div>
-                <div className="rounded-xl border border-[var(--ats-border)] p-2 text-sm"><div className="text-xs text-[var(--ats-text-muted)]">Debit</div><div className="font-semibold">{inr(partnerStatement.totalDebitMinor)}</div></div>
-                <div className="rounded-xl border border-[var(--ats-border)] p-2 text-sm"><div className="text-xs text-[var(--ats-text-muted)]">Credit</div><div className="font-semibold">{inr(partnerStatement.totalCreditMinor)}</div></div>
-                <div className="rounded-xl border border-[var(--ats-border)] p-2 text-sm"><div className="text-xs text-[var(--ats-text-muted)]">Net</div><div className="font-semibold">{inr(partnerStatement.netMinor)}</div></div>
+          {!partnerStatement ? <p className="py-4 text-center text-sm font-medium text-[var(--ats-text-muted)]">Select a partner to view statement.</p> : (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-subtle)] p-3"><div className="text-xs font-semibold uppercase tracking-wider text-[var(--ats-text-muted)]">Invested</div><div className="mt-1 font-display text-xl font-semibold text-[var(--ats-text)]">{inr(partnerStatement.totalInvestedMinor)}</div></div>
+                <div className="rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-subtle)] p-3"><div className="text-xs font-semibold uppercase tracking-wider text-[var(--ats-text-muted)]">Debit</div><div className="mt-1 font-display text-xl font-semibold text-[var(--ats-text)]">{inr(partnerStatement.totalDebitMinor)}</div></div>
+                <div className="rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-subtle)] p-3"><div className="text-xs font-semibold uppercase tracking-wider text-[var(--ats-text-muted)]">Credit</div><div className="mt-1 font-display text-xl font-semibold text-[var(--ats-text)]">{inr(partnerStatement.totalCreditMinor)}</div></div>
+                <div className="rounded-xl border border-[var(--ats-border)] bg-[var(--ats-primary)]/10 p-3"><div className="text-xs font-semibold uppercase tracking-wider text-[var(--ats-primary)]">Net</div><div className="mt-1 font-display text-xl font-semibold text-[var(--ats-primary)]">{inr(partnerStatement.netMinor)}</div></div>
               </div>
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-[var(--ats-text-muted)]"><th className="py-2">Date</th><th>Narration</th><th>Category</th><th className="text-right">Invested</th><th className="text-right">Running</th></tr></thead>
-                  <tbody>
+              <div className="overflow-x-auto rounded-xl border border-[var(--ats-border)] bg-white shadow-sm dark:bg-[var(--ats-bg-elevated)]">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-[var(--ats-bg-subtle)] text-xs uppercase tracking-wide text-[var(--ats-text-muted)]">
+                    <tr>
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Narration</th>
+                      <th className="px-4 py-3">Category</th>
+                      <th className="px-4 py-3 text-right">Invested</th>
+                      <th className="px-4 py-3 text-right">Running</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--ats-border)]">
                     {(partnerStatement.rows ?? []).map((row: any) => (
-                      <tr className="border-t border-[var(--ats-border)]" key={row.txId}>
-                        <td className="py-2">{toDisplayDate(row.date)}</td><td>{row.narration}</td><td>{row.category}</td><td className="text-right">{inr(row.investedMinor)}</td><td className="text-right">{inr(row.runningBalanceMinor)}</td>
+                      <tr className="transition-colors hover:bg-[var(--ats-bg-subtle)]" key={row.txId}>
+                        <td className="px-4 py-3 font-medium text-[var(--ats-text)]">{toDisplayDate(row.date)}</td>
+                        <td className="px-4 py-3 text-[var(--ats-text)]">{row.narration}</td>
+                        <td className="px-4 py-3"><span className="inline-flex rounded-md bg-[var(--ats-bg-subtle)] px-2 py-1 text-xs font-medium text-[var(--ats-text-muted)]">{row.category}</span></td>
+                        <td className="px-4 py-3 text-right font-medium text-[var(--ats-text)]">{inr(row.investedMinor)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-[var(--ats-text)]">{inr(row.runningBalanceMinor)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </>
+            </div>
           )}
         </section>
       )}
 
       {tab === "partners" && (
         <section className="grid gap-4 lg:grid-cols-3">
-          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-            <form className="space-y-2" onSubmit={addPartner}>
-              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Name" value={partnerName} onChange={(e) => setPartnerName(e.target.value)} />
-              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Email" value={partnerEmail} onChange={(e) => setPartnerEmail(e.target.value)} />
-              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Role label" value={partnerRole} onChange={(e) => setPartnerRole(e.target.value)} />
-              <button className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" type="submit">Save partner</button>
+          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+            <h3 className="mb-4 font-display text-xl font-semibold text-[var(--ats-text)]">Add Partner</h3>
+            <form className="space-y-3" onSubmit={addPartner}>
+              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" placeholder="Name" value={partnerName} onChange={(e) => setPartnerName(e.target.value)} />
+              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" placeholder="Email" value={partnerEmail} onChange={(e) => setPartnerEmail(e.target.value)} />
+              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" placeholder="Role label" value={partnerRole} onChange={(e) => setPartnerRole(e.target.value)} />
+              <button className="w-full rounded-xl bg-[var(--ats-primary)] px-3 py-2.5 text-sm font-semibold text-[var(--ats-primary-foreground)] shadow-sm transition-opacity hover:opacity-90" type="submit">Save partner</button>
             </form>
           </article>
-          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4 lg:col-span-2">
-            <table className="w-full text-sm"><thead><tr className="text-left text-[var(--ats-text-muted)]"><th className="py-2">Name</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th></tr></thead>
-              <tbody>{partners.map((p) => <tr className="border-t border-[var(--ats-border)]" key={p.id}><td className="py-2">{p.name}</td><td>{p.email ?? "-"}</td><td>{p.roleLabel ?? "-"}</td><td>{p.isActive ? "Active" : "Inactive"}</td><td><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => togglePartner(p)}>{p.isActive ? "Deactivate" : "Reactivate"}</button></td></tr>)}</tbody>
-            </table>
+          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] shadow-sm lg:col-span-2 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-[var(--ats-bg-subtle)] text-xs uppercase tracking-wide text-[var(--ats-text-muted)]">
+                  <tr>
+                    <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">Email</th>
+                    <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--ats-border)]">
+                  {partners.map((p) => (
+                    <tr className="transition-colors hover:bg-[var(--ats-bg-subtle)]" key={p.id}>
+                      <td className="px-4 py-3 font-semibold text-[var(--ats-text)]">{p.name}</td>
+                      <td className="px-4 py-3 text-[var(--ats-text)]">{p.email ?? "-"}</td>
+                      <td className="px-4 py-3 text-[var(--ats-text-muted)]">{p.roleLabel ?? "-"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${p.isActive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-[var(--ats-bg-subtle)] text-[var(--ats-text-muted)]'}`}>
+                          {p.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]" type="button" onClick={() => togglePartner(p)}>
+                          {p.isActive ? "Deactivate" : "Reactivate"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </article>
         </section>
       )}
 
       {(tab === "investments" || tab === "company_account" || tab === "direct_others") && (
         <section className="grid gap-4 lg:grid-cols-3">
-          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-            <form className="space-y-2" onSubmit={saveTx}>
-              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" value={txDate} onChange={(e) => setTxDate(e.target.value)} placeholder="dd-mm-yyyy" />
+          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+            <h3 className="mb-4 font-display text-xl font-semibold text-[var(--ats-text)]">
+              {tab === "investments" ? "Add Investment" : tab === "company_account" ? "Add Company Entry" : "Add Direct/Others Entry"}
+            </h3>
+            <form className="space-y-3" onSubmit={saveTx}>
+              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" value={txDate} onChange={(e) => setTxDate(e.target.value)} placeholder="dd-mm-yyyy" />
               {tab === "investments" ? (
-                <select className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" value={txPartnerId} onChange={(e) => setTxPartnerId(e.target.value)}>
+                <select className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" value={txPartnerId} onChange={(e) => setTxPartnerId(e.target.value)}>
                   <option value="">Select partner</option>
                   {partners.filter((p) => p.isActive).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               ) : (
-                <select className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" value={txAccountType} onChange={(e) => setTxAccountType(e.target.value as "debit" | "credit")}>
+                <select className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" value={txAccountType} onChange={(e) => setTxAccountType(e.target.value as "debit" | "credit")}>
                   <option value="debit">Debit</option><option value="credit">Credit</option>
                 </select>
               )}
-              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Description" value={txDesc} onChange={(e) => setTxDesc(e.target.value)} />
-              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Category" value={txCategory} onChange={(e) => setTxCategory(e.target.value)} />
-              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2" placeholder="Amount" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} />
+              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" placeholder="Description" value={txDesc} onChange={(e) => setTxDesc(e.target.value)} />
+              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" placeholder="Category" value={txCategory} onChange={(e) => setTxCategory(e.target.value)} />
+              <input className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" placeholder="Amount" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} />
               {tab === "investments" ? (
-                <label className="inline-flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={postToDirectOthers} onChange={(e) => setPostToDirectOthers(e.target.checked)} />
+                <label className="inline-flex items-center gap-2 text-sm font-medium text-[var(--ats-text)]">
+                  <input type="checkbox" className="rounded border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] text-[var(--ats-primary)] focus:ring-[var(--ats-primary)]" checked={postToDirectOthers} onChange={(e) => setPostToDirectOthers(e.target.checked)} />
                   Post to Direct/Others account (credit)
                 </label>
               ) : null}
-              <button className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" type="submit">{editingTxId ? "Update entry" : "Save entry"}</button>
-              {editingTxId ? <button className="rounded-xl border border-[var(--ats-border)] px-3 py-2 text-sm font-semibold" type="button" onClick={() => { setEditingTxId(null); setTxDate(todayDdMmYyyy()); setTxDesc(""); setTxCategory("General"); setTxAmount(""); setTxPartnerId(""); setTxAccountType("debit"); setPostToDirectOthers(false); }}>Cancel edit</button> : null}
+              <button className="w-full rounded-xl bg-[var(--ats-primary)] px-3 py-2.5 text-sm font-semibold text-[var(--ats-primary-foreground)] shadow-sm transition-opacity hover:opacity-90" type="submit">{editingTxId ? "Update entry" : "Save entry"}</button>
+              {editingTxId ? <button className="w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2.5 text-sm font-semibold text-[var(--ats-text)] transition-colors hover:bg-[var(--ats-bg-subtle)]" type="button" onClick={() => { setEditingTxId(null); setTxDate(todayDdMmYyyy()); setTxDesc(""); setTxCategory("General"); setTxAmount(""); setTxPartnerId(""); setTxAccountType("debit"); setPostToDirectOthers(false); }}>Cancel edit</button> : null}
             </form>
           </article>
-          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4 lg:col-span-2">
-            <table className="w-full text-sm"><thead><tr className="text-left text-[var(--ats-text-muted)]"><th className="py-2">Date</th><th>Description</th><th>Partner</th><th>Type</th><th className="text-right">Amount</th><th>Action</th></tr></thead>
-              <tbody>{ledger.filter((tx) => (tab === "investments" ? tx.kind === "partner_investment" || tx.kind === "expense" : tab === "direct_others" ? tx.kind === "direct_others_account_entry" : tx.kind === "company_account_entry")).map((tx) => <tr className="border-t border-[var(--ats-border)]" key={tx.id}><td className="py-2">{toDisplayDate(tx.date)}</td><td>{tx.description}</td><td>{tx.partnerId ? partnerById.get(tx.partnerId)?.name ?? "-" : "-"}</td><td>{tx.accountEntryType ?? tx.kind}</td><td className="text-right">{inr(tx.totalMinor)}</td><td className="space-x-2"><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => editTx(tx)}>Edit</button><button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => removeTx(tx.id)}>Delete</button></td></tr>)}</tbody>
-            </table>
+          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] shadow-sm lg:col-span-2 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-[var(--ats-bg-subtle)] text-xs uppercase tracking-wide text-[var(--ats-text-muted)]">
+                  <tr>
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Description</th>
+                    <th className="px-4 py-3">Partner</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3 text-right">Amount</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--ats-border)]">
+                  {ledger.filter((tx) => (tab === "investments" ? tx.kind === "partner_investment" || tx.kind === "expense" : tab === "direct_others" ? tx.kind === "direct_others_account_entry" : tx.kind === "company_account_entry")).map((tx) => (
+                    <tr className="transition-colors hover:bg-[var(--ats-bg-subtle)]" key={tx.id}>
+                      <td className="px-4 py-3 font-medium text-[var(--ats-text)]">{toDisplayDate(tx.date)}</td>
+                      <td className="px-4 py-3 text-[var(--ats-text)]">{tx.description}</td>
+                      <td className="px-4 py-3 text-[var(--ats-text)]">{tx.partnerId ? partnerById.get(tx.partnerId)?.name ?? "-" : "-"}</td>
+                      <td className="px-4 py-3"><span className="inline-flex rounded bg-[var(--ats-bg-subtle)] px-2 py-1 text-xs font-medium text-[var(--ats-text-muted)]">{tx.accountEntryType ?? tx.kind}</span></td>
+                      <td className="px-4 py-3 text-right font-semibold text-[var(--ats-text)]">{inr(tx.totalMinor)}</td>
+                      <td className="px-4 py-3 text-right space-x-2">
+                        <button className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]" type="button" onClick={() => editTx(tx)}>Edit</button>
+                        <button className="rounded-lg border border-red-500/20 bg-red-50/50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20" type="button" onClick={() => removeTx(tx.id)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </article>
         </section>
       )}
 
       {tab === "ledger" && (
-        <section className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-          <div className="mb-3 flex flex-wrap gap-2">
-            <input className="rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2 text-sm" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <select className="rounded-xl border border-[var(--ats-border)] bg-transparent px-3 py-2 text-sm" value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
+        <section className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap gap-3 border-b border-[var(--ats-border)] pb-4">
+            <input className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <select className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
               <option value="all">All</option><option value="partner_investment">Partner investment</option><option value="company_expense">Company expense</option><option value="company_inflow">Company inflow</option><option value="company_account_entry">Company account</option><option value="direct_others_account_entry">Direct/Others account</option><option value="expense">Imported expense</option>
             </select>
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[var(--ats-text-muted)]">
-                <th className="py-2">Date</th>
-                <th>Description</th>
-                <th>Category</th>
-                <th>Direction</th>
-                <th>Account</th>
-                <th className="text-right">Amount</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedGroupedLedger.map((entry) => {
-                const isExpanded = expandedLedgerGroups.includes(entry.groupId);
-                return (
-                  <Fragment key={entry.groupId}>
-                    <tr className="border-t border-[var(--ats-border)]" key={entry.groupId}>
-                      <td className="py-2">{toDisplayDate(entry.date)}</td>
-                      <td>
-                        <div className="font-medium">{entry.description}</div>
-                        {entry.isGrouped ? <div className="text-xs text-[var(--ats-text-muted)]">{entry.linkedTransactions.length} linked accounting rows</div> : null}
-                      </td>
-                      <td>{entry.category}</td>
-                      <td>{entry.displayKindLabel}</td>
-                      <td>{entry.accountContext ?? "-"}</td>
-                      <td className="text-right">{inr(entry.totalMinor)}</td>
-                      <td className="space-x-2">
-                        {isAdmin && entry.isGrouped ? (
-                          <button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => toggleLedgerGroup(entry.groupId)}>
-                            {isExpanded ? "Hide detail" : "Show detail"}
-                          </button>
-                        ) : null}
-                        <button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => editLedgerEntry(entry)}>Edit</button>
-                        <button className="rounded-lg border border-[var(--ats-border)] px-2 py-1" type="button" onClick={() => removeTx(entry.primaryTransactionId)}>Delete</button>
-                      </td>
-                    </tr>
-                    {isAdmin && entry.isGrouped && isExpanded ? (
-                      <tr className="border-t border-[var(--ats-border)] bg-slate-50/40" key={`${entry.groupId}-detail`}>
-                        <td colSpan={7} className="px-3 py-3">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ats-text-muted)]">Raw accounting rows</div>
-                          <div className="mt-2 overflow-auto rounded-lg border border-[var(--ats-border)]">
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className="text-left text-[var(--ats-text-muted)]">
-                                  <th className="px-2 py-2">Kind</th>
-                                  <th className="px-2 py-2">Entry Type</th>
-                                  <th className="px-2 py-2">Description</th>
-                                  <th className="px-2 py-2">Account</th>
-                                  <th className="px-2 py-2 text-right">Amount</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {entry.linkedTransactions.map((tx) => (
-                                  <tr className="border-t border-[var(--ats-border)]" key={`${entry.groupId}-${tx.id}`}>
-                                    <td className="px-2 py-2">{tx.kind}</td>
-                                    <td className="px-2 py-2">{tx.accountEntryType ?? "-"}</td>
-                                    <td className="px-2 py-2">{tx.description}</td>
-                                    <td className="px-2 py-2">
-                                      {tx.kind === "company_account_entry"
-                                        ? "Company Account"
-                                        : tx.kind === "direct_others_account_entry"
-                                          ? "Direct/Others Account"
-                                          : tx.kind === "partner_investment"
-                                            ? "Partner Investment"
-                                            : "-"}
-                                    </td>
-                                    <td className="px-2 py-2 text-right">{inr(tx.totalMinor)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
+          <div className="overflow-x-auto rounded-xl border border-[var(--ats-border)] bg-white shadow-sm dark:bg-[var(--ats-bg-elevated)]">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-[var(--ats-bg-subtle)] text-xs uppercase tracking-wide text-[var(--ats-text-muted)]">
+                <tr>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Description</th>
+                  <th className="px-4 py-3">Category</th>
+                  <th className="px-4 py-3">Direction</th>
+                  <th className="px-4 py-3">Account</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--ats-border)]">
+                {sortedGroupedLedger.map((entry) => {
+                  const isExpanded = expandedLedgerGroups.includes(entry.groupId);
+                  return (
+                    <Fragment key={entry.groupId}>
+                      <tr className="transition-colors hover:bg-[var(--ats-bg-subtle)]">
+                        <td className="px-4 py-3 font-medium text-[var(--ats-text)]">{toDisplayDate(entry.date)}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-[var(--ats-text)]">{entry.description}</div>
+                          {entry.isGrouped ? <div className="mt-1 text-xs font-medium text-[var(--ats-text-muted)]">{entry.linkedTransactions.length} linked accounting rows</div> : null}
+                        </td>
+                        <td className="px-4 py-3"><span className="inline-flex rounded-md bg-[var(--ats-bg-subtle)] px-2 py-1 text-xs font-medium text-[var(--ats-text-muted)]">{entry.category}</span></td>
+                        <td className="px-4 py-3"><span className="inline-flex rounded-md border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-2 py-1 text-xs font-medium text-[var(--ats-text)]">{entry.displayKindLabel}</span></td>
+                        <td className="px-4 py-3 text-[var(--ats-text)]">{entry.accountContext ?? "-"}</td>
+                        <td className="px-4 py-3 text-right font-display text-[15px] font-bold text-[var(--ats-text)]">{inr(entry.totalMinor)}</td>
+                        <td className="px-4 py-3 text-right space-x-2">
+                          {isAdmin && entry.isGrouped ? (
+                            <button className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--ats-bg-subtle)]" type="button" onClick={() => toggleLedgerGroup(entry.groupId)}>
+                              {isExpanded ? "Hide detail" : "Show detail"}
+                            </button>
+                          ) : null}
+                          <button className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--ats-bg-subtle)] hover:text-[var(--ats-primary)]" type="button" onClick={() => editLedgerEntry(entry)}>Edit</button>
+                          <button className="rounded-lg border border-red-500/20 bg-red-50/50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20" type="button" onClick={() => removeTx(entry.primaryTransactionId)}>Delete</button>
                         </td>
                       </tr>
-                    ) : null}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                      {isAdmin && entry.isGrouped && isExpanded ? (
+                        <tr className="bg-[var(--ats-bg-subtle)]/50" key={`${entry.groupId}-detail`}>
+                          <td colSpan={7} className="px-4 py-4">
+                            <div className="text-xs font-bold uppercase tracking-wider text-[var(--ats-text-muted)]">Raw accounting rows</div>
+                            <div className="mt-3 overflow-x-auto rounded-xl border border-[var(--ats-border)] bg-white shadow-sm dark:bg-[var(--ats-bg-elevated)]">
+                              <table className="min-w-full text-left text-xs">
+                                <thead className="bg-[var(--ats-bg-subtle)] uppercase tracking-wide text-[var(--ats-text-muted)]">
+                                  <tr>
+                                    <th className="px-3 py-2">Kind</th>
+                                    <th className="px-3 py-2">Entry Type</th>
+                                    <th className="px-3 py-2">Description</th>
+                                    <th className="px-3 py-2">Account</th>
+                                    <th className="px-3 py-2 text-right">Amount</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[var(--ats-border)]">
+                                  {entry.linkedTransactions.map((tx) => (
+                                    <tr className="transition-colors hover:bg-[var(--ats-bg-subtle)]" key={`${entry.groupId}-${tx.id}`}>
+                                      <td className="px-3 py-2 font-medium text-[var(--ats-text)]">{tx.kind}</td>
+                                      <td className="px-3 py-2 text-[var(--ats-text-muted)]">{tx.accountEntryType ?? "-"}</td>
+                                      <td className="px-3 py-2 text-[var(--ats-text)]">{tx.description}</td>
+                                      <td className="px-3 py-2 text-[var(--ats-text)]">
+                                        {tx.kind === "company_account_entry"
+                                          ? "Company Account"
+                                          : tx.kind === "direct_others_account_entry"
+                                            ? "Direct/Others Account"
+                                            : tx.kind === "partner_investment"
+                                              ? "Partner Investment"
+                                              : "-"}
+                                      </td>
+                                      <td className="px-3 py-2 text-right font-semibold text-[var(--ats-text)]">{inr(tx.totalMinor)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
       {tab === "import_audit" && (
         <section className="grid gap-4 lg:grid-cols-2">
-          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-            <h3 className="text-base font-semibold">Backup & restore</h3>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" type="button" onClick={exportBackup}>Export Finance Backup</button>
-              <button className="rounded-xl border border-[var(--ats-border)] px-3 py-2 text-sm font-semibold" type="button" onClick={triggerBackupImportPicker}>
-                Import from Export JSON file
+          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+            <h3 className="font-display text-xl font-semibold text-[var(--ats-text)]">Backup & Restore</h3>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button className="rounded-xl bg-[var(--ats-primary)] px-4 py-2 text-sm font-semibold text-[var(--ats-primary-foreground)] shadow-sm transition-opacity hover:opacity-90" type="button" onClick={exportBackup}>Export Finance Backup</button>
+              <button className="rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-4 py-2 text-sm font-semibold text-[var(--ats-text)] shadow-sm transition-colors hover:bg-[var(--ats-bg-subtle)]" type="button" onClick={triggerBackupImportPicker}>
+                Import JSON Backup
               </button>
-              <label className="rounded-xl border border-[var(--ats-border)] px-3 py-2 text-sm font-semibold">
+              <label className="cursor-pointer rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-4 py-2 text-sm font-semibold text-[var(--ats-text)] shadow-sm transition-colors hover:bg-[var(--ats-bg-subtle)]">
                 Select backup file
                 <input ref={backupImportInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleRestoreFile} />
               </label>
             </div>
             {restorePreview ? (
-              <div className="mt-3 rounded-xl border border-amber-400/60 bg-amber-50 p-3 text-sm text-amber-900">
-                <p className="font-semibold">Restore preview</p>
-                <p>Workspace: {restorePreview.workspaceName}</p>
-                <p>Partners: {restorePreview.partnerCount}</p>
-                <p>Transactions: {restorePreview.transactionCount}</p>
-                <p>Invested: {inr(restorePreview.totalInvestedMinor)}</p>
-                <p>Expenses: {inr(restorePreview.totalCompanyExpensesMinor)}</p>
-                {restorePreview.warnings?.length ? <p>Warnings: {restorePreview.warnings.join(" | ")}</p> : null}
-                <div className="mt-2">
-                  <button className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white" type="button" onClick={applyRestore}>
-                    Confirm restore (replace workspace)
+              <div className="mt-5 rounded-xl border border-amber-500/30 bg-amber-50/50 p-4 shadow-sm dark:bg-amber-500/10">
+                <p className="font-display text-lg font-semibold text-amber-900 dark:text-amber-400">Restore Preview</p>
+                <div className="mt-3 grid gap-2 text-sm font-medium text-amber-800 dark:text-amber-200">
+                  <div className="flex justify-between"><span className="text-amber-700/70 dark:text-amber-400/70">Workspace:</span> <span>{restorePreview.workspaceName}</span></div>
+                  <div className="flex justify-between"><span className="text-amber-700/70 dark:text-amber-400/70">Partners:</span> <span>{restorePreview.partnerCount}</span></div>
+                  <div className="flex justify-between"><span className="text-amber-700/70 dark:text-amber-400/70">Transactions:</span> <span>{restorePreview.transactionCount}</span></div>
+                  <div className="flex justify-between"><span className="text-amber-700/70 dark:text-amber-400/70">Invested:</span> <span className="font-semibold">{inr(restorePreview.totalInvestedMinor)}</span></div>
+                  <div className="flex justify-between"><span className="text-amber-700/70 dark:text-amber-400/70">Expenses:</span> <span className="font-semibold">{inr(restorePreview.totalCompanyExpensesMinor)}</span></div>
+                </div>
+                {restorePreview.warnings?.length ? (
+                  <div className="mt-4 rounded-lg bg-amber-500/20 p-2 text-xs text-amber-900 dark:text-amber-300">
+                    <span className="font-bold">Warnings:</span> {restorePreview.warnings.join(" | ")}
+                  </div>
+                ) : null}
+                <div className="mt-5">
+                  <button className="w-full rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-90" type="button" onClick={applyRestore}>
+                    Confirm restore (DANGER: Replaces entire workspace)
                   </button>
                 </div>
               </div>
             ) : null}
           </article>
-
-          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4">
-            <h3 className="text-base font-semibold">Import groups-split-web JSON snapshot</h3>
-            <div className="mt-3">
-              <label className="inline-flex cursor-pointer rounded-xl border border-[var(--ats-border)] px-3 py-2 text-sm font-semibold">
+          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
+            <h3 className="font-display text-xl font-semibold text-[var(--ats-text)]">Import Groups-Split-Web Snapshot</h3>
+            <div className="mt-4">
+              <label className="inline-flex cursor-pointer rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-4 py-2 text-sm font-semibold text-[var(--ats-text)] shadow-sm transition-colors hover:bg-[var(--ats-bg-subtle)]">
                 Select snapshot file
                 <input type="file" accept="application/json,.json" className="hidden" onChange={handleSnapshotFile} />
               </label>
             </div>
-            <textarea className="mt-3 min-h-[220px] w-full rounded-xl border border-[var(--ats-border)] bg-transparent p-3 text-sm" placeholder='{"transactions":[...]}' value={snapshotText} onChange={(e) => setSnapshotText(e.target.value)} />
-            <button className="mt-3 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" type="button" onClick={importSnapshot}>Import snapshot</button>
+            <textarea className="mt-4 min-h-[220px] w-full rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-subtle)] p-3 text-sm font-mono text-[var(--ats-text)] outline-none focus:border-[var(--ats-primary)] focus:ring-1 focus:ring-[var(--ats-primary)]" placeholder='{"transactions":[...]}' value={snapshotText} onChange={(e) => setSnapshotText(e.target.value)} />
+            <button className="mt-4 w-full rounded-xl bg-[var(--ats-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--ats-primary-foreground)] shadow-sm transition-opacity hover:opacity-90" type="button" onClick={importSnapshot}>Import Snapshot</button>
           </article>
-
-          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-4 lg:col-span-2">
-            <h3 className="text-base font-semibold">Import batch audit</h3>
-            <table className="mt-2 w-full text-sm"><thead><tr className="text-left text-[var(--ats-text-muted)]"><th className="py-2">Batch</th><th>Source</th><th>Status</th><th className="text-right">Imported</th></tr></thead>
-              <tbody>{batches.map((b) => <tr className="border-t border-[var(--ats-border)]" key={b.id}><td className="py-2">{b.batchId}</td><td>{b.source}</td><td>{b.status}</td><td className="text-right">{b.importedTransactions}</td></tr>)}</tbody>
-            </table>
+          <article className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm lg:col-span-2 overflow-hidden">
+            <h3 className="mb-4 font-display text-xl font-semibold text-[var(--ats-text)]">Import Batch Audit</h3>
+            <div className="overflow-x-auto rounded-xl border border-[var(--ats-border)] bg-white shadow-sm dark:bg-[var(--ats-bg-elevated)]">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-[var(--ats-bg-subtle)] text-xs uppercase tracking-wide text-[var(--ats-text-muted)]">
+                  <tr>
+                    <th className="px-4 py-3">Batch</th>
+                    <th className="px-4 py-3">Source</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Imported</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--ats-border)]">
+                  {batches.map((b) => (
+                    <tr className="transition-colors hover:bg-[var(--ats-bg-subtle)]" key={b.id}>
+                      <td className="px-4 py-3 font-medium text-[var(--ats-text)]">{b.batchId}</td>
+                      <td className="px-4 py-3 text-[var(--ats-text)]">{b.source}</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-full bg-[var(--ats-bg-subtle)] px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-[var(--ats-text-muted)]">{b.status}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-[var(--ats-text)]">{b.importedTransactions}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </article>
         </section>
       )}
-    </div>
+    </ModulePageFrame>
   );
 }
-
