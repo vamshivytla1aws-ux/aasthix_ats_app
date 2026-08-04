@@ -87,6 +87,7 @@ export default function CandidateAiInterviewRoom({
   const [preparing, setPreparing] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [confirmSkip, setConfirmSkip] = useState(false);
   // Code editor state for CODING questions
   const [codeAnswer, setCodeAnswer] = useState("");
   const [isRunningCode, setIsRunningCode] = useState(false);
@@ -232,13 +233,14 @@ export default function CandidateAiInterviewRoom({
       recognitionRef.current = null;
       setListening(false);
     };
+    let blurTimeout: ReturnType<typeof setTimeout> | null = null;
     const hidden = () => {
       if (document.hidden) {
         stopVoice();
         hiddenAtRef.current = Date.now();
         sendEvent("TAB_HIDDEN");
         setTabSwitchCount((c) => {
-          if (c + 1 >= 2) void cancelInterviewRef.current("TAB_SWITCH_LIMIT");
+          if (c + 1 >= 4) void cancelInterviewRef.current("TAB_SWITCH_LIMIT");
           return c + 1;
         });
         setWarning("Window switching was detected. Your exam will be cancelled if repeated.");
@@ -253,17 +255,22 @@ export default function CandidateAiInterviewRoom({
     const blur = () => {
       stopVoice();
       blurAtRef.current = Date.now();
-      sendEvent("WINDOW_BLUR");
-      setTabSwitchCount((c) => {
-        if (c + 1 >= 2) void cancelInterviewRef.current("TAB_SWITCH_LIMIT");
-        return c + 1;
-      });
-      setWarning("Window switching was detected. Your exam will be cancelled if repeated.");
+      blurTimeout = setTimeout(() => {
+        sendEvent("WINDOW_BLUR");
+        setTabSwitchCount((c) => {
+          if (c + 1 >= 4) void cancelInterviewRef.current("TAB_SWITCH_LIMIT");
+          return c + 1;
+        });
+        setWarning("Window switching was detected. Your exam will be cancelled if repeated.");
+      }, 3500);
     };
     const focus = () => {
+      if (blurTimeout) clearTimeout(blurTimeout);
       if (blurAtRef.current) {
         const duration = Math.round((Date.now() - blurAtRef.current) / 1000);
-        sendEvent("WINDOW_FOCUS", { duration_seconds: duration });
+        if (duration >= 3.5) {
+          sendEvent("WINDOW_FOCUS", { duration_seconds: duration });
+        }
         blurAtRef.current = null;
       }
     };
@@ -1008,12 +1015,14 @@ export default function CandidateAiInterviewRoom({
       }
       if (current < questions.length - 1) await beginQuestion(current + 1);
       else await finishInterview();
+    } catch (error) {
+      setError("Network error: Could not submit answer. Please try again.");
     } finally {
       setPreparing(false);
     }
   }
   async function skipAnswer() {
-    if (!window.confirm("Are you sure you want to skip this question? You will receive a score of 0 for it.")) return;
+    setConfirmSkip(false);
     const q = questions[current];
     const transcript = "[Candidate skipped this question]";
     recognitionRef.current?.stop?.();
@@ -1022,46 +1031,49 @@ export default function CandidateAiInterviewRoom({
     setPreparing(interview?.interview_mode === "ADAPTIVE");
     await stopAndUploadAnswerAudio(q.id);
     try {
-      const r = await fetch("/api/ai-interview/answer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "complete",
-          question_id: q.id,
-          transcript,
-          duration_seconds: Math.round((Date.now() - (questionStartedAt.current || Date.now())) / 1000),
-          idempotency_key: `skip-${q.id}`,
-        }),
-      });
-      const d = await r.json();
-      if (!r.ok) {
-        setError(d.error || "Answer could not be saved");
-        return;
-      }
-      if (d.interview_complete) {
-        await finishInterview();
-        return;
-      }
-      if (interview?.interview_mode === "ADAPTIVE" && d.next_question) {
-        const next = d.next_question as Question;
-        setQuestions((value) => value.some((item) => item.id === next.id) ? value : [...value, next]);
-        setCurrent(current + 1);
-        setAnswer("");
-        setCodeAnswer(next.starter_code || "");
-        questionStartedAt.current = Date.now();
-        await fetch("/api/ai-interview/answer", {
+        await stopAndUploadAnswerAudio(q.id);
+        const r = await fetch("/api/ai-interview/answer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "start", question_id: next.id, idempotency_key: `start-${next.id}` }),
+          body: JSON.stringify({
+            action: "complete",
+            question_id: q.id,
+            transcript,
+            duration_seconds: Math.round((Date.now() - (questionStartedAt.current || Date.now())) / 1000),
+            idempotency_key: `skip-${q.id}`,
+          }),
         });
-        startAnswerAudioRecording();
-        return;
+        const d = await r.json().catch(() => ({ error: "Server error or connection lost" }));
+        if (!r.ok) {
+          setError(d.error || "Answer could not be saved");
+          return;
+        }
+        if (d.interview_complete) {
+          await finishInterview();
+          return;
+        }
+        if (interview?.interview_mode === "ADAPTIVE" && d.next_question) {
+          const next = d.next_question as Question;
+          setQuestions((value) => value.some((item) => item.id === next.id) ? value : [...value, next]);
+          setCurrent(current + 1);
+          setAnswer("");
+          setCodeAnswer(next.starter_code || "");
+          questionStartedAt.current = Date.now();
+          await fetch("/api/ai-interview/answer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "start", question_id: next.id, idempotency_key: `start-${next.id}` }),
+          });
+          startAnswerAudioRecording();
+          return;
+        }
+        if (current < questions.length - 1) await beginQuestion(current + 1);
+        else await finishInterview();
+      } catch (error) {
+        setError("Network error: Could not save skip state.");
+      } finally {
+        setPreparing(false);
       }
-      if (current < questions.length - 1) await beginQuestion(current + 1);
-      else await finishInterview();
-    } finally {
-      setPreparing(false);
-    }
   }
   async function finishRecording() {
     const recorder = recorderRef.current;
@@ -1071,18 +1083,20 @@ export default function CandidateAiInterviewRoom({
         recorder.stop();
       });
     }
-    await uploadChain.current;
+    await uploadChain.current.catch(() => {});
     setRecording(false);
     if (interview?.recording_enabled && uploadIdRef.current) {
-      await fetch("/api/ai-interview/recording/finalize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          upload_id: uploadIdRef.current,
-          mime_type: recorder?.mimeType || "video/webm",
-          duration_seconds: Math.round((Date.now() - (startedAt.current || Date.now())) / 1000),
-        }),
-      });
+      try {
+        await fetch("/api/ai-interview/recording/finalize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            upload_id: uploadIdRef.current,
+            mime_type: recorder?.mimeType || "video/webm",
+            duration_seconds: Math.round((Date.now() - (startedAt.current || Date.now())) / 1000),
+          }),
+        });
+      } catch {}
     }
   }
   async function finishInterview() {
@@ -1090,7 +1104,7 @@ export default function CandidateAiInterviewRoom({
     setStep("thanks");
     try {
       const activeQuestion = questions[current];
-      if (activeQuestion) await stopAndUploadAnswerAudio(activeQuestion.id);
+      if (activeQuestion) await stopAndUploadAnswerAudio(activeQuestion.id).catch(() => {});
       await finishRecording();
       await fetch("/api/ai-interview/complete", {
         method: "POST",
@@ -1109,15 +1123,14 @@ export default function CandidateAiInterviewRoom({
   }
   async function cancelInterview(reason: string = "USER_EXIT") {
     if (cancelling || step === "cancelled") return;
-    setCancelling(true);
     try {
-      // Stop voice input and recording before cancelling.
+      setCancelling(true);
       recognitionRef.current?.stop?.();
       recognitionRef.current = null;
       setListening(false);
       const activeQuestion = questions[current];
-      if (activeQuestion) await stopAndUploadAnswerAudio(activeQuestion.id);
-      await finishRecording();
+      if (activeQuestion) await stopAndUploadAnswerAudio(activeQuestion.id).catch(() => {});
+      await finishRecording().catch(() => {});
       await fetch("/api/ai-interview/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1519,13 +1532,21 @@ export default function CandidateAiInterviewRoom({
               </button>
             ) : <div />}
             <div className="flex gap-2">
-              <button
-                onClick={() => void skipAnswer()}
-                disabled={preparing}
-                className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-700 disabled:opacity-50"
-              >
-                Skip question
-              </button>
+              {!confirmSkip ? (
+                <button
+                  onClick={() => setConfirmSkip(true)}
+                  disabled={preparing}
+                  className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-700 disabled:opacity-50"
+                >
+                  Skip question
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1">
+                  <span className="text-xs font-semibold text-amber-300 mr-2">Are you sure? Score will be 0.</span>
+                  <button onClick={() => void skipAnswer()} className="rounded bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-500">Confirm Skip</button>
+                  <button onClick={() => setConfirmSkip(false)} className="rounded border border-slate-500 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700">Cancel</button>
+                </div>
+              )}
               <button
                 onClick={() => void submitAnswer()}
                 disabled={preparing}
