@@ -1,8 +1,8 @@
-﻿import TrainingManagePage from "@/components/training/TrainingManagePage";
+﻿import TrainingManagePage from"@/components/training/TrainingManagePage";
 
-export const dynamic = "force-dynamic";
+export const dynamic ="force-dynamic";
 
 export default function TrainingManageRoute() {
-  return <TrainingManagePage />;
+ return <TrainingManagePage />;
 }
 
