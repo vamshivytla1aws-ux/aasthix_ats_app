@@ -134,7 +134,7 @@ export default function DeveloperSettingsPage() {
           <div className="divide-y divide-[var(--ats-border)]">
             {tokens.length === 0 ? (
               <div className="p-8 text-center text-sm text-slate-500">
-                You haven't generated any access tokens yet.
+                You haven&apos;t generated any access tokens yet.
               </div>
             ) : (
               tokens.map((token) => (
