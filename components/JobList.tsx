@@ -9,6 +9,7 @@ import StatusBadge from "@/components/enterprise/StatusBadge";
 import RowActionsMenu, { type RowActionItem } from "@/components/enterprise/RowActionsMenu";
 import { UI } from "@/lib/ui";
 import { REQUISITION_WORKFLOW_STEPS, normalizeRequisitionStep } from "@/lib/requisitionWorkflow";
+import SearchableSelect from "@/components/ui/SearchableSelect";
 
 type Job = {
   id: number;
@@ -494,33 +495,37 @@ export function JobList({
                 className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
               />
             </div>
-            <select
+            <SearchableSelect
               value={employmentTypeFilter}
-              onChange={(e) => {
-                setEmploymentTypeFilter(e.target.value);
+              onChange={(val) => {
+                setEmploymentTypeFilter(val);
                 setPage(1);
               }}
-              className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            >
-              <option value="">All Employment Types</option>
-              <option value="Full Time">Full Time</option>
-              <option value="Part Time">Part Time</option>
-              <option value="Contract">Contract</option>
-              <option value="Internship">Internship</option>
-              <option value="Freelance">Freelance</option>
-            </select>
-            <select
+              options={[
+                { value: "", label: "All Employment Types" },
+                { value: "Full Time", label: "Full Time" },
+                { value: "Part Time", label: "Part Time" },
+                { value: "Contract", label: "Contract" },
+                { value: "Internship", label: "Internship" },
+                { value: "Freelance", label: "Freelance" },
+              ]}
+              placeholder="All Employment Types"
+              wrapperClassName="w-[200px]"
+            />
+            <SearchableSelect
               value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as "" | "Open" | "Closed");
+              onChange={(val) => {
+                setStatusFilter(val as "" | "Open" | "Closed");
                 setPage(1);
               }}
-              className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            >
-              <option value="">All Status</option>
-              <option value="Open">Open</option>
-              <option value="Closed">Closed</option>
-            </select>
+              options={[
+                { value: "", label: "All Status" },
+                { value: "Open", label: "Open" },
+                { value: "Closed", label: "Closed" },
+              ]}
+              placeholder="All Status"
+              wrapperClassName="w-[150px]"
+            />
             <button
               type="button"
               onClick={clearFilters}

@@ -1,5 +1,7 @@
 "use client";
 
+import SearchableSelect from "@/components/ui/SearchableSelect";
+
 type TableFiltersProps = {
   search: string;
   onSearchChange: (value: string) => void;
@@ -52,18 +54,16 @@ export default function TableFilters(props: TableFiltersProps) {
 
         <div>
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Location</label>
-          <select
+          <SearchableSelect
             value={location}
-            onChange={(e) => onLocationChange(e.target.value)}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 lg:py-2"
-          >
-            <option value="">All</option>
-            {locations.map((loc) => (
-              <option key={loc} value={loc}>
-                {loc}
-              </option>
-            ))}
-          </select>
+            onChange={onLocationChange}
+            options={[
+              { value: "", label: "All" },
+              ...locations.map((loc) => ({ value: loc, label: loc })),
+            ]}
+            placeholder="All"
+            className="lg:py-2"
+          />
         </div>
 
         <div>
@@ -99,15 +99,17 @@ export default function TableFilters(props: TableFiltersProps) {
         <div className="flex items-end gap-2 md:col-span-2 lg:col-span-1">
           <div className="flex-1">
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
-            <select
+            <SearchableSelect
               value={status}
-              onChange={(e) => onStatusChange(e.target.value as "All" | "Active" | "Placed")}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 lg:py-2"
-            >
-              <option value="All">All</option>
-              <option value="Active">Active</option>
-              <option value="Placed">Placed</option>
-            </select>
+              onChange={(val) => onStatusChange(val as "All" | "Active" | "Placed")}
+              options={[
+                { value: "All", label: "All" },
+                { value: "Active", label: "Active" },
+                { value: "Placed", label: "Placed" },
+              ]}
+              placeholder="All"
+              className="lg:py-2"
+            />
           </div>
           <button
             type="button"

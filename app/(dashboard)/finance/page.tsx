@@ -556,16 +556,18 @@ export default function FinancePage() {
 
           <div className="flex shrink-0 items-center gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--ats-text-muted)]">Range</span>
-            <select
-              className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-[var(--ats-primary)]"
+            <SearchableSelect
+              wrapperClassName="w-[120px]"
               value={rangePreset}
-              onChange={(e) => setRangePreset(e.target.value as Preset)}
-            >
-              <option value="full">Full</option>
-              <option value="monthly">Monthly</option>
-              <option value="yearly">Yearly</option>
-              <option value="custom">Custom</option>
-            </select>
+              onChange={(val) => setRangePreset(val as Preset)}
+              options={[
+                { value: "full", label: "Full" },
+                { value: "monthly", label: "Monthly" },
+                { value: "yearly", label: "Yearly" },
+                { value: "custom", label: "Custom" },
+              ]}
+              placeholder="Full"
+            />
             {rangePreset === "monthly" && (
               <input
                 className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-2 py-1.5 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-[var(--ats-primary)]"
@@ -842,10 +844,16 @@ export default function FinancePage() {
       {tab === "partner_accounts" && (
         <section className="space-y-4 rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
           <div className="flex flex-wrap items-center gap-3 border-b border-[var(--ats-border)] pb-4">
-            <select className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" value={selectedPartnerId || ""} onChange={(e) => setSelectedPartnerId(Number(e.target.value))}>
-              <option value="">Select partner</option>
-              {partners.filter((p) => p.isActive).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <SearchableSelect
+              wrapperClassName="w-[200px]"
+              value={selectedPartnerId ? String(selectedPartnerId) : ""}
+              onChange={(val) => setSelectedPartnerId(val ? Number(val) : null)}
+              options={[
+                { value: "", label: "Select partner" },
+                ...partners.filter((p) => p.isActive).map((p) => ({ value: String(p.id), label: p.name })),
+              ]}
+              placeholder="Select partner"
+            />
             <button type="button" className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--ats-bg-subtle)] disabled:opacity-50" onClick={() => openPartnerExport("csv")} disabled={!selectedPartnerId}>Export CSV</button>
             <button type="button" className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--ats-bg-subtle)] disabled:opacity-50" onClick={() => openPartnerExport("pdf")} disabled={!selectedPartnerId}>Export PDF</button>
           </div>
@@ -1008,9 +1016,21 @@ export default function FinancePage() {
         <section className="rounded-2xl border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] p-5 shadow-sm">
           <div className="mb-4 flex flex-wrap gap-3 border-b border-[var(--ats-border)] pb-4">
             <input className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <select className="rounded-lg border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-[var(--ats-primary)]" value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
-              <option value="all">All</option><option value="partner_investment">Partner investment</option><option value="company_expense">Company expense</option><option value="company_inflow">Company inflow</option><option value="company_account_entry">Company account</option><option value="direct_others_account_entry">Direct/Others account</option><option value="expense">Imported expense</option>
-            </select>
+            <SearchableSelect
+              wrapperClassName="w-[250px]"
+              value={kindFilter}
+              onChange={setKindFilter}
+              options={[
+                { value: "all", label: "All" },
+                { value: "partner_investment", label: "Partner investment" },
+                { value: "company_expense", label: "Company expense" },
+                { value: "company_inflow", label: "Company inflow" },
+                { value: "company_account_entry", label: "Company account" },
+                { value: "direct_others_account_entry", label: "Direct/Others account" },
+                { value: "expense", label: "Imported expense" },
+              ]}
+              placeholder="All"
+            />
           </div>
           <div className="overflow-x-auto rounded-xl border border-[var(--ats-border)] bg-white shadow-sm dark:bg-[var(--ats-bg-elevated)]">
             <table className="min-w-full text-left text-sm">

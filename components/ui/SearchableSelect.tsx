@@ -14,6 +14,7 @@ interface SearchableSelectProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  wrapperClassName?: string;
 }
 
 export default function SearchableSelect({
@@ -22,6 +23,7 @@ export default function SearchableSelect({
   onChange,
   placeholder = "Select an option...",
   className = "",
+  wrapperClassName = "",
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -44,25 +46,25 @@ export default function SearchableSelect({
   );
 
   return (
-    <div className={`relative ${className}`} ref={containerRef}>
+    <div className={`relative ${wrapperClassName}`} ref={containerRef}>
       <button
         type="button"
         onClick={() => {
           setOpen(!open);
           setSearch("");
         }}
-        className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none hover:bg-slate-50 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+        className={`flex w-full items-center justify-between rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] px-3 py-2.5 text-sm text-[var(--ats-text)] outline-none hover:bg-[var(--ats-bg-subtle)] focus:ring-2 focus:ring-[var(--ats-primary)] ${className}`}
       >
         <span className="truncate">{selectedOption ? selectedOption.label : placeholder}</span>
-        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50 text-[var(--ats-text-muted)]" />
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
-          <div className="sticky top-0 bg-white p-2">
+        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-[var(--ats-border)] bg-[var(--ats-bg-elevated)] p-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
+          <div className="sticky top-0 bg-[var(--ats-bg-elevated)] p-2">
             <input
               type="text"
-              className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+              className="w-full rounded-md border border-[var(--ats-border)] bg-[var(--ats-bg-panel)] px-3 py-2 text-sm outline-none focus:border-[var(--ats-primary)] focus:ring-1 focus:ring-[var(--ats-primary)] text-[var(--ats-text)] placeholder-[var(--ats-text-muted)]"
               placeholder="Search..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -71,13 +73,13 @@ export default function SearchableSelect({
           </div>
           <div className="mt-1">
             {filteredOptions.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-slate-500">No results found.</div>
+              <div className="px-3 py-2 text-sm text-[var(--ats-text-muted)]">No results found.</div>
             ) : (
               filteredOptions.map((opt) => (
                 <div
                   key={opt.value}
                   className={`relative flex cursor-pointer select-none items-center rounded-md py-2 pl-8 pr-4 text-sm ${
-                    opt.value === value ? "bg-blue-50 text-blue-900" : "text-slate-700 hover:bg-slate-100"
+                    opt.value === value ? "bg-[var(--ats-primary)]/10 text-[var(--ats-primary)]" : "text-[var(--ats-text)] hover:bg-[var(--ats-bg-subtle)]"
                   }`}
                   onClick={() => {
                     onChange(opt.value);
