@@ -1103,14 +1103,18 @@ export default function CandidateAiInterviewRoom({
     if (step === "thanks") return;
     setStep("thanks");
     try {
+      // Fire completion immediately so it reaches server even if user closes window during cleanup
+      fetch("/api/ai-interview/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({ idempotency_key: `complete-${interview?.id}` }),
+      }).catch(() => {});
+
       const activeQuestion = questions[current];
       if (activeQuestion) await stopAndUploadAnswerAudio(activeQuestion.id).catch(() => {});
       await finishRecording();
-      await fetch("/api/ai-interview/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idempotency_key: `complete-${interview?.id}` }),
-      });
+      
       mediaRef.current?.getTracks().forEach((t) => t.stop());
       screenRef.current?.getTracks().forEach((t) => t.stop());
       if (document.fullscreenElement)
@@ -1128,14 +1132,19 @@ export default function CandidateAiInterviewRoom({
       recognitionRef.current?.stop?.();
       recognitionRef.current = null;
       setListening(false);
+      
+      // Fire cancellation immediately so it reaches server even if user closes window during cleanup
+      fetch("/api/ai-interview/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({ reason }),
+      }).catch(() => {});
+
       const activeQuestion = questions[current];
       if (activeQuestion) await stopAndUploadAnswerAudio(activeQuestion.id).catch(() => {});
       await finishRecording().catch(() => {});
-      await fetch("/api/ai-interview/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason }),
-      });
+      
       mediaRef.current?.getTracks().forEach((t) => t.stop());
       screenRef.current?.getTracks().forEach((t) => t.stop());
       if (document.fullscreenElement)
