@@ -1089,6 +1089,7 @@ export default function CandidateAiInterviewRoom({
       try {
         await fetch("/api/ai-interview/recording/finalize", {
           method: "POST",
+          keepalive: true,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             upload_id: uploadIdRef.current,
