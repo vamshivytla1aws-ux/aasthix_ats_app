@@ -39,12 +39,11 @@ export async function POST(request: Request) {
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const body = (await request.json().catch(() => null)) as Partial<EmployeeDirectoryInput> | null;
     if (!body) return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
-    if (!body.employeeIdCode?.trim()) return NextResponse.json({ error: "Employee ID is required." }, { status: 400 });
     if (!body.fullName?.trim()) return NextResponse.json({ error: "Full name is required." }, { status: 400 });
     if (!body.email?.trim()) return NextResponse.json({ error: "Email is required." }, { status: 400 });
     const id = await createEmployee(
       {
-        employeeIdCode: body.employeeIdCode,
+        employeeIdCode: body.employeeIdCode || "",
         fullName: body.fullName,
         email: body.email,
         phone: body.phone || null,

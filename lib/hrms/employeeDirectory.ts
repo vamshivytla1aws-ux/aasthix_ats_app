@@ -346,11 +346,11 @@ export function validateImportRows(rows: EmployeeImportRow[]) {
   const results: EmployeeImportRowResult[] = [];
   for (const row of rows) {
     const normalized = normalizeEmployeeInput(row);
-    if (!normalized.employeeIdCode || !normalized.fullName || !normalized.email) {
+    if (!normalized.fullName || !normalized.email) {
       results.push({
         rowNumber: row.rowNumber,
         status: "invalid",
-        message: "employeeIdCode, fullName, and email are required.",
+        message: "fullName and email are required.",
       });
       continue;
     }
@@ -414,17 +414,17 @@ export async function applyImportConflictChecks(results: EmployeeImportRowResult
     if (existingEmails.has(email)) {
       return { ...item, status: "conflict", message: "Email already exists." };
     }
-    if (existingCodes.has(code)) {
+    if (code && existingCodes.has(code)) {
       return { ...item, status: "conflict", message: "Employee code already exists." };
     }
     if (seenEmails.has(email)) {
       return { ...item, status: "conflict", message: "Duplicate email in CSV file." };
     }
-    if (seenCodes.has(code)) {
+    if (code && seenCodes.has(code)) {
       return { ...item, status: "conflict", message: "Duplicate employee code in CSV file." };
     }
     seenEmails.add(email);
-    seenCodes.add(code);
+    if (code) seenCodes.add(code);
     return item;
   });
 }
@@ -454,9 +454,20 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
       );
       const cols = ["full_name", "email"];
       const vals: Array<string | number | null> = [row.fullName, row.email];
+
+      let finalCode = row.employeeIdCode?.trim() || "";
+      if (caps.employee_code && !finalCode) {
+        try {
+          const seqRes = await client.query("SELECT nextval('employee_code_seq') as n");
+          finalCode = `EMP-${seqRes.rows[0].n}`;
+        } catch (e) {
+          finalCode = "";
+        }
+      }
+
       if (caps.employee_code) {
         cols.unshift("employee_code");
-        vals.unshift(row.employeeIdCode);
+        vals.unshift(finalCode);
       }
       if (caps.phone) {
         cols.push("phone");
@@ -538,9 +549,21 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
     const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
     const cols = ["full_name", "email"];
     const vals: Array<string | number | null> = [input.fullName.trim(), input.email.trim().toLowerCase()];
+    
+    let finalCode = input.employeeIdCode?.trim() || "";
+    if (caps.employee_code && !finalCode) {
+      try {
+        const seqRes = await query("SELECT nextval('employee_code_seq') as n");
+        finalCode = `EMP-${seqRes.rows[0].n}`;
+      } catch (e) {
+        // Fallback if sequence is missing (though migration should create it)
+        finalCode = "";
+      }
+    }
+    
     if (caps.employee_code) {
       cols.unshift("employee_code");
-      vals.unshift(input.employeeIdCode.trim());
+      vals.unshift(finalCode);
     }
     if (caps.phone) {
       cols.push("phone");

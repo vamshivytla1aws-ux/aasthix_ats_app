@@ -108,8 +108,8 @@ export default function EmployeeDirectoryPage() {
   }
 
   async function submitForm() {
-    if (!form.employeeIdCode.trim() || !form.fullName.trim() || !form.email.trim()) {
-      setToast({ message: "Employee ID, full name, and email are required.", variant: "blocked" });
+    if (!form.fullName.trim() || !form.email.trim()) {
+      setToast({ message: "Full name and email are required.", variant: "blocked" });
       return;
     }
     setBusy(true);
@@ -210,7 +210,7 @@ export default function EmployeeDirectoryPage() {
             Sections: Identity, Employment, Reporting, and Access. Use Assign manager later if manager or director is not created yet.
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <input className={UI.input} placeholder="Employee ID" value={form.employeeIdCode} onChange={(e) => setForm((s) => ({ ...s, employeeIdCode: e.target.value }))} />
+            <input className={UI.input} placeholder="Employee ID (Auto-generated if left blank)" value={form.employeeIdCode} onChange={(e) => setForm((s) => ({ ...s, employeeIdCode: e.target.value }))} />
             <input className={UI.input} placeholder="Full name" value={form.fullName} onChange={(e) => setForm((s) => ({ ...s, fullName: e.target.value }))} />
             <input className={UI.input} placeholder="Email" value={form.email} onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))} />
             <input className={UI.input} placeholder="Phone" value={form.phone} onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))} />
