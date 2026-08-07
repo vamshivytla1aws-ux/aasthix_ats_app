@@ -6,6 +6,7 @@ import { UI } from "@/lib/ui";
 import { apiFetchJson } from "@/lib/apiClient";
 import Toast from "@/components/Toast";
 import { DatePicker } from "@/components/ui/DateTimeFields";
+import ViewportPortal from "@/components/ui/ViewportPortal";
 
 export type ClientContact = {
   id?: number;
@@ -156,8 +157,9 @@ export default function ClientModal({
   }
 
   return (
-    <>
-      {toast && <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />}
+    <ViewportPortal onClose={() => !submitting && onClose()} dirty={false} busy={submitting}>
+      <>
+        {toast && <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />}
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4">
         <button
           type="button"
@@ -311,7 +313,8 @@ export default function ClientModal({
           </form>
         </div>
       </div>
-    </>
+      </>
+    </ViewportPortal>
   );
 }
 
