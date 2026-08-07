@@ -95,6 +95,10 @@ export default function AiInterviewCreate() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!form.candidate_id) {
+      setError("Please select a candidate.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
