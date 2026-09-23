@@ -13,6 +13,7 @@ import { scoreCandidatesBatchWithOpenAI } from "@/lib/matchScoreAi";
 import { runLocalNoAiMatcher, validateLocalResults } from "@/lib/noAiMatch/localMatcher";
 import { buildAdvancedPureAiInsights } from "@/lib/singleMatch/advancedPureAi";
 import type { SingleMatchCheckResultPayload } from "@/lib/singleMatch/types";
+import { runEvidenceMatch } from "@/lib/singleMatch/evidenceEvaluator";
 
 type JobRow = {
   id: number;
@@ -175,6 +176,12 @@ export async function runSingleMatchCheck(opts: {
   const candRow = candRes.rows[0] as CandidateDbRow | undefined;
   if (!candRow) {
     throw Object.assign(new Error("Candidate not found"), { statusCode: 404 });
+  }
+
+  if (useAI && process.env.MATCH_EVIDENCE_V3_ENABLED === "true") {
+    const result = await measure("evidence_evaluation_ms", () => runEvidenceMatch(candidateId,
+      [`Job title: ${jobRow.title}`, jd, jobRow.experience_requirement ? `Required experience: ${jobRow.experience_requirement}` : ""].filter(Boolean).join("\n\n")));
+    return { result, timings };
   }
 
   const resumeCache = new Map<string, Promise<string>>();

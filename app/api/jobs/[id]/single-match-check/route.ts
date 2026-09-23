@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/rbac";
 import { insertSingleMatchHistory } from "@/lib/singleMatch/singleMatchHistoryDb";
 import { runSingleMatchCheck } from "@/lib/singleMatch/singleMatchService";
 import type { SingleMatchCheckApiResponse } from "@/lib/singleMatch/types";
+import { candidateAccessPredicate, jobAccessPredicate } from "@/lib/dataScope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (!Number.isFinite(candidateId) || candidateId <= 0) {
       return NextResponse.json({ error: "candidateId must be a positive number" }, { status: 400 });
     }
+
+    const visible = await query(`SELECT 1 FROM jobs j, candidates c WHERE j.id = $1 AND c.id = $2
+      AND ${jobAccessPredicate("j", "$3")} AND ${candidateAccessPredicate("c", "$3")}`, [jobId, candidateId, user.user_id]);
+    if (!visible.rows.length) return NextResponse.json({ error: "Job or candidate not found or not accessible" }, { status: 404 });
 
     const { result, timings } = await runSingleMatchCheck({ jobId, candidateId, useAI });
 

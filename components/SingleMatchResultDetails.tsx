@@ -1,6 +1,7 @@
 "use client";
 
 import type { SingleMatchCheckResultPayload } from "@/lib/singleMatch/types";
+import { EvidenceMatchDetails } from "@/components/EvidenceMatchDetails";
 
 function decisionBadgeClass(decision: string | null | undefined): string {
   const normalized = (decision || "").toLowerCase();
@@ -65,6 +66,7 @@ type Props = {
 };
 
 export function SingleMatchResultDetails({ result, modeLabel, loadedFromHistoryAt, className = "" }: Props) {
+  if (result.evidence_evaluation) return <EvidenceMatchDetails result={result} className={className} loadedFromHistoryAt={loadedFromHistoryAt} />;
   const recoveryWarning =
     result.resume_recovery_attempted && !result.resume_recovery_succeeded
       ? {
@@ -130,10 +132,11 @@ export function SingleMatchResultDetails({ result, modeLabel, loadedFromHistoryA
         </p>
       ) : null}
 
+      <p className="mb-2 text-xs text-slate-500">Legacy scoring policy: {result.scoring_policy_version || "pre-evidence evaluation"}. Recompute to use the current enabled policy.</p>
       <div className="mb-3 flex flex-wrap items-end gap-4">
         <div>
           <div className="text-[10px] font-semibold uppercase text-slate-500">Overall</div>
-          <div className="text-2xl font-bold text-slate-900">{result.match_score}%</div>
+          <div className="text-2xl font-bold text-slate-900">{result.match_score == null ? "Not scored" : `${result.match_score}%`}</div>
         </div>
         <div>
           <div className="text-[10px] font-semibold uppercase text-slate-500">No-AI</div>

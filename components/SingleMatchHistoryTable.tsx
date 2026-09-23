@@ -36,6 +36,7 @@ function formatWhen(iso: string): string {
 }
 
 function modeLabel(useAi: boolean, row: SingleMatchHistoryRun): string {
+  if (row.evidence_evaluation) return "Evidence AI";
   if (useAi && row.match_score_no_ai == null && row.ai_match_score != null) return "Pure AI";
   if (useAi) return "AI";
   return "No-AI";
@@ -44,6 +45,13 @@ function modeLabel(useAi: boolean, row: SingleMatchHistoryRun): string {
 function toPayload(run: SingleMatchHistoryRun): SingleMatchCheckResultPayload {
   return {
     match_score: run.match_score,
+    evidence_evaluation: run.evidence_evaluation,
+    model_used: run.model_used,
+    scoring_policy_version: run.scoring_policy_version,
+    rubric_version: run.rubric_version,
+    applied_caps: run.applied_caps,
+    domain_gate: run.domain_gate,
+    fallback_review_used: run.fallback_review_used,
     match_score_no_ai: run.match_score_no_ai,
     ai_match_score: run.ai_match_score,
     decision: run.decision,
@@ -139,6 +147,7 @@ export function SingleMatchHistoryTable({
       });
       await onRefreshRequested?.();
       await onRecomputeComplete?.(run, response);
+      if (response.history_saved === false) setTableError("Evaluation completed but history was not saved. Check database migrations 0088 and 0107.");
     } catch (error: unknown) {
       const message =
         error instanceof ApiError ? error.message : error instanceof Error ? error.message : "Failed to recompute match";
@@ -229,7 +238,7 @@ export function SingleMatchHistoryTable({
                   </td>
                   <td className={`${compact ? "px-2 py-1.5" : "px-3 py-2"} text-slate-700`}>{modeLabel(r.use_ai, r)}</td>
                   <td className={`${compact ? "whitespace-nowrap px-2 py-1.5" : "px-3 py-2"} font-semibold text-slate-900`}>
-                    {r.match_score}%
+                    {r.match_score == null ? "Not scored" : `${r.match_score}%`}
                   </td>
                   {!compact ? (
                     <>

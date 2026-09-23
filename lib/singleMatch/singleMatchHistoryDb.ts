@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { candidateAccessPredicate, jobAccessPredicate } from "@/lib/dataScope";
 import type { SingleMatchCheckResultPayload, SingleMatchHistoryRun } from "@/lib/singleMatch/types";
 
 function hasDbCode(error: unknown, code: string): boolean {
@@ -31,6 +32,7 @@ function toIsoTimestamp(value: unknown): string {
 
 function buildAdvancedInsightsJson(result: SingleMatchCheckResultPayload): Record<string, unknown> {
   return {
+    evidence_evaluation: result.evidence_evaluation ?? null,
     resume_source: result.resume_source ?? null,
     resume_chars_scored: result.resume_chars_scored ?? null,
     jd_chars_scored: result.jd_chars_scored ?? null,
@@ -75,7 +77,7 @@ type DbRow = {
   candidate_id: string | number;
   candidate_full_name: string;
   use_ai: boolean;
-  match_score: number;
+  match_score: number | null;
   match_score_no_ai: number | null;
   ai_match_score: number | null;
   decision: string | null;
@@ -102,7 +104,8 @@ function mapHistoryRuns(rows: DbRow[]): SingleMatchHistoryRun[] {
       candidate_id: Number(row.candidate_id),
       candidate_full_name: row.candidate_full_name || "—",
       use_ai: Boolean(row.use_ai),
-      match_score: Number(row.match_score) || 0,
+      match_score: row.match_score == null ? null : Number(row.match_score),
+      evidence_evaluation: (advanced.evidence_evaluation as SingleMatchHistoryRun["evidence_evaluation"]) ?? undefined,
       match_score_no_ai: row.match_score_no_ai != null ? Number(row.match_score_no_ai) : null,
       ai_match_score: row.ai_match_score != null ? Number(row.ai_match_score) : null,
       decision: row.decision,
@@ -260,7 +263,7 @@ async function insertSingleMatchHistoryLegacy(opts: {
       candidateId,
       createdByUserId,
       useAi,
-      clampScore(result.match_score) ?? 0,
+      clampScore(result.match_score),
       clampScore(result.match_score_no_ai),
       clampScore(result.ai_match_score),
       result.decision,
@@ -313,7 +316,7 @@ export async function insertSingleMatchHistory(opts: {
         candidateId,
         createdByUserId,
         useAi,
-        clampScore(result.match_score) ?? 0,
+        clampScore(result.match_score),
         clampScore(result.match_score_no_ai),
         clampScore(result.ai_match_score),
         result.decision,
@@ -335,6 +338,7 @@ export async function insertSingleMatchHistory(opts: {
       return null;
     }
     if (isUndefinedColumn(error)) {
+      if (result.evidence_evaluation) return null;
       console.warn("[singleMatchHistory] advanced_insights_json missing - save history will fall back to legacy columns until migration 0088 is applied");
       return insertSingleMatchHistoryLegacy(opts);
     }
@@ -348,17 +352,17 @@ export async function listSingleMatchHistoryForJob(opts: {
   limit?: number;
 }): Promise<{ runs: SingleMatchHistoryRun[]; migrationRequired: boolean }> {
   const limit = Math.min(100, Math.max(1, opts.limit ?? 50));
-  void opts.ownerUserId;
 
   try {
     const res = await query(
       `
       ${SELECT_HISTORY_COLUMNS}
       WHERE h.job_id = $1
+      AND ${jobAccessPredicate("j", "$3")} AND ${candidateAccessPredicate("c", "$3")}
       ORDER BY h.created_at DESC
       LIMIT $2
       `,
-      [opts.jobId, limit]
+      [opts.jobId, limit, opts.ownerUserId]
     );
 
     return { runs: mapHistoryRuns(res.rows as DbRow[]), migrationRequired: false };
@@ -371,10 +375,11 @@ export async function listSingleMatchHistoryForJob(opts: {
         `
         ${SELECT_HISTORY_COLUMNS_LEGACY}
         WHERE h.job_id = $1
+        AND ${jobAccessPredicate("j", "$3")} AND ${candidateAccessPredicate("c", "$3")}
         ORDER BY h.created_at DESC
         LIMIT $2
         `,
-        [opts.jobId, limit]
+        [opts.jobId, limit, opts.ownerUserId]
       );
       return { runs: mapHistoryRuns(res.rows as DbRow[]), migrationRequired: false };
     }

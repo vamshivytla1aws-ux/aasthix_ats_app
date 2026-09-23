@@ -51,6 +51,23 @@ export function costControlledChatBody(body: Record<string, unknown>, model: str
   return withCostControlledModel(body, model);
 }
 
+/** Includes response-body consumption in the deadline (headers alone are not completion). */
+export async function fetchOpenAiChatJson(body: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+  if (!process.env.OPENAI_API_KEY) throw new Error("OpenAI is not configured");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(withCostControlledModel(body, String(body.model || ""))),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`AI provider request failed (${response.status})`);
+    return await response.json();
+  } finally { clearTimeout(timer); }
+}
+
 export function isAbortError(e: unknown): boolean {
   return (
     (e instanceof Error && e.name === "AbortError") ||

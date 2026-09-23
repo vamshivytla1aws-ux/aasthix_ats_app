@@ -21,6 +21,7 @@ type CandidatePick = {
 };
 
 function modeLabel(useAIRequested: boolean, result: SingleMatchCheckResultPayload): string {
+  if (result.evidence_evaluation) return "Evidence-based AI evaluation";
   if (!useAIRequested) return "No-AI only (Python rule matcher)";
   if (result.match_score_no_ai == null && result.ai_match_score != null) {
     return "Pure AI (full JD <-> resume, OpenAI)";
@@ -32,6 +33,8 @@ function modeLabel(useAIRequested: boolean, result: SingleMatchCheckResultPayloa
 function toPayload(run: SingleMatchHistoryRun): SingleMatchCheckResultPayload {
   return {
     match_score: run.match_score,
+    evidence_evaluation: run.evidence_evaluation,
+    fallback_review_used: run.fallback_review_used,
     match_score_no_ai: run.match_score_no_ai,
     ai_match_score: run.ai_match_score,
     decision: run.decision,
@@ -200,6 +203,7 @@ export default function SingleMatchCheckModal({
   }, [open]);
 
   useEffect(() => {
+    if (runBusy || result || runError) return;
     if (!selectedId) {
       setLoadedFromHistoryAt(null);
       return;
@@ -215,9 +219,12 @@ export default function SingleMatchCheckModal({
     setLastUseAI(Boolean(latestRun.use_ai));
     setRunError(null);
     setLoadedFromHistoryAt(latestRun.created_at);
-  }, [modalHistory, selectedId]);
+  }, [modalHistory, selectedId, runBusy, result, runError]);
 
   const clearCandidateSelection = useCallback(() => {
+    setResult(null);
+    setRunError(null);
+    setLoadedFromHistoryAt(null);
     setSelectedId(null);
     setSelectedRecord(null);
     setSearch("");
@@ -244,6 +251,7 @@ export default function SingleMatchCheckModal({
         return;
       }
       setResult(response.result);
+      if (response.history_saved === false) setRunError("Evaluation completed but could not be saved to history. Ask an administrator to check migrations 0088 and 0107 before recomputing.");
       await loadModalHistory();
       await onHistorySaved?.();
     } catch (error: unknown) {
@@ -288,7 +296,7 @@ export default function SingleMatchCheckModal({
               <p className="text-xs text-slate-600">Does not update bulk match table or shortlist.</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200">
+          <button type="button" aria-label="Close single match" onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -370,7 +378,7 @@ export default function SingleMatchCheckModal({
               onChange={(event) => setUseAI(event.target.checked)}
               className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
             />
-            <span>Use OpenAI - full JD &lt;-&gt; resume scoring (no Python matcher; same stack as bulk analyze)</span>
+            <span>Use OpenAI to evaluate this JD and candidate only. No bulk matching or pipeline changes.</span>
           </label>
 
           {runError ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">{runError}</div> : null}
@@ -400,6 +408,17 @@ export default function SingleMatchCheckModal({
               loading={modalHistoryLoading}
               compact
               migrationRequired={modalHistoryMigration}
+              onSelectRun={(saved) => {
+                setSelectedId(saved.candidate_id);
+                setSelectedRecord(current => current?.id === saved.candidate_id ? current : {
+                  id: saved.candidate_id, full_name: saved.candidate_full_name, email: null, location: null,
+                });
+                setUseAI(saved.use_ai);
+                setLastUseAI(saved.use_ai);
+                setResult(toPayload(saved));
+                setRunError(null);
+                setLoadedFromHistoryAt(saved.created_at);
+              }}
               onRefreshRequested={loadModalHistory}
               onRecomputeComplete={(run, response) => {
                 setSelectedId(run.candidate_id);
