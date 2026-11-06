@@ -5,6 +5,44 @@ const permissions = { "dashboard.view": true, "employee_directory.view_self": tr
   "documents.view_self": true, "attendance.view_self": true, "timesheet.view_self": true,
   "leave.view_self": false, "onboarding_exit.view_self": true, "performance.view_self": true };
 
+test("directory Edit brings the selected employee form into view and saves changes", async ({ page, context }) => {
+  await context.addCookies([{ name: "ats_token", value: "mock", url: "http://127.0.0.1:3000" }]);
+  let record = { ...employee, employee_code: "EMP-12", department: "Engineering", employment_status: "active", joining_date: "2026-05-13" };
+  let saved = false;
+  await page.route("**/api/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown = {};
+    if (path === "/api/auth/me") body = { user: { id: 1, full_name: "Sample HR", role: "hr" }, permissions: { "dashboard.view": true, "employee_directory.manage": true, "employee_directory.view_all": true } };
+    else if (path === "/api/hrms/employees") body = { employees: [record] };
+    else if (path === "/api/hrms/employees/12" && route.request().method() === "PATCH") {
+      const values = route.request().postDataJSON();
+      expect(values).toMatchObject({ fullName: employee.full_name, email: employee.email, department: "Product", joiningDate: "2026-05-13" });
+      record = { ...record, department: values.department }; saved = true;
+      body = { operation_status: "success" };
+    }
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/hrms/employees");
+  const row = page.getByRole("row").filter({ hasText: employee.email });
+  await row.getByRole("button", { name: "Edit", exact: true }).click();
+  const name = page.getByPlaceholder("Full name", { exact: true });
+  await expect(name).toBeFocused();
+  await expect(name).toBeInViewport();
+  await expect(name).toHaveValue(employee.full_name);
+  await expect(page.getByPlaceholder("Email", { exact: true })).toHaveValue(employee.email);
+  await page.getByPlaceholder("Department", { exact: true }).fill("Product");
+  await page.getByRole("button", { name: "Update employee", exact: true }).click();
+  await expect(row.getByRole("cell", { name: "Product", exact: true })).toBeVisible();
+  expect(saved).toBe(true);
+  // Selecting the same record again must also return to the form.
+  await row.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(name).toBeFocused();
+  await expect(name).toBeInViewport();
+  await row.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(name).toBeFocused();
+  await expect(name).toBeInViewport();
+});
+
 async function fixtures(page: Page, overrides: Record<string, boolean> = {}) {
   const requests: string[] = [];
   await page.route("**/api/**", async route => {

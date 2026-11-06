@@ -57,6 +57,8 @@ export default function EmployeeDirectoryPage() {
   const [departmentFilter, setDepartmentFilter] = React.useState("all");
   const [form, setForm] = React.useState(EMPTY_FORM);
   const [editingId, setEditingId] = React.useState<number | null>(null);
+  const formSectionRef = React.useRef<HTMLElement>(null);
+  const fullNameRef = React.useRef<HTMLInputElement>(null);
   const [assignManagerLater, setAssignManagerLater] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [toast, setToast] = React.useState<{ message: string; variant: "success" | "error" | "blocked" } | null>(null);
@@ -105,6 +107,10 @@ export default function EmployeeDirectoryPage() {
       role: employee.role || "employee",
     });
     setAssignManagerLater(!employee.reporting_manager_email);
+    window.requestAnimationFrame(() => {
+      formSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      fullNameRef.current?.focus({ preventScroll: true });
+    });
   }
 
   async function submitForm() {
@@ -204,14 +210,14 @@ export default function EmployeeDirectoryPage() {
     <AccessGate permissionKey="employee_directory.view_all">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={1800} /> : null}
       <ModulePageFrame title="Employee Directory" subtitle="Add, update, search, and manage employee lifecycle status.">
-        <section className={UI.card + " p-4 sm:p-5"}>
+        <section ref={formSectionRef} aria-label="Employee details form" className={UI.card + " scroll-mt-40 p-4 sm:p-5"}>
           <h2 className="text-base font-semibold text-[var(--ats-text)]">{editingId ? "Edit employee" : "Add employee"}</h2>
           <div className="mt-2 text-xs text-[var(--ats-text-muted)]">
-            Sections: Identity, Employment, Reporting, and Access. Use Assign manager later if manager or director is not created yet.
+            {editingId ? `Editing ${form.fullName}. Update the details below and select Update employee.` : "Sections: Identity, Employment, Reporting, and Access. Use Assign manager later if manager or director is not created yet."}
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <input className={UI.input} placeholder="Employee ID (Auto-generated if left blank)" value={form.employeeIdCode} onChange={(e) => setForm((s) => ({ ...s, employeeIdCode: e.target.value }))} />
-            <input className={UI.input} placeholder="Full name" value={form.fullName} onChange={(e) => setForm((s) => ({ ...s, fullName: e.target.value }))} />
+            <input ref={fullNameRef} className={UI.input} placeholder="Full name" value={form.fullName} onChange={(e) => setForm((s) => ({ ...s, fullName: e.target.value }))} />
             <input className={UI.input} placeholder="Email" value={form.email} onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))} />
             <input className={UI.input} placeholder="Phone" value={form.phone} onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))} />
             <input className={UI.input} placeholder="Department" value={form.department} onChange={(e) => setForm((s) => ({ ...s, department: e.target.value }))} />
@@ -255,7 +261,7 @@ export default function EmployeeDirectoryPage() {
               {editingId ? "Update employee" : "Add employee"}
             </button>
             <button type="button" className={UI.secondaryButton + " py-2 text-sm"} onClick={resetForm} disabled={busy}>
-              Reset
+              {editingId ? "Cancel editing" : "Reset"}
             </button>
           </div>
         </section>
@@ -372,7 +378,7 @@ export default function EmployeeDirectoryPage() {
                         <a href={`/hrms/employees/${employee.id}`} className={UI.primaryButton + " py-1.5 px-3 text-xs"}>
                           View 360
                         </a>
-                        <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => startEdit(employee)}>
+                        <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => startEdit(employee)} disabled={busy}>
                           Edit
                         </button>
                         {employee.employment_status === "active" ? (
