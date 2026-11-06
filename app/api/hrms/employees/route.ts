@@ -37,10 +37,11 @@ export async function POST(request: Request) {
   try {
     const auth = await requirePermission("employee_directory.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    if (auth.access.role === "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const body = (await request.json().catch(() => null)) as Partial<EmployeeDirectoryInput> | null;
     if (!body) return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
-    if (!body.fullName?.trim()) return NextResponse.json({ error: "Full name is required." }, { status: 400 });
-    if (!body.email?.trim()) return NextResponse.json({ error: "Email is required." }, { status: 400 });
+    if (typeof body.fullName !== "string" || !body.fullName.trim()) return NextResponse.json({ error: "Full name is required." }, { status: 400 });
+    if (typeof body.email !== "string" || !body.email.trim()) return NextResponse.json({ error: "Email is required." }, { status: 400 });
     const id = await createEmployee(
       {
         employeeIdCode: body.employeeIdCode || "",
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
               ? "Employee email or employee ID already exists."
               : message,
       },
-      { status: code === "MANAGER_NOT_FOUND" || isDuplicate ? 400 : 500 },
+      { status: code === "EMPLOYEE_SCHEMA_OUTDATED" ? 503 : ["MANAGER_NOT_FOUND", "INVALID_EMPLOYEE_DETAILS"].includes(code) || isDuplicate ? 400 : 500 },
     );
   }
 }

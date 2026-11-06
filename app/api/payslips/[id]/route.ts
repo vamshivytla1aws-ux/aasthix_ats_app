@@ -60,6 +60,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
   const auth = await requirePermission("salary.manage");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  if (auth.access.role === "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const payslipId = Number(params.id);
   if (!Number.isFinite(payslipId) || payslipId <= 0) {
     return NextResponse.json({ error: "Invalid payslip id" }, { status: 400 });

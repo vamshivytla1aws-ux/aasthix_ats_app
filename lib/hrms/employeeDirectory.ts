@@ -14,6 +14,8 @@ export type EmployeeDirectoryInput = {
   joiningDate?: string | null;
   reportingManagerUserId?: number | null;
   reportingManagerEmail?: string | null;
+  /** Internal update flag: unrelated profile edits retain existing leave mappings. */
+  syncReportingManager?: boolean;
   workLocation?: string | null;
   status: EmployeeStatus;
   role?: string | null;
@@ -124,6 +126,28 @@ async function hasUsersColumns(columns: string[]) {
     acc[column] = checks[idx];
     return acc;
   }, {});
+}
+
+function requireEmployeeJobColumns(caps: Record<string, boolean>, input: Pick<EmployeeDirectoryInput, "department" | "designation">) {
+  const missing = (["department", "designation"] as const).filter(key => !caps[key] && input[key]?.trim());
+  if (missing.length) {
+    const error = new Error(`Cannot save ${missing.join(" and ")}: the employee profile update has not been applied. Please contact your administrator.`);
+    (error as Error & { code: string }).code = "EMPLOYEE_SCHEMA_OUTDATED";
+    throw error;
+  }
+}
+
+/** The profile and leave approval manager must change together, in one statement. */
+function employeeMutationWithManager(sql: string, values: Array<string | number | null>, managerId: number | null, actorUserId: number) {
+  const managerIndex = values.length + 1, actorIndex = values.length + 2;
+  const mapping = managerId == null
+    ? "DELETE FROM employee_manager_map WHERE user_id IN (SELECT id FROM changed_employee) RETURNING user_id"
+    : `INSERT INTO employee_manager_map (user_id, manager_user_id, updated_by_user_id, updated_at)
+       SELECT id, $${managerIndex}::integer, $${actorIndex}::integer, NOW() FROM changed_employee
+       ON CONFLICT (user_id) DO UPDATE SET manager_user_id=EXCLUDED.manager_user_id,
+         updated_by_user_id=EXCLUDED.updated_by_user_id, updated_at=NOW() RETURNING user_id`;
+  return { sql: `WITH changed_employee AS (${sql}), changed_manager AS (${mapping}) SELECT id FROM changed_employee`,
+    values: managerId == null ? values : [...values, managerId, actorUserId] };
 }
 
 async function hasUsersEmployeeCodeColumn() {
@@ -342,9 +366,37 @@ function normalizeEmployeeInput(input: Partial<EmployeeDirectoryInput>): Employe
   };
 }
 
+function validateNewEmployee(input: Partial<EmployeeDirectoryInput>) {
+  let message = "";
+  const role = typeof input.role === "string" ? input.role.trim().toLowerCase() : input.role == null ? "employee" : "";
+  if (typeof input.fullName !== "string" || !input.fullName.trim()) message = "Full name is required.";
+  else if (typeof input.email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) message = "A valid email is required.";
+  else if (!["employee", "manager", "hiring_manager", "recruiter", "hr", "coordinator", "user"].includes(role)) message = "Use Access Control to manage administrator roles.";
+  else if (input.status && !["active", "inactive", "resigned"].includes(String(input.status).trim().toLowerCase())) message = "Invalid employment status.";
+  else {
+    for (const key of ["employeeIdCode", "phone", "department", "designation", "employmentType", "joiningDate", "reportingManagerEmail", "workLocation"] as const) {
+      if (input[key] != null && typeof input[key] !== "string") { message = `Enter a valid ${key}.`; break; }
+    }
+    if (!message && input.joiningDate?.trim()) {
+      const value = input.joiningDate.trim(), date = new Date(`${value}T00:00:00Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) message = "Enter a valid date of joining.";
+    }
+  }
+  if (message) {
+    const error = new Error(message);
+    (error as Error & { code: string }).code = "INVALID_EMPLOYEE_DETAILS";
+    throw error;
+  }
+}
+
 export function validateImportRows(rows: EmployeeImportRow[]) {
   const results: EmployeeImportRowResult[] = [];
   for (const row of rows) {
+    try { validateNewEmployee(row); }
+    catch (error) {
+      results.push({ rowNumber: row.rowNumber, status: "invalid", message: error instanceof Error ? error.message : "Invalid employee details." });
+      continue;
+    }
     const normalized = normalizeEmployeeInput(row);
     if (!normalized.fullName || !normalized.email) {
       results.push({
@@ -431,6 +483,7 @@ export async function applyImportConflictChecks(results: EmployeeImportRowResult
 
 export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserId: number) {
   if (rows.length === 0) return { created: 0 };
+  rows = rows.map(row => { validateNewEmployee(row); return normalizeEmployeeInput(row); });
   const caps = await hasUsersColumns([
     "employee_code",
     "phone",
@@ -443,6 +496,7 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
     "employment_status",
     "role",
   ]);
+  for (const row of rows) requireEmployeeJobColumns(caps, row);
   const client = await pool.connect();
   let created = 0;
   try {
@@ -510,7 +564,8 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
         if (col === "joining_date") return `$${i + 1}::date`;
         return `$${i + 1}`;
       });
-      await client.query(`INSERT INTO users (${cols.join(", ")}) VALUES (${placeholders.join(", ")})`, vals);
+      const mutation = employeeMutationWithManager(`INSERT INTO users (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING id`, vals, managerId, actorUserId);
+      await client.query(mutation.sql, mutation.values);
       created += 1;
     }
     await client.query("COMMIT");
@@ -531,6 +586,8 @@ export async function importEmployees(rows: EmployeeDirectoryInput[], actorUserI
 }
 
 export async function createEmployee(input: EmployeeDirectoryInput, actorUserId: number) {
+  validateNewEmployee(input);
+  input = normalizeEmployeeInput(input);
   const createOnce = async () => {
     const caps = await hasUsersColumns([
     "employee_code",
@@ -544,6 +601,7 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
     "employment_status",
     "role",
   ]);
+    requireEmployeeJobColumns(caps, input);
     const normalizedStatus = normalizeEmployeeStatus(input.status);
     const role = (input.role || "employee").trim().toLowerCase();
     const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
@@ -606,7 +664,8 @@ export async function createEmployee(input: EmployeeDirectoryInput, actorUserId:
       if (col === "joining_date") return `$${i + 1}::date`;
       return `$${i + 1}`;
     });
-    const ins = await query(`INSERT INTO users (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING id`, vals);
+    const mutation = employeeMutationWithManager(`INSERT INTO users (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING id`, vals, managerId, actorUserId);
+    const ins = await query(mutation.sql, mutation.values);
     const id = Number(ins.rows[0]?.id || 0);
     await writeAuditLog({
       actorUserId,
@@ -639,8 +698,14 @@ export async function updateEmployee(id: number, input: EmployeeDirectoryInput, 
     "employment_status",
     "role",
   ]);
+    requireEmployeeJobColumns(caps, input);
     const normalizedStatus = normalizeEmployeeStatus(input.status);
     const managerId = await requireResolvableReportingManager(input.reportingManagerUserId || null, input.reportingManagerEmail || null);
+    if (managerId === id) {
+      const error = new Error("An employee cannot be their own reporting manager.");
+      (error as Error & { code: string }).code = "INVALID_REPORTING_MANAGER";
+      throw error;
+    }
     const setClauses = ["full_name = $2", "email = $3"];
     const vals: Array<string | number | null> = [id, input.fullName.trim(), input.email.trim().toLowerCase()];
     let idx = 4;
@@ -687,14 +752,14 @@ export async function updateEmployee(id: number, input: EmployeeDirectoryInput, 
       setClauses.push(`role = $${idx++}`);
       vals.push((input.role || "employee").trim().toLowerCase());
     }
-    await query(
-      `
+    const employeeSql = `
         UPDATE users
         SET ${setClauses.join(",\n          ")}
-        WHERE id = $1
-      `,
-      vals,
-    );
+        WHERE id = $1 RETURNING id
+      `;
+    const mutation = input.syncReportingManager === false ? { sql: employeeSql, values: vals }
+      : employeeMutationWithManager(employeeSql, vals, managerId, actorUserId);
+    await query(mutation.sql, mutation.values);
     await writeAuditLog({
       actorUserId,
       action: "hrms.employee.updated",

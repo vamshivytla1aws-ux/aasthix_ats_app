@@ -4,6 +4,7 @@ import React from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { apiFetchJson } from "@/lib/apiClient";
+import { isEmployeeProfileCache } from "@/lib/hrms/employeeProfileCache";
 import { UI } from "@/lib/ui";
 
 export type EditableEmployee = {
@@ -30,7 +31,7 @@ export default function EmployeeProfileEditor({ employee, onUpdated }: { employe
   if (!canManage) return null;
   async function refresh() {
     await onUpdated();
-    await mutate(`/api/hrms/employees/${employee.id}/login`);
+    await mutate(key => isEmployeeProfileCache(key, employee.id));
     await mutate("/api/salary-structures");
   }
   async function save(event: React.FormEvent) {
@@ -61,7 +62,7 @@ export default function EmployeeProfileEditor({ employee, onUpdated }: { employe
       </div>
     </div>
     {editing && <form onSubmit={save} className="mt-5 space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {([["fullName", "Full name", "text"], ["email", "Email", "email"], ["employeeIdCode", "Employee code", "text"],
           ["phone", "Phone", "text"], ["department", "Department", "text"], ["designation", "Designation", "text"],
           ["employmentType", "Employment type", "text"], ["joiningDate", "Date of joining", "date"],
@@ -74,7 +75,7 @@ export default function EmployeeProfileEditor({ employee, onUpdated }: { employe
         <label className={UI.label}>Login role<select className={UI.select} value={draft.role} onChange={event => field("role", event.target.value)}>
           {["employee", "manager", "hiring_manager", "recruiter", "hr", "coordinator", "user"].map(role => <option key={role} value={role}>{role.replaceAll("_", " ")}</option>)}
         </select></label>
-      </div>
+      </fieldset>
       <p className="text-sm text-[var(--ats-text-muted)]">Clear an optional field to remove its value. Salary, PAN, PF and bank details are under Salary & Payslips. After changing the joining date, use Employee login to reset the password if needed.</p>
       <div className="flex flex-wrap gap-2">
         <button type="submit" className={UI.primaryButton} disabled={busy}>{busy ? "Saving…" : "Save profile"}</button>

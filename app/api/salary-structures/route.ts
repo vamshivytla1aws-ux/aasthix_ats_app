@@ -20,6 +20,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const auth = await requirePermission("salary.manage");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  if (auth.access.role === "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = (await request.json().catch(() => null)) as SalaryCalcInput | null;
   if (!body) return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   if (body.pan && !isValidPan(String(body.pan).toUpperCase())) {

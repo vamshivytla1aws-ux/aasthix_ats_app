@@ -50,6 +50,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   try {
     const auth = await requirePermission("documents.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    if (auth.access.role === "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const { id: idRaw } = await context.params;
     const id = Number(idRaw);
     if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "Invalid document id." }, { status: 400 });

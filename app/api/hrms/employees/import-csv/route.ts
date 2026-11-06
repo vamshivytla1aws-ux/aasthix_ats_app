@@ -24,6 +24,7 @@ const REQUIRED_HEADERS = [
 export async function POST(request: Request) {
   const auth = await requirePermission("employee_directory.manage");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  if (auth.access.role === "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const form = await request.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "Invalid form data." }, { status: 400 });

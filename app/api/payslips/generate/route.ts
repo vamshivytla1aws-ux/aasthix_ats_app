@@ -101,6 +101,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requirePermission("salary.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    if (auth.access.role === "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const body = (await request.json().catch(() => null)) as
       | { employeeId?: number; month?: number; year?: number; paidDays?: number; lopDays?: number; definedWorkDays?: number; preview?: boolean; actualNetPaid?: number }
       | null;

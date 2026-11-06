@@ -32,6 +32,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requirePermission("documents.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    if (auth.access.role === "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const form = await request.formData().catch(() => null);
     if (!form) return NextResponse.json({ error: "Invalid form data." }, { status: 400 });
     const employeeId = Number(form.get("employeeId") || 0);

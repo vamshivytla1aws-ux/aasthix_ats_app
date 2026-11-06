@@ -43,6 +43,8 @@ export async function PATCH(request: Request, context: { params: { id: string } 
         joiningDate: joiningDate || null,
         reportingManagerUserId: has("reportingManagerUserId") ? body.reportingManagerUserId || null : has("reportingManagerEmail") ? null : Number(current.reporting_manager_user_id) || null,
         reportingManagerEmail: has("reportingManagerEmail") ? body.reportingManagerEmail || null : null,
+        syncReportingManager: (has("reportingManagerUserId") && Number(body.reportingManagerUserId || 0) !== Number(current.reporting_manager_user_id || 0)) ||
+          (has("reportingManagerEmail") && String(body.reportingManagerEmail || "").trim().toLowerCase() !== String(current.reporting_manager_email || "").trim().toLowerCase()),
         workLocation: text("workLocation", current.work_location) || null,
         status: status as "active" | "inactive" | "resigned", role,
       },
@@ -59,7 +61,7 @@ export async function PATCH(request: Request, context: { params: { id: string } 
         operation_status: code === "MANAGER_NOT_FOUND" ? "blocked" : "error",
         user_message: error instanceof Error ? error.message : "Failed to update employee.",
       },
-      { status: code === "MANAGER_NOT_FOUND" ? 400 : 500 },
+      { status: code === "EMPLOYEE_SCHEMA_OUTDATED" ? 503 : ["MANAGER_NOT_FOUND", "INVALID_REPORTING_MANAGER"].includes(code) ? 400 : 500 },
     );
   }
 }

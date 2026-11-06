@@ -80,6 +80,9 @@ export async function apiFetchJson<T>(input: RequestInfo | URL, init?: RequestIn
         message = String(e);
       }
     }
+    if (payload && typeof payload === "object" && "user_message" in payload && typeof payload.user_message === "string" && !("error" in payload && payload.error)) {
+      message = payload.user_message;
+    }
     throw new ApiError(message, res.status, payload, requestId);
   }
 

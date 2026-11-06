@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import Toast from "@/components/Toast";
@@ -9,6 +9,7 @@ import { dashboardFetcher } from "@/lib/swrFetcher";
 import { apiFetchJson } from "@/lib/apiClient";
 import { UI } from "@/lib/ui";
 import { DatePicker } from "@/components/ui/DateTimeFields";
+import { isEmployeeProfileCache } from "@/lib/hrms/employeeProfileCache";
 
 type Employee = {
   id: number;
@@ -52,6 +53,9 @@ const EMPTY_FORM = {
 };
 
 export default function EmployeeDirectoryPage() {
+  const { mutate: refreshCaches } = useSWRConfig();
+  const { data: me } = useSWR<{ user: { role: string }; permissions: Record<string, boolean> }>("/api/auth/me", dashboardFetcher);
+  const canManage = me?.user.role !== "employee" && me?.permissions["employee_directory.manage"] === true;
   const [q, setQ] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [departmentFilter, setDepartmentFilter] = React.useState("all");
@@ -62,6 +66,7 @@ export default function EmployeeDirectoryPage() {
   const [assignManagerLater, setAssignManagerLater] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [toast, setToast] = React.useState<{ message: string; variant: "success" | "error" | "blocked" } | null>(null);
+  const [saveFeedback, setSaveFeedback] = React.useState<{ message: string; error: boolean } | null>(null);
   const [importRows, setImportRows] = React.useState<EmployeeImportRowResult[]>([]);
   const [importSummary, setImportSummary] = React.useState<{ valid: number; invalid: number; conflict: number } | null>(null);
 
@@ -72,7 +77,7 @@ export default function EmployeeDirectoryPage() {
     if (departmentFilter !== "all") sp.set("department", departmentFilter);
     return `/api/hrms/employees?${sp.toString()}`;
   }, [q, statusFilter, departmentFilter]);
-  const { data, mutate } = useSWR<{ employees: Employee[] }>(employeesUrl, dashboardFetcher, { revalidateOnFocus: false });
+  const { data, error: employeesError, mutate } = useSWR<{ employees: Employee[] }>(employeesUrl, dashboardFetcher, { revalidateOnFocus: false });
 
   const employees = React.useMemo(() => data?.employees ?? [], [data?.employees]);
   const departmentOptions = React.useMemo(() => {
@@ -85,12 +90,14 @@ export default function EmployeeDirectoryPage() {
   }, [employees]);
 
   function resetForm() {
+    setSaveFeedback(null);
     setForm(EMPTY_FORM);
     setEditingId(null);
     setAssignManagerLater(true);
   }
 
   function startEdit(employee: Employee) {
+    setSaveFeedback(null);
     setEditingId(employee.id);
     setForm({
       employeeIdCode: employee.employee_code || "",
@@ -114,7 +121,9 @@ export default function EmployeeDirectoryPage() {
   }
 
   async function submitForm() {
+    setSaveFeedback(null);
     if (!form.fullName.trim() || !form.email.trim()) {
+      setSaveFeedback({ message: "Full name and email are required.", error: true });
       setToast({ message: "Full name and email are required.", variant: "blocked" });
       return;
     }
@@ -139,11 +148,14 @@ export default function EmployeeDirectoryPage() {
           }),
         });
       }
-      setToast({ message: editingId ? "Employee updated." : "Employee created.", variant: "success" });
+      await refreshCaches(key => isEmployeeProfileCache(key, editingId || 0));
+      setToast({ message: editingId ? "Employee details saved." : "Employee created.", variant: "success" });
       resetForm();
-      await mutate();
+      setSaveFeedback({ message: `Saved details for ${form.fullName}.`, error: false });
     } catch (error) {
-      setToast({ message: error instanceof Error ? error.message : "Failed to save employee.", variant: "error" });
+      const message = error instanceof Error ? error.message : "Failed to save employee.";
+      setSaveFeedback({ message, error: true });
+      setToast({ message, variant: "error" });
     } finally {
       setBusy(false);
     }
@@ -210,39 +222,39 @@ export default function EmployeeDirectoryPage() {
     <AccessGate permissionKey="employee_directory.view_all">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={1800} /> : null}
       <ModulePageFrame title="Employee Directory" subtitle="Add, update, search, and manage employee lifecycle status.">
-        <section ref={formSectionRef} aria-label="Employee details form" className={UI.card + " scroll-mt-40 p-4 sm:p-5"}>
+        {canManage && <section ref={formSectionRef} aria-label="Employee details form" className={UI.card + " scroll-mt-40 p-4 sm:p-5"}>
           <h2 className="text-base font-semibold text-[var(--ats-text)]">{editingId ? "Edit employee" : "Add employee"}</h2>
           <div className="mt-2 text-xs text-[var(--ats-text-muted)]">
             {editingId ? `Editing ${form.fullName}. Update the details below and select Update employee.` : "Sections: Identity, Employment, Reporting, and Access. Use Assign manager later if manager or director is not created yet."}
           </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <input className={UI.input} placeholder="Employee ID (Auto-generated if left blank)" value={form.employeeIdCode} onChange={(e) => setForm((s) => ({ ...s, employeeIdCode: e.target.value }))} />
-            <input ref={fullNameRef} className={UI.input} placeholder="Full name" value={form.fullName} onChange={(e) => setForm((s) => ({ ...s, fullName: e.target.value }))} />
-            <input className={UI.input} placeholder="Email" value={form.email} onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))} />
-            <input className={UI.input} placeholder="Phone" value={form.phone} onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))} />
-            <input className={UI.input} placeholder="Department" value={form.department} onChange={(e) => setForm((s) => ({ ...s, department: e.target.value }))} />
-            <input className={UI.input} placeholder="Designation" value={form.designation} onChange={(e) => setForm((s) => ({ ...s, designation: e.target.value }))} />
-            <input className={UI.input} placeholder="Employment type" value={form.employmentType} onChange={(e) => setForm((s) => ({ ...s, employmentType: e.target.value }))} />
-            <DatePicker value={form.joiningDate} onChange={(value) => setForm((s) => ({ ...s, joiningDate: value }))} placeholder="Joining date" />
-            <input className={UI.input} placeholder="Work location" value={form.workLocation} onChange={(e) => setForm((s) => ({ ...s, workLocation: e.target.value }))} />
-            <select className={UI.select} value={form.status} onChange={(e) => setForm((s) => ({ ...s, status: e.target.value }))}>
+          <fieldset disabled={busy} className="mt-3 grid gap-3 md:grid-cols-3">
+            <label className={UI.label}>Employee code<input className={UI.input} placeholder="Auto-generated if left blank" value={form.employeeIdCode} onChange={(e) => setForm((s) => ({ ...s, employeeIdCode: e.target.value }))} /></label>
+            <label className={UI.label}>Full name (required)<input ref={fullNameRef} className={UI.input} placeholder="Full name" value={form.fullName} onChange={(e) => setForm((s) => ({ ...s, fullName: e.target.value }))} /></label>
+            <label className={UI.label}>Email (required)<input className={UI.input} type="email" placeholder="Email" value={form.email} onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))} /></label>
+            <label className={UI.label}>Phone<input className={UI.input} placeholder="Phone" value={form.phone} onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))} /></label>
+            <label className={UI.label}>Department<input className={UI.input} placeholder="e.g. Engineering" value={form.department} onChange={(e) => setForm((s) => ({ ...s, department: e.target.value }))} /></label>
+            <label className={UI.label}>Designation / job title<input className={UI.input} placeholder="e.g. Software Engineer II" value={form.designation} onChange={(e) => setForm((s) => ({ ...s, designation: e.target.value }))} /></label>
+            <label className={UI.label}>Employment type<input className={UI.input} placeholder="e.g. Permanent or Contract" value={form.employmentType} onChange={(e) => setForm((s) => ({ ...s, employmentType: e.target.value }))} /></label>
+            <div><label htmlFor="employee-joining-date" className={UI.label}>Date of joining</label><DatePicker id="employee-joining-date" aria-label="Date of joining" value={form.joiningDate} onChange={(value) => setForm((s) => ({ ...s, joiningDate: value }))} placeholder="DD-MM-YYYY" /></div>
+            <label className={UI.label}>Work location<input className={UI.input} placeholder="e.g. Bangalore" value={form.workLocation} onChange={(e) => setForm((s) => ({ ...s, workLocation: e.target.value }))} /></label>
+            <label className={UI.label}>Employment status<select aria-label="Employment status" className={UI.select} value={form.status} onChange={(e) => setForm((s) => ({ ...s, status: e.target.value }))}>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
               <option value="resigned">Resigned</option>
-            </select>
-            <select className={UI.select} value={form.role} onChange={(e) => setForm((s) => ({ ...s, role: e.target.value }))}>
+            </select></label>
+            <label className={UI.label}>Login role<select aria-label="Login role" className={UI.select} value={form.role} onChange={(e) => setForm((s) => ({ ...s, role: e.target.value }))}>
               <option value="employee">Employee</option>
               <option value="manager">Manager</option>
               <option value="recruiter">Recruiter</option>
               <option value="hr">HR</option>
-            </select>
-            <input
+            </select></label>
+            <label className={UI.label}>Reporting manager / director email<input
               className={UI.input}
               placeholder="Reporting manager / director email"
               disabled={assignManagerLater}
               value={form.reportingManagerEmail}
               onChange={(e) => setForm((s) => ({ ...s, reportingManagerEmail: e.target.value }))}
-            />
+            /></label>
             <label className={UI.label + " flex items-center gap-2"}>
               <input
                 type="checkbox"
@@ -255,7 +267,8 @@ export default function EmployeeDirectoryPage() {
               />
               Assign manager later
             </label>
-          </div>
+          </fieldset>
+          <p className="mt-3 text-xs text-[var(--ats-text-muted)]">Designation is the employee&apos;s job title. Login role controls their access to the application. Only full name and email are required.</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void submitForm()} disabled={busy}>
               {editingId ? "Update employee" : "Add employee"}
@@ -264,9 +277,10 @@ export default function EmployeeDirectoryPage() {
               {editingId ? "Cancel editing" : "Reset"}
             </button>
           </div>
-        </section>
+          {saveFeedback && <p role={saveFeedback.error ? "alert" : "status"} className={`mt-3 rounded-lg border p-3 text-sm ${saveFeedback.error ? "border-rose-200 text-rose-700" : "border-teal-200 text-teal-800"}`}>{saveFeedback.message}</p>}
+        </section>}
 
-        <section className={UI.card + " mt-4 p-4 sm:p-5"}>
+        {canManage && <section className={UI.card + " mt-4 p-4 sm:p-5"}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-[var(--ats-text)]">Bulk import (CSV)</h2>
             <a className={UI.secondaryButton + " py-2 text-sm"} href={`/api/hrms/employees/export-csv?q=${encodeURIComponent(q)}`}>
@@ -314,9 +328,10 @@ export default function EmployeeDirectoryPage() {
               </table>
             </div>
           ) : null}
-        </section>
+        </section>}
 
         <section className={UI.card + " mt-4 p-4 sm:p-5"}>
+          {employeesError && <div role="alert" className="mb-3 rounded-lg border border-rose-200 p-3 text-sm text-rose-700">Unable to load the employee directory. <button type="button" className="underline" onClick={() => void mutate()}>Try again</button></div>}
           <div className="grid gap-2 md:grid-cols-4">
             <h2 className="text-base font-semibold text-[var(--ats-text)]">Employees</h2>
             <input className={UI.input} placeholder="Search by name, email, phone, employee ID..." value={q} onChange={(e) => setQ(e.target.value)} />
@@ -378,10 +393,10 @@ export default function EmployeeDirectoryPage() {
                         <a href={`/hrms/employees/${employee.id}`} className={UI.primaryButton + " py-1.5 px-3 text-xs"}>
                           View 360
                         </a>
-                        <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => startEdit(employee)} disabled={busy}>
+                        {canManage && <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => startEdit(employee)} disabled={busy}>
                           Edit
-                        </button>
-                        {employee.employment_status === "active" ? (
+                        </button>}
+                        {canManage && employee.employment_status === "active" ? (
                           <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => void deactivate(employee.id)} disabled={busy}>
                             Deactivate
                           </button>
@@ -393,7 +408,7 @@ export default function EmployeeDirectoryPage() {
                 {employees.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-2 py-4 text-center text-[var(--ats-text-muted)]">
-                      No employees found.
+                      {employeesError ? "Employee directory unavailable." : !data ? "Loading employees…" : "No employees found."}
                     </td>
                   </tr>
                 ) : null}

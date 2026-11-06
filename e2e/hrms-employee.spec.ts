@@ -6,8 +6,9 @@ const permissions = { "dashboard.view": true, "employee_directory.view_self": tr
   "leave.view_self": false, "onboarding_exit.view_self": true, "performance.view_self": true };
 
 test("directory Edit brings the selected employee form into view and saves changes", async ({ page, context }) => {
+  test.setTimeout(60_000);
   await context.addCookies([{ name: "ats_token", value: "mock", url: "http://127.0.0.1:3000" }]);
-  let record = { ...employee, employee_code: "EMP-12", department: "Engineering", employment_status: "active", joining_date: "2026-05-13" };
+  let record = { ...employee, employee_code: "EMP-12", department: "Engineering", designation: "SDE I", employment_status: "active", joining_date: "2026-05-13" };
   let saved = false;
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
@@ -17,7 +18,8 @@ test("directory Edit brings the selected employee form into view and saves chang
     else if (path === "/api/hrms/employees/12" && route.request().method() === "PATCH") {
       const values = route.request().postDataJSON();
       expect(values).toMatchObject({ fullName: employee.full_name, email: employee.email, department: "Product", joiningDate: "2026-05-13" });
-      record = { ...record, department: values.department }; saved = true;
+      expect(["SDE II", "SDE III"]).toContain(values.designation);
+      record = { ...record, department: values.department, designation: values.designation }; saved = true;
       body = { operation_status: "success" };
     }
     await route.fulfill({ json: body });
@@ -30,17 +32,87 @@ test("directory Edit brings the selected employee form into view and saves chang
   await expect(name).toBeInViewport();
   await expect(name).toHaveValue(employee.full_name);
   await expect(page.getByPlaceholder("Email", { exact: true })).toHaveValue(employee.email);
-  await page.getByPlaceholder("Department", { exact: true }).fill("Product");
+  await page.getByLabel("Department", { exact: true }).fill("Product");
+  await page.getByLabel("Designation / job title", { exact: true }).fill("SDE II");
+  await expect(page.getByLabel("Employee code", { exact: true })).toHaveValue("EMP-12");
+  await expect(page.getByLabel("Employment type", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Date of joining", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Employment status", { exact: true })).toHaveValue("active");
+  await expect(page.getByLabel("Login role", { exact: true })).toHaveValue("employee");
+  await page.getByRole("region", { name: "Employee details form" }).screenshot({ path: `test-results/hrms-employee-form-${page.viewportSize()?.width}.png` });
   await page.getByRole("button", { name: "Update employee", exact: true }).click();
   await expect(row.getByRole("cell", { name: "Product", exact: true })).toBeVisible();
+  await expect(row.getByRole("cell", { name: "SDE II", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Employee details form" }).getByRole("status")).toHaveText(`Saved details for ${employee.full_name}.`);
   expect(saved).toBe(true);
   // Selecting the same record again must also return to the form.
   await row.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(name).toBeFocused();
   await expect(name).toBeInViewport();
+  await expect(page.getByLabel("Designation / job title", { exact: true })).toHaveValue("SDE II");
+  await page.reload();
+  await expect(row.getByRole("cell", { name: "SDE II", exact: true })).toBeVisible();
   await row.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(name).toBeFocused();
   await expect(name).toBeInViewport();
+  await row.getByRole("link", { name: "View 360", exact: true }).click();
+  await expect(page.getByText("SDE II · Product · EMP-12", { exact: true })).toBeVisible();
+  const editor = page.getByRole("region", { name: "Manage employee profile", exact: true });
+  await editor.getByRole("button", { name: "Edit employee", exact: true }).click();
+  await editor.getByLabel("Designation", { exact: true }).fill("SDE III");
+  await editor.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect(page.getByText("SDE III · Product · EMP-12", { exact: true })).toBeVisible();
+  await page.goto("/hrms/employees");
+  await expect(row.getByRole("cell", { name: "SDE III", exact: true })).toBeVisible();
+});
+
+test("a failed employee save keeps the draft and shows the actual error beside the fields", async ({ page, context }) => {
+  await context.addCookies([{ name: "ats_token", value: "mock", url: "http://127.0.0.1:3000" }]);
+  await page.route("**/api/**", route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/auth/me") return route.fulfill({ json: { user: { id: 1, role: "hr" }, permissions: { "employee_directory.manage": true, "employee_directory.view_all": true } } });
+    if (path === "/api/hrms/employees") return route.fulfill({ json: { employees: [employee] } });
+    if (route.request().method() === "PATCH") return route.fulfill({ status: 503, json: { operation_status: "error", user_message: "Cannot save designation: the employee profile update has not been applied." } });
+    return route.fulfill({ json: {} });
+  });
+  await page.goto("/hrms/employees");
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const form = page.getByRole("region", { name: "Employee details form", exact: true });
+  await form.getByLabel("Designation / job title", { exact: true }).fill("SDE II");
+  await form.getByRole("button", { name: "Update employee", exact: true }).click();
+  await expect(form.getByRole("alert")).toContainText("Cannot save designation");
+  await expect(form.getByLabel("Designation / job title", { exact: true })).toHaveValue("SDE II");
+  await expect(form.getByRole("button", { name: "Update employee", exact: true })).toBeEnabled();
+  await expect(form.getByRole("status")).toHaveCount(0);
+});
+
+test("read-only HR cannot see editing actions and a failed directory load can be retried", async ({ page, context }) => {
+  await context.addCookies([{ name: "ats_token", value: "mock", url: "http://127.0.0.1:3000" }]);
+  let failed = true;
+  await page.route("**/api/**", route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/auth/me") return route.fulfill({ json: { user: { id: 1, role: "hr" }, permissions: { "employee_directory.view_all": true } } });
+    if (path === "/api/hrms/employees") return failed ? route.fulfill({ status: 500, json: { error: "Read failed" } }) : route.fulfill({ json: { employees: [employee] } });
+    return route.fulfill({ json: {} });
+  });
+  await page.goto("/hrms/employees");
+  await expect(page.getByRole("alert").filter({ hasText: "Unable to load the employee directory" })).toBeVisible();
+  await expect(page.getByText("No employees found.", { exact: true })).toHaveCount(0);
+  failed = false;
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.getByRole("link", { name: employee.full_name, exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Employee details form" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Deactivate", exact: true })).toHaveCount(0);
+});
+
+test("employee without a saved salary sees guidance instead of an endless loading message", async ({ page, context }) => {
+  await context.addCookies([{ name: "ats_token", value: "mock", url: "http://127.0.0.1:3000" }]);
+  await fixtures(page);
+  await page.route("**/api/salary-structures/12", route => route.fulfill({ json: { structure: null } }));
+  await page.goto("/salary");
+  await expect(page.getByText("Salary details are not available. Contact HR if your setup is missing.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Loading salary details…", { exact: true })).toHaveCount(0);
 });
 
 async function fixtures(page: Page, overrides: Record<string, boolean> = {}) {

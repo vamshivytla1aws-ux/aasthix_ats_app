@@ -20,6 +20,14 @@ import { GET as payslipList } from "@/app/api/payslips/[id]/route";
 import { GET as payslipData } from "@/app/api/payslips/[id]/data/route";
 import { GET as payslipDownload } from "@/app/api/payslips/[id]/download/route";
 import { GET as annualPayslips } from "@/app/api/payslips/annual/route";
+import { POST as createEmployee } from "@/app/api/hrms/employees/route";
+import { POST as importEmployees } from "@/app/api/hrms/employees/import-csv/commit/route";
+import { POST as saveSalary } from "@/app/api/salary-structures/route";
+import { POST as calculateSalary } from "@/app/api/salary-structures/calculate/route";
+import { POST as generatePayslip } from "@/app/api/payslips/generate/route";
+import { DELETE as deletePayslip } from "@/app/api/payslips/[id]/route";
+import { POST as uploadDocument } from "@/app/api/hrms/documents/route";
+import { DELETE as deleteDocument } from "@/app/api/hrms/documents/[id]/route";
 
 const request = new Request("http://localhost/test");
 describe("employee HRMS access", () => {
@@ -86,5 +94,12 @@ describe("employee HRMS access", () => {
     expect((await payslipData(request, { params: { id: "1" } })).status).toBe(403);
     expect((await payslipDownload(request, { params: { id: "1" } })).status).toBe(403);
     expect(query).toHaveBeenCalledTimes(2);
+  });
+  it("keeps employee sessions read-only for HR-managed data even with an old management grant", async () => {
+    state.access.permissions = { "employee_directory.manage": true, "salary.manage": true, "documents.manage": true };
+    for (const action of [createEmployee, importEmployees, saveSalary, calculateSalary, generatePayslip, uploadDocument]) expect((await action(request)).status).toBe(403);
+    expect((await deletePayslip(request, { params: { id: "1" } })).status).toBe(403);
+    expect((await deleteDocument(request, { params: Promise.resolve({ id: "1" }) })).status).toBe(403);
+    expect(query).not.toHaveBeenCalled();
   });
 });
