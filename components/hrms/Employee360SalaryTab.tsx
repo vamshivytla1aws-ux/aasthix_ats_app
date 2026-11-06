@@ -115,6 +115,12 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
     dashboardFetcher,
     { revalidateOnFocus: false }
   );
+  const monthStructureSwr = useSWR<{ structure: any }>(
+    employeeId > 0 && salaryMonth ? `/api/salary-structures/${employeeId}?month=${salaryMonth.slice(0, 7)}` : null,
+    dashboardFetcher,
+    { revalidateOnFocus: false }
+  );
+  const monthStructure = monthStructureSwr.data?.structure;
 
   const selectedEmployee = employee;
 
@@ -240,7 +246,10 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
       setCalculation(data.calculation);
       setToast({ message: "Salary structure saved.", variant: "success" });
       await structureSwr.mutate();
+      await refresh(key => typeof key === "string" && key.startsWith(`/api/salary-structures/${employeeId}?month=`));
       await refresh(`/api/hrms/employees/${employeeId}/setup`);
+      setSetupDirty(false);
+      setActualNetPaid("");
       if (setupRef.current) setupRef.current.open = false;
       window.requestAnimationFrame(() => generatorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (error) {
@@ -318,10 +327,12 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
       <section ref={generatorRef} className={UI.card + " scroll-mt-40 p-4 sm:p-5"}>
         <h2 className="text-base font-semibold">Generate payslip</h2>
         <p className="mt-1 text-sm text-[var(--ats-text-muted)]">Choose the salary month, not the bank payment date. Uses the saved salary setup.</p>
-        {structureSwr.data?.structure && <section aria-label="Saved salary calculation" className="mt-3 rounded-lg border border-[var(--ats-border)] p-3 text-sm">
-          <p className="font-semibold">Saved calculation: {structureSwr.data.structure.agreed_breakup ? "Agreed offer breakup" : "Automatic salary and tax rules"}</p>
-          {!structureSwr.data.structure.agreed_breakup && Number(structureSwr.data.structure.ctc_annual) === 1800000 && <>
-            <p className="mt-2">The supplied ₹18 lakh offer is not saved for this employee. That offer gives full-month earnings of ₹1,50,000, deductions of ₹15,817 and net pay of ₹1,34,183.</p>
+        {monthStructureSwr.error ? <p role="alert" className="mt-3 text-sm">Unable to load this month&apos;s salary setup. Save a salary setup first, or <button type="button" className="underline" onClick={() => void monthStructureSwr.mutate()}>try again</button>.</p> : salaryMonth && !monthStructure ? <p className="mt-3 text-sm">Loading salary setup for the selected month…</p> : null}
+        {monthStructure && <section aria-label="Saved salary calculation" className="mt-3 rounded-lg border border-[var(--ats-border)] p-3 text-sm">
+          <p className="font-semibold">Saved calculation: {monthStructure.agreed_breakup ? "Agreed offer breakup" : "Automatic salary and tax rules"}</p>
+          <p className="mt-1 text-xs text-[var(--ats-text-muted)]">Applies to {new Date(`${salaryMonth.slice(0, 7)}-01T00:00:00Z`).toLocaleString("en-IN", { month: "long", year: "numeric", timeZone: "Asia/Kolkata" })}.</p>
+          {!monthStructure.agreed_breakup && Number(monthStructure.ctc_annual) === 1800000 && <>
+            <p className="mt-2">The supplied ₹18 lakh offer is not saved for this salary month. That offer gives full-month earnings of ₹1,50,000, deductions of ₹15,817 and net pay of ₹1,34,183.</p>
             {canManage && <button type="button" className={UI.secondaryButton + " mt-3"} disabled={busy} onClick={reviewSuppliedOffer}>Review supplied ₹18 lakh offer</button>}
             <p className="mt-2 text-xs text-[var(--ats-text-muted)]">Review the breakup and select Save Structure once to use it for future payslips. Existing PDFs remain unchanged.</p>
           </>}
@@ -329,29 +340,29 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
         {setupDirty && <p className="mt-2 text-sm text-amber-700">Save your salary setup changes before generating.</p>}
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <label className={UI.label}>Salary month
-            <input type="month" className={UI.input} value={salaryMonth.slice(0, 7)} onChange={e => {
+            <input type="month" className={UI.input} disabled={busy} value={salaryMonth.slice(0, 7)} onChange={e => {
               const value = e.target.value ? `${e.target.value}-01` : "";
               setSalaryMonth(value); setDefinedWorkDays(String(getMonthDaysFromDateString(value)));
               setTotalPaidDays(String(getMonthDaysFromDateString(value))); setLopDays("0"); setActualNetPaid(""); setCalculation(null);
             }} />
           </label>
           <label className={UI.label}>Eligible days before absence
-            <input type="number" className={UI.input} min={0} max={Number(definedWorkDays)} value={totalPaidDays} onChange={e => { setTotalPaidDays(e.target.value); setCalculation(null); }} />
+            <input type="number" className={UI.input} disabled={busy} min={0} max={Number(definedWorkDays)} value={totalPaidDays} onChange={e => { setTotalPaidDays(e.target.value); setCalculation(null); }} />
           </label>
           <label className={UI.label}>Absent / unpaid days
-            <input type="number" className={UI.input} min={0} max={Number(totalPaidDays)} value={lopDays} onChange={e => { setLopDays(e.target.value); setCalculation(null); }} />
+            <input type="number" className={UI.input} disabled={busy} min={0} max={Number(totalPaidDays)} value={lopDays} onChange={e => { setLopDays(e.target.value); setCalculation(null); }} />
           </label>
         </div>
-        {structureSwr.data?.structure?.agreed_breakup && <div className="mt-4 max-w-sm">
+        {monthStructure?.agreed_breakup && <div className="mt-4 max-w-sm">
           <label className={UI.label}>Amount already paid (optional)
-            <input className={UI.input} type="number" min={0} step="0.01" value={actualNetPaid} placeholder="Leave blank for calculated pay" onChange={e => { setActualNetPaid(e.target.value); setCalculation(null); }} />
+            <input className={UI.input} disabled={busy} type="number" min={0} step="0.01" value={actualNetPaid} placeholder="Leave blank for calculated pay" onChange={e => { setActualNetPaid(e.target.value); setCalculation(null); }} />
           </label>
           <p className="mt-1 text-xs text-[var(--ats-text-muted)]">For past payments. Any difference is shown as a payment adjustment.</p>
         </div>}
-        <p className="mt-3 text-sm text-[var(--ats-text-muted)]">{Math.max(0, Number(totalPaidDays) - Number(lopDays))} payable days out of {definedWorkDays}. {structureSwr.data?.structure?.agreed_breakup ? "Agreed earnings and deductions are prorated once. Net pay is rounded down to whole rupees." : "Uses the existing salary calculation. Save an agreed breakup below to match the offer."}</p>
+        <p className="mt-3 text-sm text-[var(--ats-text-muted)]">{Math.max(0, Number(totalPaidDays) - Number(lopDays))} payable days out of {definedWorkDays}. {monthStructure?.agreed_breakup ? "Agreed earnings and deductions are prorated once. Net pay is rounded down to whole rupees." : "Uses this month's saved salary calculation. Save an agreed breakup below to match the offer."}</p>
         <div className="mt-4 flex flex-wrap gap-3">
-          <button type="button" className={UI.secondaryButton} disabled={busy || setupDirty || !salaryMonth || !canManage || !structureSwr.data?.structure} onClick={() => void generatePayslip(true)}>Preview payslip</button>
-          <button type="button" className={UI.primaryButton} disabled={busy || setupDirty || !salaryMonth || !canManage || !structureSwr.data?.structure} onClick={() => void generatePayslip()}>Generate payslip</button>
+          <button type="button" className={UI.secondaryButton} disabled={busy || setupDirty || !salaryMonth || !canManage || !monthStructure || !!monthStructureSwr.error} onClick={() => void generatePayslip(true)}>Preview payslip</button>
+          <button type="button" className={UI.primaryButton} disabled={busy || setupDirty || !salaryMonth || !canManage || !monthStructure || !!monthStructureSwr.error} onClick={() => void generatePayslip()}>Generate payslip</button>
         </div>
         {calculation && <div className="mt-4 flex flex-wrap gap-6 text-sm"><span>Earnings: ₹{inr(calculation.grossMonthlySalary)}</span><span>Deductions: ₹{inr(calculation.totalMonthlyDeductions)}</span><strong>Net pay: ₹{inr(calculation.netMonthlySalary)}</strong></div>}
         {calculation && [...calculation.earningsAnnual, ...calculation.deductionsAnnual].filter(row => row.key === "payment_adjustment").map(row => <p key={row.key} className="mt-2 text-sm">{row.name}: {row.type === "earning" ? "+" : "−"}₹{inr(row.amountForMonth || 0)}</p>)}

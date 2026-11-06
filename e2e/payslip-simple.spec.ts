@@ -7,29 +7,34 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await context.addCookies([{ name: "ats_token", value: "mock", url: "http://127.0.0.1:3000" }]);
     const employee = { id: 1, full_name: "Sample Employee", email: "employee@example.test", employee_code: "EMP-1", role: "employee" };
-    let structure: any = { ctc_annual: 1800000, agreed_breakup: null, bank_account_number: "saved-bank", tax_regime: "new_regime" };
+    let structure: any = { ctc_annual: 1800000, agreed_breakup: null, salary_month: "2026-10-01", bank_account_number: "saved-bank", tax_regime: "new_regime" };
+    const monthStructures = new Map<string, any>([["2026-10", structure]]);
     let saves = 0;
     await page.route("**/api/**", async route => {
-      const path = new URL(route.request().url()).pathname;
+      const url = new URL(route.request().url()), path = url.pathname;
       let body: unknown = {};
       if (path === "/api/auth/me") body = { user: { id: 9, role: "workspace_owner" }, permissions: { "employee_directory.view_all": true, "salary.view": true, "salary.manage": true } };
       else if (path === "/api/hrms/employees") body = { employees: [employee] };
-      else if (path === "/api/salary-structures/1") body = { structure };
+      else if (path === "/api/salary-structures/1") body = { structure: monthStructures.get(url.searchParams.get("month") || "") || structure };
       else if (path === "/api/payslips/1") body = { payslips: [] };
       else if (path === "/api/salary-structures") {
         const input = route.request().postDataJSON();
-        expect(input).toMatchObject({ employeeId: 1, ctcAnnual: 1800000, agreedBreakup: OFFER_BREAKUP, salaryMonth: "2026-11-01", bankAccountNumber: "saved-bank" });
+        expect(input).toMatchObject({ employeeId: 1, ctcAnnual: 1800000, agreedBreakup: OFFER_BREAKUP, bankAccountNumber: "saved-bank" });
+        expect(["2026-10-01", "2026-11-01"]).toContain(input.salaryMonth);
         saves++;
-        structure = { ...structure, agreed_breakup: input.agreedBreakup, salary_month: input.salaryMonth };
+        const updated = { ...structure, agreed_breakup: input.agreedBreakup, salary_month: input.salaryMonth };
+        monthStructures.set(input.salaryMonth.slice(0, 7), updated);
+        if (input.salaryMonth >= structure.salary_month) structure = updated;
         body = { ok: true, calculation: calculateAgreedSalary(input) };
       } else if (path === "/api/payslips/generate") {
         const input = route.request().postDataJSON();
         expect(input.preview).toBe(true);
-        expect(structure.agreed_breakup).toEqual(OFFER_BREAKUP);
+        const applicable = monthStructures.get(`${input.year}-${String(input.month).padStart(2, "0")}`) || structure;
+        expect(applicable.agreed_breakup).toEqual(OFFER_BREAKUP);
         body = { calculation: calculateAgreedSalary({ employeeId: 1, employeeCode: "EMP-1", ctcAnnual: 1800000,
           salaryMonth: `${input.year}-${String(input.month).padStart(2, "0")}-01`, definedWorkDays: input.definedWorkDays,
           totalPaidDays: input.paidDays, lopDays: input.lopDays, taxRegime: "manual_tds", pfEnabled: true,
-          employerPfIncludedInCtc: true, employeePfEnabled: true, healthInsuranceEnabled: false, agreedBreakup: structure.agreed_breakup }) };
+          employerPfIncludedInCtc: true, employeePfEnabled: true, healthInsuranceEnabled: false, agreedBreakup: applicable.agreed_breakup }) };
       }
       await route.fulfill({ json: body });
     });
@@ -50,11 +55,24 @@ for (const width of [1440, 390]) {
     await expect(page.getByText("Net pay: ₹1,34,183.00", { exact: true })).toBeVisible();
     await expect(page.getByText("Deductions: ₹15,817.00", { exact: true })).toBeVisible();
     await page.reload();
-    await expect(method).toContainText("Agreed offer breakup");
+    await expect(method).toContainText("Automatic salary and tax rules");
     await page.getByLabel("Salary month", { exact: true }).fill("2026-11");
+    await expect(method).toContainText("Agreed offer breakup");
     await page.getByRole("button", { name: "Preview payslip", exact: true }).click();
     await expect(page.getByText("Net pay: ₹1,34,183.00", { exact: true })).toBeVisible();
-    expect(saves).toBe(1);
+    // October still has an older automatic structure even though the latest November setup is agreed.
+    await page.getByLabel("Salary month", { exact: true }).fill("2026-10");
+    await expect(method).toContainText("Automatic salary and tax rules");
+    await expect(method).toContainText("Applies to October 2026");
+    await expect(page.getByLabel("Amount already paid (optional)", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Review supplied ₹18 lakh offer", exact: true }).click();
+    await page.getByRole("button", { name: "Save Structure", exact: true }).click();
+    // The latest November response stays identical; saving an older month must still clear the unsaved flag.
+    await expect(method).toContainText("Agreed offer breakup");
+    await expect(page.getByRole("button", { name: "Preview payslip", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Preview payslip", exact: true }).click();
+    await expect(page.getByText("Net pay: ₹1,34,183.00", { exact: true })).toBeVisible();
+    expect(saves).toBe(2);
  });
  for (const actualPayment of [false, true]) {
   test(`simple payslip ${actualPayment ? "actual payment" : "calculated"} at ${width}px`, async ({ page, context }) => {

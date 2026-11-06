@@ -27,15 +27,17 @@ import { POST as setLogin } from "@/app/api/hrms/employees/[id]/login/route";
 import { POST as generate } from "@/app/api/payslips/generate/route";
 import { GET as download } from "@/app/api/payslips/[id]/download/route";
 import { GET as payslipData } from "@/app/api/payslips/[id]/data/route";
+import { GET as salarySetup } from "@/app/api/salary-structures/[employeeId]/route";
 import { storeEmployeeDocument, listEmployeeDocuments } from "@/lib/hrms/documents";
 
 const employeeInput = { employeeIdCode: "EMP-12", fullName: "Sample Employee", email: "employee@example.test", department: "Engineering", designation: "SDE II", joiningDate: "2026-05-13", status: "active" as const, role: "employee" };
 const employeeContext = () => ({ params: { id: String(state.employeeId) } });
 const request = (body: unknown) => new Request("http://localhost/test", { method: "POST", body: JSON.stringify(body) });
 async function migration(name: string) { await state.db.exec(await readFile(`migrations/${name}`, "utf8")); }
-async function salary() {
+async function salary(month = "2026-05-01") {
+  const days = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
   return createSalaryStructure({ employeeId: state.employeeId, employeeCode: "stale", designation: "Stale job title", ctcAnnual: 1800000,
-    salaryMonth: "2026-05-01", definedWorkDays: 31, totalPaidDays: 31, lopDays: 0, taxRegime: "manual_tds",
+    salaryMonth: month, definedWorkDays: days, totalPaidDays: days, lopDays: 0, taxRegime: "manual_tds",
     pfEnabled: true, employerPfIncludedInCtc: true, employeePfEnabled: true, healthInsuranceEnabled: false,
     bankAccountNumber: "original-bank", agreedBreakup: OFFER_BREAKUP }, 1);
 }
@@ -136,5 +138,21 @@ describe("core HRMS with PostgreSQL storage and numbered migrations", () => {
     expect((await updateProfile(request({ reportingManagerEmail: "" }), employeeContext())).status).toBe(200);
     expect((await getEmployeeSelfProfile(state.employeeId))?.reporting_manager_user_id).toBeNull();
     expect((await state.db.query("SELECT * FROM employee_manager_map WHERE user_id=$1", [state.employeeId])).rows).toHaveLength(0);
+  });
+
+  it("shows the effective October setup when the newest November setup is different, and saves the older month correctly", async () => {
+    await createSalaryStructure({ employeeId: state.employeeId, employeeCode: "EMP-12", ctcAnnual: 1800000,
+      salaryMonth: "2026-10-01", definedWorkDays: 31, totalPaidDays: 31, lopDays: 0, taxRegime: "manual_tds", manualTdsAnnual: 150800,
+      pfEnabled: true, employerPfIncludedInCtc: true, employeePfEnabled: true, healthInsuranceEnabled: false }, 1);
+    const november = await salary("2026-11-01");
+    const context = { params: { employeeId: String(state.employeeId) } };
+    const read = (month?: string) => salarySetup(new Request(`http://localhost/api/salary-structures/${state.employeeId}${month ? `?month=${month}` : ""}`), context);
+    expect((await (await read("2026-10")).json()).structure.agreed_breakup).toBeNull();
+    expect((await (await read("2026-11")).json()).structure.agreed_breakup).toEqual(OFFER_BREAKUP);
+    expect((await (await generate(request({ employeeId: state.employeeId, year: 2026, month: 10, paidDays: 31, lopDays: 0, preview: true }))).json()).calculation.netMonthlySalary).toBe(135433.33);
+    await salary("2026-10-01");
+    expect(Number((await (await read()).json()).structure.id)).toBe(november.salaryStructureId);
+    expect((await (await read("2026-10")).json()).structure.agreed_breakup).toEqual(OFFER_BREAKUP);
+    expect((await (await generate(request({ employeeId: state.employeeId, year: 2026, month: 10, paidDays: 31, lopDays: 0, preview: true }))).json()).calculation.netMonthlySalary).toBe(134183);
   });
 });

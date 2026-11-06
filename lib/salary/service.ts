@@ -140,7 +140,7 @@ export async function createSalaryStructure(input: SalaryCalcInput, actorUserId:
         effective_from = $24::date,
         created_by_user_id = $25::bigint,
         updated_at = NOW()
-      WHERE id = $26::bigint
+      WHERE id = $26::bigint AND employee_id = $1::bigint
       `,
       [...structureArgs.slice(0, 25), salaryStructureId],
     );
