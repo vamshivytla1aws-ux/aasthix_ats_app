@@ -25,6 +25,7 @@ export async function PATCH(request: Request, context: { params: { id: string } 
     const updated = await decideLeaveRequest({
       actorUserId: auth.access.user_id,
       actorRole: auth.access.role,
+      canApproveAll: auth.access.permissions["leave.manage_policy"] === true,
       requestId: id,
       decision,
       note: body?.note || null,

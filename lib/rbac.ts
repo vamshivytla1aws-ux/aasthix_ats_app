@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { enforceSelfServiceDependencies } from "@/lib/hrms/employeeFeatures";
 import { requireAuthUser } from "@/lib/authServer";
 import { APP_ROLES as APP_ROLES_CONST, INVITE_ROLES as INVITE_ROLES_CONST } from "@/lib/rbacConstants";
 
@@ -332,7 +333,7 @@ export function getEffectivePermissions(
       if (key.startsWith("ai_interviews.")) permissions[key] = false;
     }
   }
-  return permissions;
+  return enforceSelfServiceDependencies(permissions);
 }
 
 export async function getAuthAccess() {
@@ -341,16 +342,17 @@ export async function getAuthAccess() {
 
   const userRes = await query(
     `SELECT id, email, role, COALESCE(is_active, true) AS is_active,
-            COALESCE(access_scope, 'own') AS access_scope, COALESCE(token_version, 1) AS token_version
+            COALESCE(access_scope, 'own') AS access_scope, COALESCE(token_version, 1) AS token_version, employment_status
      FROM users WHERE id = $1 LIMIT 1`,
     [auth.user_id]
   );
   if (userRes.rowCount === 0) return null;
 
-  const row = userRes.rows[0] as { id: number; email: string; role: string | null; is_active: boolean; access_scope: "own" | "team" | "all"; token_version: number };
+  const row = userRes.rows[0] as { id: number; email: string; role: string | null; is_active: boolean; access_scope: "own" | "team" | "all"; token_version: number; employment_status?: string };
   if (!row.is_active || Number(auth.token_version || 1) !== Number(row.token_version || 1)) return null;
   const configuredOwner = process.env.WORKSPACE_OWNER_EMAIL?.trim().toLowerCase();
   const role = configuredOwner && row.email.trim().toLowerCase() === configuredOwner ? "workspace_owner" : normalizeRole(row.role);
+  if (role === "employee" && ["inactive", "resigned"].includes(row.employment_status || "")) return null;
 
   const explicit = new Map<string, boolean>();
   try {

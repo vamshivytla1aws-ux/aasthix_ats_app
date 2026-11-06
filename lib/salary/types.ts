@@ -25,6 +25,20 @@ export type SalaryCalcInput = {
   employeePfEnabled: boolean;
   healthInsuranceEnabled: boolean;
   healthInsuranceAnnual?: number | null;
+  agreedBreakup?: AgreedSalaryBreakup | null;
+};
+
+export type AgreedSalaryBreakup = {
+  basic: number;
+  hra: number;
+  special: number;
+  conveyance: number;
+  employerPf: number;
+  other: number;
+  professionalTax: number;
+  employerPfDeduction: number;
+  employeePf: number;
+  tds: number;
 };
 
 export type SalaryComponent = {

@@ -21,7 +21,8 @@ function newClientRequestId() {
 
 function redirectToLoginWithExpiredSession() {
   if (typeof window === "undefined") return;
-  const url = new URL("/login", window.location.origin);
+  const hrms = ["/hrms", "/salary", "/leave", "/attendance", "/timesheet", "/team-calendar"].some(path => window.location.pathname === path || window.location.pathname.startsWith(`${path}/`));
+  const url = new URL(hrms ? "/employee/login" : "/login", window.location.origin);
   url.searchParams.set("message", "Session expired, please login again");
   url.searchParams.set("next", window.location.pathname + window.location.search);
   window.location.assign(url.toString());

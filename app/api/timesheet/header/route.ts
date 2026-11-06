@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAuthAccess, requirePermission } from "@/lib/rbac";
+import { requirePermission } from "@/lib/rbac";
 import { getTimesheetHeaderById, updateTimesheetHeader } from "@/lib/timesheet";
 import { writeAuditLog } from "@/lib/auditLog";
 
@@ -7,15 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function requireTimesheetSelfWrite() {
-  const strict = await requirePermission("timesheet.manage_self");
-  if (strict.ok) return strict;
-  if (strict.status !== 403) return strict;
-  const access = await getAuthAccess();
-  if (!access) return strict;
-  if (access.role === "admin" || access.permissions["timesheet.view_self"] === true) {
-    return { ok: true as const, access };
-  }
-  return strict;
+  return requirePermission("timesheet.manage_self");
 }
 
 export async function POST(request: Request) {

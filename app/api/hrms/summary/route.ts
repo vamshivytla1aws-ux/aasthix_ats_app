@@ -42,6 +42,9 @@ async function safeLatestFailure() {
 export async function GET() {
   const auth = await requirePermission("dashboard.view");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  if (auth.access.role === "employee" || !["employee_directory.manage", "payroll.run", "salary.manage"].some(key => auth.access.permissions[key])) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const now = new Date();
   const month = now.getMonth() + 1;

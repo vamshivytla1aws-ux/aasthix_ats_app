@@ -7,6 +7,7 @@ import StatusBadge from "@/components/enterprise/StatusBadge";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import ModernPayslipView from "./ModernPayslipView";
+import SelfServiceSalaryDetails from "./SelfServiceSalaryDetails";
 
 function PayslipModal({ payslipId, onClose }: { payslipId: number; onClose: () => void }) {
   const { data, error } = useSWR<any>(`/api/payslips/${payslipId}/data`, dashboardFetcher);
@@ -125,6 +126,7 @@ export default function SelfServiceSalaryView() {
       subtitle="View your monthly payslips and yearly salary statement."
       metrics={<StatusBadge status="Self Service" />}
     >
+      <div className="mb-5"><SelfServiceSalaryDetails employeeId={employeeId} /></div>
       <section className={UI.card + " p-4 sm:p-5"}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

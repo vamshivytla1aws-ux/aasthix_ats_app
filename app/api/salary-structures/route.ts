@@ -13,7 +13,7 @@ function isValidPan(pan: string) {
 export async function GET() {
   const auth = await requirePermission("salary.view");
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const employees = await listSalaryEmployees();
+  const employees = await listSalaryEmployees(auth.access.role === "employee" ? auth.access.user_id : undefined);
   return NextResponse.json({ employees });
 }
 

@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { calculateAgreedSalary } from "@/lib/salary/agreed";
 import { amountToRupeesWords } from "@/lib/salary/numberToWords";
 import { calculateAnnualTaxFromConfig, loadActiveTaxConfig } from "@/lib/salary/tax";
 import type { SalaryCalcInput, SalaryCalcResult, SalaryComponent } from "@/lib/salary/types";
@@ -62,6 +63,7 @@ function deduction(name: string, key: string, annual: number, monthly: number, s
 }
 
 export async function calculateSalaryStructure(input: SalaryCalcInput): Promise<SalaryCalcResult> {
+  if (input.agreedBreakup) return calculateAgreedSalary(input);
   validateInput(input);
   const settings = await loadSalarySettings();
   const ctcAnnual = Number(input.ctcAnnual);

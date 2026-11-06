@@ -7,9 +7,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function canAccessDocument(access: NonNullable<Awaited<ReturnType<typeof getAuthAccess>>>, ownerUserId: number) {
+  if (access.role === "employee") return access.user_id === ownerUserId && access.permissions["documents.view_self"] === true;
   if (access.role === "admin") return true;
   if (access.permissions["documents.view_all"]) return true;
-  if (access.user_id === ownerUserId) return true;
+  if (access.user_id === ownerUserId && access.permissions["documents.view_self"]) return true;
   if (!access.permissions["documents.view_team"]) return false;
   const teamCheck = await query(
     `

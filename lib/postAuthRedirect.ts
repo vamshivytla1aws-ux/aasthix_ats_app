@@ -8,11 +8,6 @@ import { resolveDefaultLandingPath } from "@/lib/defaultLandingPath";
 export async function navigateAfterAuthSession(): Promise<void> {
   const params = new URLSearchParams(window.location.search);
   const next = params.get("next");
-  if (next && next.startsWith("/") && !next.startsWith("//")) {
-    window.location.assign(next);
-    return;
-  }
-
   try {
     const res = await fetch("/api/auth/me", { credentials: "include" });
     if (!res.ok) {
@@ -24,6 +19,11 @@ export async function navigateAfterAuthSession(): Promise<void> {
       permissions?: Record<string, boolean>;
     };
     const role = (me.user?.role || "user").toLowerCase();
+    // Employee sessions always start in their self-service home.
+    if (role === "employee") { window.location.assign("/hrms"); return; }
+    if (next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")) {
+      window.location.assign(next); return;
+    }
     const path = resolveDefaultLandingPath(role, me.permissions || {});
     window.location.assign(path);
   } catch {

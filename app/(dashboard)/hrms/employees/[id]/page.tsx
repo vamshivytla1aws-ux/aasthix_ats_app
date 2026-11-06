@@ -5,117 +5,73 @@ import useSWR from "swr";
 import AccessGate from "@/components/AccessGate";
 import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import Employee360SalaryTab from "@/components/hrms/Employee360SalaryTab";
+import EmployeeLoginSetup from "@/components/hrms/EmployeeLoginSetup";
+import EmployeeProfileEditor, { type EditableEmployee } from "@/components/hrms/EmployeeProfileEditor";
+import EmployeeFeatureControls from "@/components/hrms/EmployeeFeatureControls";
+import EmployeeDocumentsPanel from "@/components/hrms/EmployeeDocumentsPanel";
+import EmployeeMonthlyRecords from "@/components/hrms/EmployeeMonthlyRecords";
 import { dashboardFetcher } from "@/lib/swrFetcher";
+import type { EmployeeSetup } from "@/lib/hrms/employeeSetup";
 import { UI } from "@/lib/ui";
+
+type Employee = EditableEmployee & { reporting_manager_name?: string };
+type Tab = "details" | "login" | "salary" | "documents" | "attendance";
+const labels: Record<Tab, string> = { details: "Details", login: "Login & Access", salary: "Salary & Payslips", documents: "Documents", attendance: "Attendance & Leave" };
 
 export default function Employee360ProfilePage({ params }: { params: { id: string } }) {
   const employeeId = Number(params.id);
-  const [activeTab, setActiveTab] = React.useState<"overview" | "salary" | "attendance">("salary");
-
-  const { data: empData, error } = useSWR<{ employees: any[] }>(
-    `/api/hrms/employees?q=${employeeId}`,
-    dashboardFetcher,
-    { revalidateOnFocus: false }
-  );
-
-  const employee = React.useMemo(() => {
-    return (empData?.employees || []).find((e) => e.id === employeeId);
-  }, [empData?.employees, employeeId]);
-
-  return (
-    <AccessGate permissionKey="employee_directory.view_all">
-      <ModulePageFrame
-        title={employee?.full_name || "Employee Profile"}
-        subtitle={employee ? `${employee.designation || "Role not set"} · ${employee.department || "No department"} · ${employee.employee_code || "No ID"}` : "Loading employee data..."}
-      >
-        <div className="flex border-b border-[var(--ats-border)] mb-6 overflow-x-auto">
-          <button
-            className={`px-4 py-3 font-semibold text-sm whitespace-nowrap transition border-b-2 ${
-              activeTab === "overview"
-                ? "border-cyan-400 text-cyan-400"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-            onClick={() => setActiveTab("overview")}
-          >
-            Overview
-          </button>
-          <button
-            className={`px-4 py-3 font-semibold text-sm whitespace-nowrap transition border-b-2 ${
-              activeTab === "salary"
-                ? "border-cyan-400 text-cyan-400"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-            onClick={() => setActiveTab("salary")}
-          >
-            Salary & Payslips
-          </button>
-          <button
-            className={`px-4 py-3 font-semibold text-sm whitespace-nowrap transition border-b-2 ${
-              activeTab === "attendance"
-                ? "border-cyan-400 text-cyan-400"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-            onClick={() => setActiveTab("attendance")}
-          >
-            Attendance & Leaves
-          </button>
-        </div>
-
-        {activeTab === "overview" && (
-          <div className={UI.card + " p-6 animate-in fade-in"}>
-            <h3 className="text-lg font-bold text-[var(--ats-text)] mb-4">Employee Overview</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <div>
-                <p className="text-sm text-[var(--ats-text-muted)] mb-1">Full Name</p>
-                <p className="font-medium text-[var(--ats-text)]">{employee?.full_name || "-"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-[var(--ats-text-muted)] mb-1">Email</p>
-                <p className="font-medium text-[var(--ats-text)]">{employee?.email || "-"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-[var(--ats-text-muted)] mb-1">Phone</p>
-                <p className="font-medium text-[var(--ats-text)]">{employee?.phone || "-"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-[var(--ats-text-muted)] mb-1">Employment Type</p>
-                <p className="font-medium text-[var(--ats-text)]">{employee?.employment_type || "-"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-[var(--ats-text-muted)] mb-1">Work Location</p>
-                <p className="font-medium text-[var(--ats-text)]">{employee?.work_location || "-"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-[var(--ats-text-muted)] mb-1">Reporting Manager</p>
-                <p className="font-medium text-[var(--ats-text)]">{employee?.reporting_manager_name || "Unassigned"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-[var(--ats-text-muted)] mb-1">Employment Status</p>
-                <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${employee?.employment_status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                  {employee?.employment_status || "-"}
-                </span>
-              </div>
-            </div>
+  const [activeTab, setActiveTab] = React.useState<Tab>("details");
+  const { data: me } = useSWR<{ user: { role: string }; permissions: Record<string, boolean> }>("/api/auth/me", dashboardFetcher);
+  const permissions = React.useMemo(() => me?.permissions || {}, [me?.permissions]);
+  const { data: empData, error, mutate: refreshEmployee } = useSWR<{ employees: Employee[] }>(permissions["employee_directory.view_all"] ? "/api/hrms/employees" : null, dashboardFetcher);
+  const { data: setup, error: setupError, mutate: refreshSetup } = useSWR<EmployeeSetup>(permissions["employee_directory.view_all"] ? `/api/hrms/employees/${employeeId}/setup` : null, dashboardFetcher);
+  const employee = empData?.employees?.find(item => Number(item.id) === employeeId);
+  const tabs = React.useMemo(() => (["details", "login", ...(permissions["salary.view"] ? ["salary"] : []),
+    ...(permissions["documents.view_all"] ? ["documents"] : []), "attendance"] as Tab[]), [permissions]);
+  React.useEffect(() => {
+    const selected = new URLSearchParams(window.location.search).get("tab") as Tab | null;
+    if (selected && tabs.includes(selected)) setActiveTab(selected);
+  }, [tabs]);
+  function selectTab(tab: Tab) {
+    if (!tabs.includes(tab)) return;
+    setActiveTab(tab);
+    const url = new URL(window.location.href); url.searchParams.set("tab", tab); window.history.replaceState(null, "", url);
+  }
+  async function updated() { await refreshEmployee(); await refreshSetup(); }
+  return <AccessGate permissionKey="employee_directory.view_all">
+    {!Number.isInteger(employeeId) || employeeId <= 0 ? <p>Invalid employee.</p> : error ? <p role="alert">Unable to load this employee. Please try again.</p> : !empData ? <p>Loading employee…</p> : !employee ? <p>Employee not found.</p> : <ModulePageFrame
+      title={employee.full_name} subtitle={[employee.designation, employee.department, employee.employee_code].filter(Boolean).join(" · ")}>
+      <section aria-label="Employee setup checklist" className={UI.card + " p-5 mb-5"}>
+        <h2 className="font-semibold">Employee setup</h2>
+        <p className="mt-1 text-sm text-[var(--ats-text-muted)]">Complete details → enable login → save salary → generate payslip.</p>
+        {setupError ? <p role="alert" className="mt-3 text-sm">Setup status could not be loaded. Open the sections below or try again.</p> : !setup?.items ? <p className="mt-3 text-sm">Checking setup…</p> : <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {setup.items.map(item => <button type="button" key={item.key} disabled={!tabs.includes(item.key)} aria-label={`Open ${item.label}`} onClick={() => selectTab(item.key)} className="rounded-xl border border-[var(--ats-border)] p-3 text-left disabled:opacity-60">
+            <span className="block font-medium">{item.label}</span>
+            <span className={`mt-1 block text-sm ${item.status === "needs_attention" ? "text-amber-700" : "text-[var(--ats-text-muted)]"}`}>{({ complete: "Complete", needs_attention: "Needs attention", optional: "Optional", unavailable: "Access not enabled" })[item.status]}</span>
+            <span className="mt-2 block text-xs text-[var(--ats-text-muted)]">{item.detail}</span>
+          </button>)}
+        </div>}
+      </section>
+      <nav aria-label="Employee profile sections" className="mb-5 flex gap-2 overflow-x-auto border-b border-[var(--ats-border)] pb-2">
+        {tabs.map(tab => <button key={tab} type="button" aria-current={activeTab === tab ? "page" : undefined} onClick={() => selectTab(tab)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold ${activeTab === tab ? "bg-teal-700 text-white" : "text-[var(--ats-text-muted)]"}`}>{labels[tab]}</button>)}
+      </nav>
+      <div hidden={activeTab !== "details"}>
+        <EmployeeProfileEditor key={employeeId} employee={employee} onUpdated={updated} />
+        <section className={UI.card + " p-5"}><h2 className="font-semibold">Employee details</h2>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[["Name", employee.full_name], ["Email", employee.email], ["Employee code", employee.employee_code], ["Phone", employee.phone], ["Department", employee.department], ["Designation", employee.designation], ["Employment type", employee.employment_type], ["Date of joining", employee.joining_date], ["Work location", employee.work_location], ["Reporting manager", employee.reporting_manager_name], ["Employment status", employee.employment_status]].map(([label, value]) => <div key={label}><p className="text-xs text-[var(--ats-text-muted)]">{label}</p><p className="mt-1 text-sm font-medium">{value || "Not added"}</p></div>)}
           </div>
-        )}
-
-        {activeTab === "salary" && (
-          <Employee360SalaryTab employeeId={employeeId} />
-        )}
-
-        {activeTab === "attendance" && (
-          <div className={UI.card + " p-6 flex flex-col items-center justify-center min-h-[300px] animate-in fade-in"}>
-            <div className="text-slate-500 mb-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-            </div>
-            <h3 className="text-lg font-bold text-[var(--ats-text)]">Attendance & Leave Records</h3>
-            <p className="text-sm text-[var(--ats-text-muted)] text-center max-w-sm mt-2">
-              This module consolidates the employee&apos;s daily check-ins, leaves taken, and timesheet logs.
-            </p>
-          </div>
-        )}
-
-      </ModulePageFrame>
-    </AccessGate>
-  );
+        </section>
+      </div>
+      <div hidden={activeTab !== "login"}>
+        <EmployeeLoginSetup key={employeeId} employeeId={employeeId} expanded />
+        {setup?.features && <EmployeeFeatureControls employeeId={employeeId} features={setup.features} canManage={setup.canManageAccess} onUpdated={() => refreshSetup()} />}
+      </div>
+      {permissions["salary.view"] && <div hidden={activeTab !== "salary"}>
+        <Employee360SalaryTab key={employeeId} employeeId={employeeId} employee={{ ...employee, role: employee.role || "employee" }} canManage={permissions["salary.manage"] === true} />
+      </div>}
+      {permissions["documents.view_all"] && <div hidden={activeTab !== "documents"}><EmployeeDocumentsPanel key={employeeId} employeeId={employeeId} canManage={permissions["documents.manage"] === true} /></div>}
+      <div hidden={activeTab !== "attendance"}><EmployeeMonthlyRecords key={employeeId} employeeId={employeeId} enabled={activeTab === "attendance"} /></div>
+    </ModulePageFrame>}
+  </AccessGate>;
 }

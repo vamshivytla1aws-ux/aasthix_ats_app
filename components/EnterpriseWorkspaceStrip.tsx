@@ -122,6 +122,7 @@ export default function EnterpriseWorkspaceStrip() {
       icon: <LayoutDashboard className="h-4 w-4" />,
     };
 
+  if (["/hrms", "/salary", "/leave", "/attendance", "/timesheet", "/team-calendar"].some(path => pathname === path || pathname.startsWith(`${path}/`))) return null;
   return (
     <section className={UI.enterprise.workspaceStrip}>
       <div className="ats-page-inner flex flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6">

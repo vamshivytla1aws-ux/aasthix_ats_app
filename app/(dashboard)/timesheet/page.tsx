@@ -262,7 +262,7 @@ export default function TimesheetPage() {
   const registerRows = useMemo(() => registerSwr.data?.rows || [], [registerSwr.data]);
 
   return (
-    <AccessGate permissionKey="timesheet.view_self">
+    <AccessGate permissionKey={canViewAll ? "timesheet.view_all" : "timesheet.view_self"}>
       {result ? (
         <Toast
           message={result.message}
@@ -283,7 +283,7 @@ export default function TimesheetPage() {
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void saveHeader()} disabled={busy !== null} className={UI.primaryButton + " py-2 text-sm"}>
+            <button type="button" onClick={() => void saveHeader()} disabled={busy !== null || auth?.permissions?.["timesheet.manage_self"] !== true} className={UI.primaryButton + " py-2 text-sm"}>
               <Save className="h-4 w-4" />
               {busy === "save-header" ? "Saving..." : "Save header"}
             </button>
@@ -347,7 +347,7 @@ export default function TimesheetPage() {
               <textarea value={newEntry.task_description} onChange={(e) => setNewEntry((p) => ({ ...p, task_description: e.target.value }))} className={UI.input + " min-h-[90px]"} />
             </div>
             <div className="mt-3">
-              <button type="button" onClick={() => void addEntry()} disabled={busy !== null} className={UI.primaryButton + " py-2 text-sm"}>
+              <button type="button" onClick={() => void addEntry()} disabled={busy !== null || auth?.permissions?.["timesheet.manage_self"] !== true} className={UI.primaryButton + " py-2 text-sm"}>
                 <Plus className="h-4 w-4" />
                 {busy === "add-entry" ? "Adding..." : "Add entry"}
               </button>
@@ -378,7 +378,7 @@ export default function TimesheetPage() {
                     <td className="px-4 py-3 text-[var(--ats-text-muted)]">{entry.work_type || "—"}</td>
                     <td className="px-4 py-3 text-[var(--ats-text-muted)]">{entry.project_or_client || "—"}</td>
                     <td className="px-4 py-3">
-                      <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => void removeEntry(entry)} disabled={busy !== null}>
+                      <button type="button" className={UI.secondaryButton + " py-1.5 text-xs"} onClick={() => void removeEntry(entry)} disabled={busy !== null || auth?.permissions?.["timesheet.manage_self"] !== true}>
                         <Trash2 className="h-3.5 w-3.5" />
                         Delete
                       </button>

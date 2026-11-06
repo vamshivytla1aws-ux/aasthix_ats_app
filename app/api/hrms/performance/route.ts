@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     }),
     
   ]);
-  const goals = await listPerformanceGoals(Number.isFinite(cycleId) && cycleId > 0 ? cycleId : undefined);
+  const goals = await listPerformanceGoals(Number.isFinite(cycleId) && cycleId > 0 ? cycleId : undefined, { actorUserId: access.user_id, role: access.role });
   return NextResponse.json({ cycles, reviews, goals });
 }
 

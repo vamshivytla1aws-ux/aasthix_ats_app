@@ -7,6 +7,8 @@ import { buildPayslipPdf } from "@/lib/pdf/payslipExport";
 import { loadActiveTaxConfig, calculateAnnualTaxFromConfig } from "@/lib/salary/tax";
 import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
 import { getMonthDays } from "@/lib/salary/monthDays";
+import { getPayrollRunByMonthYear } from "@/lib/hrms/payroll";
+import { loadEmployeeSnapshot } from "@/lib/salary/employeeSnapshot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,6 +99,8 @@ export async function POST(request: Request) {
   if (!(month >= 1 && month <= 12) || !Number.isFinite(year)) {
     return NextResponse.json({ error: "Invalid month/year" }, { status: 400 });
   }
+  const payroll = await getPayrollRunByMonthYear(month, year);
+  if (payroll?.status === "locked") return NextResponse.json({ error: "Payroll month is locked." }, { status: 409 });
 
   const employeesRes = await query(
     `
@@ -108,18 +112,29 @@ export async function POST(request: Request) {
     [],
   );
   let generated = 0;
+  let manualReviewRequired = 0;
   const failed: Array<{ employeeId: number; error: string }> = [];
 
   for (const row of employeesRes.rows as Array<{ employee_id: number }>) {
     const employeeId = Number(row.employee_id || 0);
     if (!employeeId) continue;
     try {
+      // Scheduled generation must not replace a reviewed or manually generated payslip.
+      const existing = await query(`SELECT id FROM payslips WHERE employee_id = $1 AND month = $2 AND year = $3`, [employeeId, month, year]);
+      if (existing.rows.length) continue;
       const byMonth = await getSalaryStructureForMonth(employeeId, month, year);
       const latest = byMonth || (await getLatestSalaryStructure(employeeId));
       if (!latest) continue;
       const input = toCalcInputFromStructure(latest.structure);
-      const calc = await calculateSalaryStructure(input);
       const paidDaysResolved = getMonthDays(year, month);
+      input.salaryMonth = `${year}-${String(month).padStart(2, "0")}-01`;
+      input.definedWorkDays = paidDaysResolved;
+      input.totalPaidDays = paidDaysResolved;
+      input.lopDays = 0;
+      // Partial-month attendance needs explicit review in the simple generator.
+      if (input.agreedBreakup) { manualReviewRequired += 1; continue; }
+      const employeeSnapshot = await loadEmployeeSnapshot(employeeId, latest.structure);
+      const calc = await calculateSalaryStructure(input);
       const prorated = applyPayslipProration(calc, paidDaysResolved, 0);
       const totalDeductions = Math.round(prorated.totalDeductions * 100) / 100;
       const netSalary = Math.round((prorated.grossMonthly - totalDeductions) * 100) / 100;
@@ -132,16 +147,16 @@ export async function POST(request: Request) {
       const pdfBytes = await buildPayslipPdf({
         companyName: "AASTHIX TALENT",
         monthLabel,
-        employeeName: String(latest.structure.employee_name || "Employee"),
-        employeeCode: String(latest.structure.employee_code || "-"),
-        department: String(latest.structure.department || "-"),
-        designation: String(latest.structure.designation || "-"),
-        dateOfJoining: toDateOnly(latest.structure.date_of_joining),
-        pan: String(latest.structure.pan || "-"),
-        uanNumber: String(latest.structure.uan_number || "-"),
-        pfNumber: String(latest.structure.pf_number || "-"),
-        bankAccountNumber: String(latest.structure.bank_account_number || "-"),
-        workLocation: String(latest.structure.work_location || "-"),
+        employeeName: employeeSnapshot.employeeName,
+        employeeCode: employeeSnapshot.employeeCode || "-",
+        department: employeeSnapshot.department || "-",
+        designation: employeeSnapshot.designation || "-",
+        dateOfJoining: employeeSnapshot.dateOfJoining || "-",
+        pan: employeeSnapshot.pan || "-",
+        uanNumber: employeeSnapshot.uanNumber || "-",
+        pfNumber: employeeSnapshot.pfNumber || "-",
+        bankAccountNumber: employeeSnapshot.bankAccountNumber || "-",
+        workLocation: employeeSnapshot.workLocation || "-",
         paidDays: paidDaysResolved,
         lopDays: 0,
         earnings: prorated.earnings,
@@ -156,20 +171,10 @@ export async function POST(request: Request) {
       const upsert = await query(
         `
           INSERT INTO payslips
-          (employee_id, salary_structure_id, month, year, paid_days, lop_days, gross_monthly, total_deductions, net_salary, net_salary_words, tax_sheet_snapshot, pdf_blob, generated_at, created_by_user_id, created_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NULL,NOW())
+          (employee_id, salary_structure_id, month, year, paid_days, lop_days, gross_monthly, total_deductions, net_salary, net_salary_words, tax_sheet_snapshot, pdf_blob, generated_at, created_by_user_id, created_at, employee_snapshot)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NULL,NOW(),$13::jsonb)
           ON CONFLICT (employee_id, year, month)
-          DO UPDATE SET
-            salary_structure_id = EXCLUDED.salary_structure_id,
-            paid_days = EXCLUDED.paid_days,
-            lop_days = EXCLUDED.lop_days,
-            gross_monthly = EXCLUDED.gross_monthly,
-            total_deductions = EXCLUDED.total_deductions,
-            net_salary = EXCLUDED.net_salary,
-            net_salary_words = EXCLUDED.net_salary_words,
-            tax_sheet_snapshot = EXCLUDED.tax_sheet_snapshot,
-            pdf_blob = EXCLUDED.pdf_blob,
-            generated_at = NOW()
+          DO NOTHING
           RETURNING id
         `,
         [
@@ -185,9 +190,11 @@ export async function POST(request: Request) {
           amountToRupeesWords(Math.round(netSalary)),
           JSON.stringify(taxSheetSnapshot),
           pdfBytes,
+          JSON.stringify(employeeSnapshot),
         ],
       );
       const payslipId = Number(upsert.rows[0]?.id || 0);
+      if (!payslipId) continue;
       await query(`DELETE FROM payslip_line_items WHERE payslip_id = $1`, [payslipId]);
       for (const item of [...prorated.earnings, ...prorated.deductions]) {
         await query(
@@ -205,6 +212,7 @@ export async function POST(request: Request) {
     operation_status: failed.length === 0 ? "success" : generated > 0 ? "partial" : "error",
     user_message: `Generated payslips for ${generated} employee(s).`,
     generated,
+    manualReviewRequired,
     failed,
     month,
     year,

@@ -58,6 +58,10 @@ type OperationFeedback = {
 
 export default function EmployeeDocumentsPage() {
   const [employeeId, setEmployeeId] = React.useState("");
+  React.useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("employeeId");
+    if (id && /^\d+$/.test(id)) setEmployeeId(id);
+  }, []);
   const [category, setCategory] = React.useState<string>(CATEGORIES[0].value);
   const [file, setFile] = React.useState<File | null>(null);
   const [expiryDate, setExpiryDate] = React.useState("");
@@ -67,7 +71,7 @@ export default function EmployeeDocumentsPage() {
   const [toast, setToast] = React.useState<{ message: string; variant: "success" | "error" | "blocked" } | null>(null);
   const [busy, setBusy] = React.useState(false);
   const employeesSwr = useSWR<{ employees: Employee[] }>("/api/hrms/employees", dashboardFetcher, { revalidateOnFocus: false });
-  const docsSwr = useSWR<{ documents: DocumentRow[] }>("/api/hrms/documents", dashboardFetcher, { revalidateOnFocus: false });
+  const docsSwr = useSWR<{ documents: DocumentRow[] }>(employeeId ? `/api/hrms/documents?employeeId=${employeeId}` : "/api/hrms/documents", dashboardFetcher, { revalidateOnFocus: false });
   const complianceSwr = useSWR<{ compliance: ComplianceResult }>(
     employeeId ? `/api/hrms/documents/compliance?employeeId=${employeeId}` : null,
     dashboardFetcher,
@@ -104,6 +108,7 @@ export default function EmployeeDocumentsPage() {
   }
 
   async function remove(id: number) {
+    if (!window.confirm("Delete this employee document permanently?")) return;
     setBusy(true);
     try {
       const response = await apiFetchJson<OperationFeedback>(`/api/hrms/documents/${id}`, { method: "DELETE" });
@@ -167,7 +172,7 @@ export default function EmployeeDocumentsPage() {
   }
 
   return (
-    <AccessGate permissionKey="documents.view_self">
+    <AccessGate permissionKey="documents.view_all">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={1800} /> : null}
       <ModulePageFrame title="Document Management" subtitle="Secure employee document vault with role-scoped visibility and downloads.">
         <section className={UI.card + " p-4 sm:p-5"}>

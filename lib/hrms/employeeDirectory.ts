@@ -229,7 +229,7 @@ export async function listEmployees(params: {
         ${caps.role ? "COALESCE(u.role, 'user')" : "'user'"} AS role,
         ${caps.designation ? "COALESCE(u.designation, '')" : "''"} AS designation,
         ${caps.employment_type ? "COALESCE(u.employment_type, '')" : "''"} AS employment_type,
-        ${caps.joining_date ? "u.joining_date" : "NULL::date"} AS joining_date,
+        ${caps.joining_date ? "to_char(u.joining_date, 'YYYY-MM-DD')" : "NULL::date"} AS joining_date,
         ${caps.work_location ? "COALESCE(u.work_location, '')" : "''"} AS work_location,
         ${caps.employment_status ? "COALESCE(u.employment_status, 'active')" : "'active'"} AS employment_status,
         ${caps.reporting_manager_user_id ? "u.reporting_manager_user_id" : "NULL::int"} AS reporting_manager_user_id,
@@ -270,7 +270,7 @@ export async function listEmployees(params: {
   });
 }
 
-export async function getEmployeeSelfProfile(userId: number) {
+export async function getEmployeeSelfProfile(userId: number): Promise<(Record<string, unknown> & { profile_completeness: number }) | null> {
   const caps = await hasUsersColumns([
     "employee_code",
     "phone",
@@ -296,7 +296,7 @@ export async function getEmployeeSelfProfile(userId: number) {
         ${caps.role ? "COALESCE(u.role, 'user')" : "'user'"} AS role,
         ${caps.designation ? "COALESCE(u.designation, '')" : "''"} AS designation,
         ${caps.employment_type ? "COALESCE(u.employment_type, '')" : "''"} AS employment_type,
-        ${caps.joining_date ? "u.joining_date" : "NULL::date"} AS joining_date,
+        ${caps.joining_date ? "to_char(u.joining_date, 'YYYY-MM-DD')" : "NULL::date"} AS joining_date,
         ${caps.work_location ? "COALESCE(u.work_location, '')" : "''"} AS work_location,
         ${caps.employment_status ? "COALESCE(u.employment_status, 'active')" : "'active'"} AS employment_status,
         ${caps.reporting_manager_user_id ? "u.reporting_manager_user_id" : "NULL::int"} AS reporting_manager_user_id,
@@ -646,7 +646,7 @@ export async function updateEmployee(id: number, input: EmployeeDirectoryInput, 
     let idx = 4;
     if (caps.employee_code) {
       setClauses.unshift(`employee_code = $${idx}`);
-      vals.push(input.employeeIdCode.trim());
+      vals.push(input.employeeIdCode.trim() || null);
       idx += 1;
     }
     if (caps.phone) {
@@ -678,6 +678,8 @@ export async function updateEmployee(id: number, input: EmployeeDirectoryInput, 
       vals.push(input.workLocation?.trim() || null);
     }
     if (caps.employment_status) {
+      setClauses.push(`is_active = CASE WHEN $${idx}::text <> 'active' THEN false WHEN employment_status IS DISTINCT FROM $${idx}::text THEN true ELSE is_active END`);
+      if (normalizedStatus !== "active") setClauses.push("token_version = COALESCE(token_version, 1) + 1");
       setClauses.push(`employment_status = $${idx++}`);
       vals.push(normalizedStatus);
     }
@@ -711,7 +713,7 @@ export async function updateEmployee(id: number, input: EmployeeDirectoryInput, 
 
 export async function deactivateEmployee(id: number, actorUserId: number) {
   await query(
-    `UPDATE users SET employment_status = 'inactive' WHERE id = $1`,
+    `UPDATE users SET employment_status = 'inactive', is_active = false, token_version = COALESCE(token_version, 1) + 1, updated_at = NOW() WHERE id = $1`,
     [id],
   );
   await writeAuditLog({

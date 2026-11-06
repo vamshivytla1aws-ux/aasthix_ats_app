@@ -243,6 +243,7 @@ export async function decideLeaveRequest(input: {
   actorUserId: number;
   actorRole: string;
   requestId: number;
+  canApproveAll?: boolean;
   decision: "approved" | "rejected";
   note?: string | null;
 }) {
@@ -252,6 +253,7 @@ export async function decideLeaveRequest(input: {
   if (request.status !== "pending") throw new Error("Leave request already decided.");
 
   const actorCanApprove =
+    input.canApproveAll === true ||
     input.actorRole === "admin" ||
     input.actorRole === "coordinator" ||
     Number(request.manager_user_id || 0) === input.actorUserId;

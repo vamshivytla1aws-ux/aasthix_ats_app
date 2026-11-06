@@ -58,6 +58,11 @@ function buildTabs(canApproveTeam: boolean, canManagePolicy: boolean): Enterpris
 
 export default function LeavePage() {
   const [tab, setTab] = React.useState("my");
+  const [employeeFilter, setEmployeeFilter] = React.useState<{ id: number; month: string } | null>(null);
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search), id = Number(params.get("user_id")), month = params.get("month");
+    if (Number.isInteger(id) && id > 0 && month && /^\d{4}-\d{2}$/.test(month)) { setEmployeeFilter({ id, month }); setTab("approvals"); }
+  }, []);
   const [result, setResult] = React.useState<{ tone: "success" | "partial" | "blocked" | "error" | "info"; message: string; hint?: string } | null>(
     null,
   );
@@ -98,7 +103,11 @@ export default function LeavePage() {
     dashboardFetcher,
     { revalidateOnFocus: false },
   );
-  const requestsSwr = useSWR<{ requests: LeaveRequest[] }>(canApproveTeam ? "/api/leave/requests" : null, dashboardFetcher, {
+  const requestsSwr = useSWR<{ requests: LeaveRequest[] }>(canApproveTeam ? employeeFilter ? `/api/hrms/employees/${employeeFilter.id}/monthly-records?month=${employeeFilter.month}` : "/api/leave/requests" : null,
+    async (url: string) => {
+      if (url.startsWith("/api/hrms/")) { const data = await dashboardFetcher<{ leave: { available: boolean; requests?: LeaveRequest[] } }>(url); return { requests: data.leave.requests || [] }; }
+      return dashboardFetcher<{ requests: LeaveRequest[] }>(url);
+    }, {
     revalidateOnFocus: false,
   });
   const policySwr = useSWR<{ policy: any }>(canManagePolicy ? "/api/leave/policies" : null, dashboardFetcher, { revalidateOnFocus: false });
@@ -270,7 +279,7 @@ export default function LeavePage() {
         <Toast message={result.message} detail={result.hint} variant={toToastTone(result.tone)} autoHideMs={toastMsForTone(result.tone)} onClose={() => setResult(null)} />
       ) : null}
       <ModulePageFrame
-        title="HRMS - Leave"
+        title={employeeFilter && canApproveTeam ? `Leave · Employee ${employeeFilter.id} · ${employeeFilter.month}` : "HRMS - Leave"}
         subtitle={
           canManagePolicy
             ? "Apply and track leave, approve team requests, and manage holidays and policy."
@@ -313,7 +322,7 @@ export default function LeavePage() {
               </div>
             </div>
             <div className="mt-4">
-              <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void applyLeave()} disabled={busy === "apply"}>
+              <button type="button" className={UI.primaryButton + " py-2 text-sm"} onClick={() => void applyLeave()} disabled={busy === "apply" || permissions["leave.apply_self"] !== true}>
                 {busy === "apply" ? "Submitting..." : "Apply leave"}
               </button>
             </div>

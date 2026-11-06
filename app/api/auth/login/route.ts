@@ -10,17 +10,20 @@ export async function POST(request: Request) {
     let email: string | undefined;
     let password: string | undefined;
     let redirectTo: string | undefined;
+    let portal: string | undefined;
 
     if (contentType.includes("application/json")) {
-      const body = (await request.json()) as { email?: string; password?: string; redirect_to?: string };
+      const body = (await request.json()) as { email?: string; password?: string; redirect_to?: string; portal?: string };
       email = body.email;
       password = body.password;
       redirectTo = body.redirect_to;
+      portal = body.portal;
     } else {
       const form = await request.formData();
       email = String(form.get("email") || "");
       password = String(form.get("password") || "");
       redirectTo = String(form.get("redirect_to") || "");
+      portal = String(form.get("portal") || "");
     }
 
     if (!email || !password) {
@@ -29,7 +32,7 @@ export async function POST(request: Request) {
 
     const result = await query(
       `SELECT id, email, full_name, password_hash, COALESCE(is_active, true) AS is_active,
-              COALESCE(token_version, 1) AS token_version FROM users WHERE email = $1`,
+              COALESCE(token_version, 1) AS token_version, role, employment_status FROM users WHERE email = $1`,
       [email.trim().toLowerCase()]
     );
 
@@ -44,6 +47,8 @@ export async function POST(request: Request) {
       password_hash: string | null;
       is_active: boolean;
       token_version: number;
+      role: string;
+      employment_status: string | null;
     };
 
     if (!user.is_active) {
@@ -58,6 +63,12 @@ export async function POST(request: Request) {
     if (!ok) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
+    if (portal === "employee" && user.role !== "employee") {
+      return NextResponse.json({ error: "Use HR / recruitment sign in for this account." }, { status: 403 });
+    }
+    if (user.role === "employee" && ["inactive", "resigned"].includes(user.employment_status || "")) {
+      return NextResponse.json({ error: "Employee access is inactive. Contact HR." }, { status: 403 });
+    }
 
     const token = await signAuthToken({ user_id: user.id, email: user.email, token_version: user.token_version });
 
@@ -68,7 +79,8 @@ export async function POST(request: Request) {
     });
 
     const reqUrl = new URL(request.url);
-    const wantsRedirect = Boolean(redirectTo && redirectTo.startsWith("/"));
+    if (user.role === "employee") redirectTo = redirectTo ? "/hrms" : undefined;
+    const wantsRedirect = Boolean(redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("//") && !redirectTo.includes("\\"));
     const res = wantsRedirect
       ? NextResponse.redirect(new URL(redirectTo!, reqUrl.origin), { status: 303 })
       : NextResponse.json({ user: { id: user.id, email: user.email, full_name: user.full_name } });

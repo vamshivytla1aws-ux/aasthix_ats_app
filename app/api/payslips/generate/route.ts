@@ -10,6 +10,8 @@ import { getPayrollRunByMonthYear } from "@/lib/hrms/payroll";
 import { loadActiveTaxConfig, calculateAnnualTaxFromConfig } from "@/lib/salary/tax";
 import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
 import { getMonthDays } from "@/lib/salary/monthDays";
+import { reconcilePaidAmount } from "@/lib/salary/agreed";
+import { loadEmployeeSnapshot } from "@/lib/salary/employeeSnapshot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -100,7 +102,7 @@ export async function POST(request: Request) {
     const auth = await requirePermission("salary.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const body = (await request.json().catch(() => null)) as
-      | { employeeId?: number; month?: number; year?: number; paidDays?: number; lopDays?: number }
+      | { employeeId?: number; month?: number; year?: number; paidDays?: number; lopDays?: number; definedWorkDays?: number; preview?: boolean; actualNetPaid?: number }
       | null;
     if (!body) return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     const employeeId = Number(body.employeeId);
@@ -110,7 +112,7 @@ export async function POST(request: Request) {
     const lopDays = Number(body.lopDays);
 
     if (!Number.isFinite(employeeId) || employeeId <= 0) return NextResponse.json({ error: "Invalid employeeId" }, { status: 400 });
-    if (!(month >= 1 && month <= 12) || !(year >= 2000)) return NextResponse.json({ error: "Invalid month/year" }, { status: 400 });
+    if (!Number.isInteger(month) || !(month >= 1 && month <= 12) || !Number.isInteger(year) || !(year >= 2000 && year <= 9999)) return NextResponse.json({ error: "Invalid month/year" }, { status: 400 });
 
     const byMonth = await getSalaryStructureForMonth(employeeId, month, year);
     const latest = byMonth || (await getLatestSalaryStructure(employeeId));
@@ -140,26 +142,39 @@ export async function POST(request: Request) {
     }
 
     const input = toCalcInputFromStructure(latest.structure);
-    const calc = await calculateSalaryStructure(input);
+    if (body.actualNetPaid != null && (!input.agreedBreakup || typeof body.actualNetPaid !== "number"
+      || !Number.isFinite(body.actualNetPaid) || body.actualNetPaid < 0 || body.actualNetPaid > 100000000
+      || Math.abs(Math.round(body.actualNetPaid * 100) / 100 - body.actualNetPaid) > 0.000001)) {
+      return NextResponse.json({ error: "Amount paid requires an agreed salary setup and a valid amount with at most two decimals." }, { status: 400 });
+    }
     const monthDays = getMonthDays(year, month);
+    // Calculate the selected month once, rather than reusing saved partial-month inputs.
+    input.salaryMonth = `${year}-${String(month).padStart(2, "0")}-01`;
+    input.definedWorkDays = body.definedWorkDays == null ? monthDays : Number(body.definedWorkDays);
+    input.totalPaidDays = monthDays;
+    input.lopDays = 0;
     const paidDaysResolved =
       Number.isFinite(paidDays) && paidDays > 0
         ? paidDays
-        : Number(latest.structure.total_paid_days || monthDays);
-    const manualLopDays = Number.isFinite(lopDays) && lopDays >= 0 ? lopDays : Number(latest.structure.lop_days || 0);
-    if (paidDaysResolved <= 0) {
+        : body.paidDays === 0 ? 0 : monthDays;
+    const manualLopDays = body.lopDays == null ? 0 : lopDays;
+    if (!Number.isFinite(paidDaysResolved) || paidDaysResolved < 0 || paidDaysResolved > input.definedWorkDays
+      || !Number.isFinite(input.definedWorkDays) || input.definedWorkDays <= 0 || input.definedWorkDays > monthDays
+      || !Number.isFinite(manualLopDays) || manualLopDays < 0
+      || (body.paidDays != null && (!Number.isFinite(paidDays) || paidDays < 0))) {
       return NextResponse.json(
         {
           operation_status: "blocked",
-          error: "Paid days must be greater than zero.",
-          user_message: "Paid days must be greater than zero.",
+          error: "Check month days, eligible days and absence days.",
+          user_message: "Check month days, eligible days and absence days.",
         },
         { status: 400 },
       );
     }
     let leaveLopDays = 0;
     try {
-      leaveLopDays = await getMonthlyApprovedLopDays(employeeId, year, month);
+      // In the simple flow the entered absence count is the complete total.
+      if (!input.agreedBreakup) leaveLopDays = await getMonthlyApprovedLopDays(employeeId, year, month);
     } catch (error) {
       const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code || "") : "";
       if (code !== "42P01") throw error;
@@ -176,15 +191,24 @@ export async function POST(request: Request) {
       );
     }
 
-    const prorated = applyPayslipProration(
+    let calc = await calculateSalaryStructure({ ...input,
+      totalPaidDays: input.agreedBreakup ? paidDaysResolved : input.definedWorkDays,
+      lopDays: input.agreedBreakup ? totalLopDays : 0,
+    });
+    if (body.actualNetPaid != null) calc = reconcilePaidAmount(calc, body.actualNetPaid);
+    const prorated = input.agreedBreakup ? {
+      earnings: calc.earningsAnnual.map(item => ({ ...item, amountForMonth: item.amountForMonth ?? item.monthly })),
+      deductions: calc.deductionsAnnual.map(item => ({ ...item, amountForMonth: item.amountForMonth ?? item.monthly })),
+      grossMonthly: calc.grossMonthlySalary,
+    } : applyPayslipProration(
       calc,
-      paidDaysResolved,
-      0
+      input.definedWorkDays,
+      input.definedWorkDays - paidDaysResolved
     );
-    const lopDeductionAmount = Math.round(((prorated.grossMonthly / Math.max(1, paidDaysResolved)) * totalLopDays) * 100) / 100;
+    const lopDeductionAmount = input.agreedBreakup ? 0 : Math.round(((prorated.grossMonthly / Math.max(1, paidDaysResolved)) * totalLopDays) * 100) / 100;
     const deductionsWithLop = [
     ...prorated.deductions,
-    {
+    ...(lopDeductionAmount > 0 ? [{
       type: "deduction" as const,
       key: "lop_deduction",
       name: "LOP Deduction",
@@ -192,36 +216,44 @@ export async function POST(request: Request) {
       monthly: lopDeductionAmount,
       amountForMonth: lopDeductionAmount,
       sortOrder: 999,
-    },
+    }] : []),
     ];
     const totalDeductionsWithLop = Math.round(
       deductionsWithLop.reduce((acc, item) => acc + Number(item.amountForMonth || 0), 0) * 100,
     ) / 100;
     const netWithLop = Math.round((prorated.grossMonthly - totalDeductionsWithLop) * 100) / 100;
-    const netSalaryWords = amountToRupeesWords(Math.round(netWithLop));
+    const netSalaryWords = amountToRupeesWords(netWithLop);
 
-    const employeeName = String(latest.structure.employee_name || "Employee");
+    if (body.preview) return NextResponse.json({ calculation: {
+      ...calc, earningsAnnual: prorated.earnings, deductionsAnnual: deductionsWithLop.filter(item => item.amountForMonth || item.annual),
+      grossMonthlySalary: prorated.grossMonthly, totalMonthlyDeductions: totalDeductionsWithLop,
+      netMonthlySalary: netWithLop, netSalaryInWords: netSalaryWords,
+    } });
+
+    const employeeSnapshot = await loadEmployeeSnapshot(employeeId, latest.structure);
+    const employeeName = employeeSnapshot.employeeName;
     const monthLabel = new Date(Date.UTC(year, month - 1, 1)).toLocaleString("en-IN", {
       month: "long",
       year: "numeric",
       timeZone: "Asia/Kolkata",
     });
-    const taxSheetSnapshot = await buildTaxSheetSnapshot(prorated.grossMonthly, deductionsWithLop, input.taxRegime, month, monthLabel);
+    // An agreed TDS amount is a supplied payroll value, not an automatic tax estimate.
+    const taxSheetSnapshot = input.agreedBreakup ? null : await buildTaxSheetSnapshot(prorated.grossMonthly, deductionsWithLop, input.taxRegime, month, monthLabel);
 
     const pdfBytes = await buildPayslipPdf({
     companyName: "AASTHIX TALENT",
     monthLabel,
     employeeName,
-    employeeCode: String(latest.structure.employee_code || "-"),
-    department: String(latest.structure.department || "-"),
-    designation: String(latest.structure.designation || "-"),
-    dateOfJoining: toDateOnly(latest.structure.date_of_joining),
-    pan: String(latest.structure.pan || "-"),
-    uanNumber: String(latest.structure.uan_number || "-"),
-    pfNumber: String(latest.structure.pf_number || "-"),
-    bankAccountNumber: String(latest.structure.bank_account_number || "-"),
-    workLocation: String(latest.structure.work_location || "-"),
-    paidDays: Number.isFinite(paidDays) && paidDays > 0 ? paidDays : Number(latest.structure.total_paid_days || monthDays),
+    employeeCode: employeeSnapshot.employeeCode || "-",
+    department: employeeSnapshot.department || "-",
+    designation: employeeSnapshot.designation || "-",
+    dateOfJoining: employeeSnapshot.dateOfJoining || "-",
+    pan: employeeSnapshot.pan || "-",
+    uanNumber: employeeSnapshot.uanNumber || "-",
+    pfNumber: employeeSnapshot.pfNumber || "-",
+    bankAccountNumber: employeeSnapshot.bankAccountNumber || "-",
+    workLocation: employeeSnapshot.workLocation || "-",
+    paidDays: paidDaysResolved - totalLopDays,
     lopDays: totalLopDays,
     earnings: prorated.earnings,
     deductions: deductionsWithLop,
@@ -230,13 +262,14 @@ export async function POST(request: Request) {
     netSalary: netWithLop,
     netSalaryInWords: netSalaryWords,
     taxSheetSnapshot,
+    simple: Boolean(input.agreedBreakup),
     });
 
     const upsert = await query(
     `
     INSERT INTO payslips
-    (employee_id, salary_structure_id, month, year, paid_days, lop_days, gross_monthly, total_deductions, net_salary, net_salary_words, tax_sheet_snapshot, pdf_blob, generated_at, created_by_user_id, created_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),$13,NOW())
+    (employee_id, salary_structure_id, month, year, paid_days, lop_days, gross_monthly, total_deductions, net_salary, net_salary_words, tax_sheet_snapshot, pdf_blob, generated_at, created_by_user_id, created_at, employee_snapshot)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),$13,NOW(),$14::jsonb)
     ON CONFLICT (employee_id, year, month)
     DO UPDATE SET
       salary_structure_id = EXCLUDED.salary_structure_id,
@@ -248,6 +281,7 @@ export async function POST(request: Request) {
       net_salary_words = EXCLUDED.net_salary_words,
       tax_sheet_snapshot = EXCLUDED.tax_sheet_snapshot,
       pdf_blob = EXCLUDED.pdf_blob,
+      employee_snapshot = EXCLUDED.employee_snapshot,
       generated_at = NOW(),
       created_by_user_id = EXCLUDED.created_by_user_id
     RETURNING id
@@ -257,7 +291,7 @@ export async function POST(request: Request) {
       Number(latest.structure.id),
       month,
       year,
-      paidDaysResolved,
+      paidDaysResolved - totalLopDays,
       totalLopDays,
       prorated.grossMonthly,
       totalDeductionsWithLop,
@@ -266,6 +300,7 @@ export async function POST(request: Request) {
       JSON.stringify(taxSheetSnapshot),
       pdfBytes,
       auth.access.user_id,
+      JSON.stringify(employeeSnapshot),
     ]
     );
     const payslipId = Number(upsert.rows[0].id);

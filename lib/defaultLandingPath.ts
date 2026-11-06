@@ -3,6 +3,7 @@
  * Recruiter/coordinator → pipeline or activity center; hiring manager → requisitions (approvals) or interviews.
  */
 export function resolveDefaultLandingPath(role: string, permissions: Record<string, boolean>): string {
+  if (role === "employee" || role === "hr") return "/hrms";
   const admin = role === "admin";
   const ok = (key: string) => admin || permissions[key] !== false;
 

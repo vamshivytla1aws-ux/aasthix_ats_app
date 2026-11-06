@@ -12,7 +12,7 @@ export async function GET() {
   try {
     const { settings, today, record } = await getTodayAttendanceForUser(auth.access.user_id);
     const recent_records = await getAttendanceRecentForUser(auth.access.user_id, 14);
-    const summary = await getAttendanceSummary(today);
+    const summary = auth.access.permissions["attendance.view_all"] ? await getAttendanceSummary(today) : undefined;
     return NextResponse.json({
       today,
       settings,

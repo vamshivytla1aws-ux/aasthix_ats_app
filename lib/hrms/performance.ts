@@ -6,10 +6,13 @@ export async function listPerformanceCycles() {
   return res.rows;
 }
 
-export async function listPerformanceGoals(cycleId?: number) {
+export async function listPerformanceGoals(cycleId?: number, scope?: { actorUserId: number; role: string }) {
   const values: number[] = [];
-  const where = cycleId && cycleId > 0 ? "WHERE g.cycle_id = $1" : "";
-  if (cycleId && cycleId > 0) values.push(cycleId);
+  const conditions: string[] = [];
+  if (cycleId && cycleId > 0) { values.push(cycleId); conditions.push(`g.cycle_id = $${values.length}`); }
+  if (scope?.role === "employee") { values.push(scope.actorUserId); conditions.push(`g.employee_id = $${values.length}`); }
+  else if (scope?.role === "hiring_manager" || scope?.role === "manager") { values.push(scope.actorUserId); conditions.push(`u.reporting_manager_user_id = $${values.length}`); }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const res = await query(
     `
       SELECT

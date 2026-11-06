@@ -27,6 +27,7 @@ import {
 } from "@/lib/dashboardNavConfig";
 import BrandLogo from "@/components/BrandLogo";
 import { IA_V2_ENABLED } from "@/lib/featureFlags";
+import EmployeeNavbar from "@/components/hrms/EmployeeNavbar";
 
 const ADMIN_LINKS = [
   { label: "Access control", href: "/admin/permissions" },
@@ -45,6 +46,7 @@ export default function MegaMenuNavbar() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [role, setRole] = useState<string>("user");
   const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+  const [sessionLoaded, setSessionLoaded] = useState(false);
   const moreRef = useRef<HTMLDivElement | null>(null);
   const quickRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
@@ -60,7 +62,7 @@ export default function MegaMenuNavbar() {
           setPermissions(data.permissions || {});
         }
       })
-      .catch(() => {});
+      .catch(() => {}).finally(() => { if (!cancelled) setSessionLoaded(true); });
     return () => {
       cancelled = true;
     };
@@ -165,6 +167,10 @@ export default function MegaMenuNavbar() {
     }
     return Array.from(dedupe.values());
   }, [primaryVisible, moreVisible, role, permissions]);
+
+  if (!sessionLoaded) return <header className="border-b p-4 text-sm text-[var(--ats-text-muted)]">Loading workspace…</header>;
+  if (!userName) return <header className="border-b p-4 text-sm"><Link href="/employee/login">Sign in</Link></header>;
+  if (role === "employee") return <EmployeeNavbar name={userName} permissions={permissions} />;
 
   return (
     <header className="sticky top-0 z-50">

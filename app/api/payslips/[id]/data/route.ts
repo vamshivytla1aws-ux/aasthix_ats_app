@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthAccess, requirePermission } from "@/lib/rbac";
 import { query } from "@/lib/db";
+import { withEmployeeSnapshot } from "@/lib/salary/employeeSnapshot";
 import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
 
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
   const res = await query(
     `
-    SELECT p.id, p.employee_id, p.month, p.year, p.paid_days, p.lop_days, p.gross_monthly, p.total_deductions, p.net_salary, p.net_salary_words, p.tax_sheet_snapshot,
+    SELECT p.id, p.employee_id, p.month, p.year, p.paid_days, p.lop_days, p.gross_monthly, p.total_deductions, p.net_salary, p.net_salary_words, p.tax_sheet_snapshot, p.employee_snapshot,
            u.full_name,
            s.employee_code, s.department, s.designation, s.date_of_joining, s.pan, s.uan_number, s.pf_number, s.bank_account_number, s.work_location, s.ctc_annual
     FROM payslips p
@@ -30,7 +31,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     [payslipId]
   );
   if (res.rowCount === 0) return NextResponse.json({ error: "Payslip not found" }, { status: 404 });
-  const row = res.rows[0] as any;
+  let row = res.rows[0] as any;
   const employeeId = Number(row.employee_id || 0);
 
   if (access.role === "employee" && access.user_id !== employeeId) {
@@ -44,6 +45,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (teamCheck.rowCount === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  row = withEmployeeSnapshot(row);
   const itemsRes = await query(
     `
     SELECT item_class, name, annual_amount, monthly_amount, amount_for_month, sort_order

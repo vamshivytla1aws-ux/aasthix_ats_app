@@ -6,7 +6,7 @@ import SelfServiceSalaryView from "@/components/hrms/SelfServiceSalaryView";
 
 export default function SalaryPage() {
   return (
-    <AccessGate permissionKey="dashboard.view">
+    <AccessGate permissionKey="salary.view">
       <SelfServiceSalaryView />
     </AccessGate>
   );

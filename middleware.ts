@@ -5,6 +5,7 @@ const PUBLIC_FILE_REGEX = /\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|xml
 
 const PUBLIC_PATHS = new Set([
   "/login",
+  "/employee/login",
   "/signup",
   "/invite/accept",
   "/api/auth/login",
@@ -59,7 +60,7 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(tokenCookieName())?.value;
   if (!token) {
     const url = req.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = pathname.startsWith("/hrms") || ["/salary", "/leave", "/attendance", "/timesheet", "/team-calendar"].some(path => pathname === path || pathname.startsWith(`${path}/`)) ? "/employee/login" : "/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }

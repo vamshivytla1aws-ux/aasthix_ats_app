@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthAccess, requirePermission } from "@/lib/rbac";
 import { query } from "@/lib/db";
+import { withEmployeeSnapshot } from "@/lib/salary/employeeSnapshot";
 import { buildPayslipPdf } from "@/lib/pdf/payslipExport";
 import { amountToRupeesWords } from "@/lib/salary/numberToWords";
 import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
@@ -35,9 +36,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   }
   const res = await query(
     `
-    SELECT p.id, p.employee_id, p.month, p.year, p.paid_days, p.lop_days, p.gross_monthly, p.total_deductions, p.net_salary, p.net_salary_words, p.tax_sheet_snapshot, p.pdf_blob,
+    SELECT p.id, p.employee_id, p.month, p.year, p.paid_days, p.lop_days, p.gross_monthly, p.total_deductions, p.net_salary, p.net_salary_words, p.tax_sheet_snapshot, p.pdf_blob, p.employee_snapshot,
            u.full_name,
-           s.employee_code, s.department, s.designation, s.date_of_joining, s.pan, s.uan_number, s.pf_number, s.bank_account_number, s.work_location
+           s.employee_code, s.department, s.designation, s.date_of_joining, s.pan, s.uan_number, s.pf_number, s.bank_account_number, s.work_location, s.agreed_breakup
     FROM payslips p
     JOIN users u ON u.id = p.employee_id
     LEFT JOIN salary_structures s ON s.id = p.salary_structure_id
@@ -47,7 +48,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     [payslipId]
   );
   if (res.rowCount === 0) return NextResponse.json({ error: "Payslip not found" }, { status: 404 });
-  const row = res.rows[0] as any;
+  let row = res.rows[0] as any;
   const employeeId = Number(row.employee_id || 0);
   if (access.role === "employee" && access.user_id !== employeeId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -59,8 +60,11 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     );
     if (teamCheck.rowCount === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  row = withEmployeeSnapshot(row);
   let pdfBuffer = row.pdf_blob as Buffer | null;
-  if (!pdfBuffer || !row.tax_sheet_snapshot) {
+  const simple = row.snapshot_simple ?? Boolean(row.agreed_breakup);
+  // Stored PDFs are historical documents, including legacy PDFs without a tax sheet.
+  if (!pdfBuffer) {
     const itemsRes = await query(
       `
       SELECT item_class, name, annual_amount, monthly_amount, amount_for_month, sort_order
@@ -95,7 +99,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       typeof row.tax_sheet_snapshot === "string"
         ? (JSON.parse(row.tax_sheet_snapshot) as PayslipTaxSheetSnapshot)
         : (row.tax_sheet_snapshot as PayslipTaxSheetSnapshot | null);
-    if (!taxSheetSnapshot) {
+    if (!taxSheetSnapshot && !simple) {
       const tdsMonthly = Number(
         deductions.find((d: { name: string; amountForMonth: number }) => d.name.toLowerCase().includes("tds"))?.amountForMonth || 0
       );
@@ -154,6 +158,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       netSalary: Number(row.net_salary || 0),
       netSalaryInWords: String(row.net_salary_words || amountToRupeesWords(Math.round(Number(row.net_salary || 0)))),
       taxSheetSnapshot,
+      simple,
     });
     pdfBuffer = generated;
     await query(`UPDATE payslips SET pdf_blob = $2 WHERE id = $1`, [payslipId, generated]);

@@ -201,7 +201,7 @@ export default function EmployeeDirectoryPage() {
   }
 
   return (
-    <AccessGate permissionKey="employee_directory.view_self">
+    <AccessGate permissionKey="employee_directory.view_all">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} autoHideMs={1800} /> : null}
       <ModulePageFrame title="Employee Directory" subtitle="Add, update, search, and manage employee lifecycle status.">
         <section className={UI.card + " p-4 sm:p-5"}>

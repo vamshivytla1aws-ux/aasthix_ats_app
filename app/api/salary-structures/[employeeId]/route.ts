@@ -12,6 +12,9 @@ export async function GET(_request: Request, { params }: { params: { employeeId:
   if (!Number.isFinite(employeeId) || employeeId <= 0) {
     return NextResponse.json({ error: "Invalid employee id" }, { status: 400 });
   }
+  if (auth.access.role === "employee" && auth.access.user_id !== employeeId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const data = await getLatestSalaryStructure(employeeId);
   if (!data) return NextResponse.json({ error: "Salary structure not found" }, { status: 404 });
   return NextResponse.json(data);

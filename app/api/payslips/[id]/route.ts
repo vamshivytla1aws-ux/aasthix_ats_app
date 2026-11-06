@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthAccess, requirePermission } from "@/lib/rbac";
 import { query } from "@/lib/db";
+import { withEmployeeSnapshot } from "@/lib/salary/employeeSnapshot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   }
   const res = await query(
     `
-    SELECT p.id, p.month, p.year, p.paid_days, p.lop_days, p.gross_monthly, p.total_deductions, p.net_salary, p.net_salary_words, p.generated_at,
+    SELECT p.id, p.month, p.year, p.paid_days, p.lop_days, p.gross_monthly, p.total_deductions, p.net_salary, p.net_salary_words, p.generated_at, p.employee_snapshot,
            s.employee_code, s.department, s.designation, u.full_name AS employee_name
     FROM payslips p
     JOIN salary_structures s ON s.id = p.salary_structure_id
@@ -37,7 +38,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     [employeeId]
   );
   return NextResponse.json({
-    payslips: res.rows.map((row: any) => ({
+    payslips: res.rows.map(withEmployeeSnapshot).map((row: any) => ({
       id: Number(row.id),
       month: Number(row.month),
       year: Number(row.year),

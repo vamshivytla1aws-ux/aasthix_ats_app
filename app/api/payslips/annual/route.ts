@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthAccess, requirePermission } from "@/lib/rbac";
 import { query } from "@/lib/db";
+import { withEmployeeSnapshot } from "@/lib/salary/employeeSnapshot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,6 +76,7 @@ export async function GET(request: Request) {
         p.total_deductions,
         p.net_salary,
         p.generated_at,
+        p.employee_snapshot,
         u.full_name AS employee_name,
         COALESCE(s.employee_code, '') AS employee_code,
         COALESCE(s.department, '') AS department,
@@ -88,7 +90,7 @@ export async function GET(request: Request) {
     [employeeId],
   );
 
-  const rows: AnnualPayslipRow[] = rowsRes.rows.map((row: any) => ({
+  const rows: AnnualPayslipRow[] = rowsRes.rows.map(withEmployeeSnapshot).map((row: any) => ({
     id: Number(row.id),
     employee_id: Number(row.employee_id),
     month: Number(row.month),

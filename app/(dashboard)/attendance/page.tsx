@@ -123,6 +123,12 @@ export default function AttendancePage() {
   const [roleFilter, setRoleFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().slice(0, 10));
+  const [employeeFilter, setEmployeeFilter] = useState("");
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search), id = params.get("user_id"), date = params.get("date");
+    if (id && /^\d+$/.test(id)) setEmployeeFilter(id);
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setDateFilter(date);
+  }, []);
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<AttendanceSettings | null>(null);
@@ -157,7 +163,7 @@ export default function AttendancePage() {
     revalidateOnFocus: false,
   });
   const summarySwr = useSWR<AttendanceSummaryResponse>(
-    `/api/attendance/summary?date=${encodeURIComponent(dateFilter)}`,
+    canViewAll ? `/api/attendance/summary?date=${encodeURIComponent(dateFilter)}` : null,
     dashboardFetcher,
     {
       refreshInterval: canViewAll ? 60_000 : 0,
@@ -166,7 +172,7 @@ export default function AttendancePage() {
   );
   const registerSwr = useSWR<RegisterResponse>(
     canViewAll
-      ? `/api/attendance/register?date=${encodeURIComponent(dateFilter)}&status=${encodeURIComponent(statusFilter)}&role=${encodeURIComponent(roleFilter)}&q=${encodeURIComponent(query)}`
+      ? `/api/attendance/register?date=${encodeURIComponent(dateFilter)}&status=${encodeURIComponent(statusFilter)}&role=${encodeURIComponent(roleFilter)}&q=${encodeURIComponent(query)}${employeeFilter ? `&user_id=${employeeFilter}` : ""}`
       : null,
     dashboardFetcher,
     {
@@ -301,7 +307,7 @@ export default function AttendancePage() {
   const todayStatus = meSwr.data?.record?.status?.replace(/_/g, " ") || "not checked in";
 
   return (
-    <AccessGate permissionKey="attendance.view_self">
+    <AccessGate permissionKey={canViewAll ? "attendance.view_all" : "attendance.view_self"}>
       {toast ? (
         <Toast
           message={toast.message}
@@ -311,7 +317,7 @@ export default function AttendancePage() {
         />
       ) : null}
       <ModulePageFrame
-        title="Attendance"
+        title={employeeFilter && canViewAll ? `Attendance · Employee ${employeeFilter}` : "Attendance"}
         subtitle="Track employee check-in and check-out inside the ATS with a company-wide daily register."
         metrics={
           <div className="flex flex-wrap items-center gap-2">
@@ -323,11 +329,11 @@ export default function AttendancePage() {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => void runSelfAction("check-in")} disabled={busy !== null || Boolean(meSwr.data?.record?.first_check_in_at)} className={UI.primaryButton + " py-2 text-sm"}>
+            <button type="button" onClick={() => void runSelfAction("check-in")} disabled={busy !== null || me?.permissions?.["attendance.manage_self"] !== true || Boolean(meSwr.data?.record?.first_check_in_at)} className={UI.primaryButton + " py-2 text-sm"}>
               <CheckCircle2 className="h-4 w-4" />
               {busy === "check-in" ? "Checking in…" : "Check in"}
             </button>
-            <button type="button" onClick={() => void runSelfAction("check-out")} disabled={busy !== null || !meSwr.data?.record?.first_check_in_at || Boolean(meSwr.data?.record?.last_check_out_at)} className={UI.secondaryButton + " py-2 text-sm"}>
+            <button type="button" onClick={() => void runSelfAction("check-out")} disabled={busy !== null || me?.permissions?.["attendance.manage_self"] !== true || !meSwr.data?.record?.first_check_in_at || Boolean(meSwr.data?.record?.last_check_out_at)} className={UI.secondaryButton + " py-2 text-sm"}>
               <Clock3 className="h-4 w-4" />
               {busy === "check-out" ? "Checking out…" : "Check out"}
             </button>

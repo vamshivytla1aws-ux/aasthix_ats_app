@@ -2,8 +2,9 @@ import { query } from "@/lib/db";
 import { calculateSalaryStructure } from "@/lib/salary/engine";
 import type { SalaryCalcInput, SalaryCalcResult } from "@/lib/salary/types";
 import { writeAuditLog } from "@/lib/auditLog";
+import { loadEmployeeSnapshot } from "@/lib/salary/employeeSnapshot";
 
-export async function listSalaryEmployees() {
+export async function listSalaryEmployees(employeeId?: number) {
   const selectWithOptionalColumns = async (withColumns: {
     employee_code: boolean;
     department: boolean;
@@ -24,9 +25,10 @@ export async function listSalaryEmployees() {
         ${withColumns.joining_date ? "joining_date" : "NULL::date"} AS joining_date,
         ${withColumns.work_location ? "COALESCE(work_location, '')" : "''"} AS work_location
       FROM users
+      ${employeeId ? "WHERE id = $1" : ""}
       ORDER BY LOWER(full_name) ASC, id ASC
       `,
-      [],
+      employeeId ? [employeeId] : [],
     );
 
   let res;
@@ -62,6 +64,9 @@ export async function listSalaryEmployees() {
 }
 
 export async function createSalaryStructure(input: SalaryCalcInput, actorUserId: number) {
+  const identity = await loadEmployeeSnapshot(input.employeeId, {});
+  input = { ...input, employeeName: identity.employeeName, employeeCode: identity.employeeCode, department: identity.department,
+    designation: identity.designation, dateOfJoining: identity.dateOfJoining || null, workLocation: identity.workLocation };
   const calc = await calculateSalaryStructure(input);
   const structureArgs = [
     input.employeeId,
@@ -157,6 +162,8 @@ export async function createSalaryStructure(input: SalaryCalcInput, actorUserId:
     );
     salaryStructureId = Number(ins.rows[0].id);
   }
+  await query(`UPDATE salary_structures SET agreed_breakup = $2::jsonb WHERE id = $1`,
+    [salaryStructureId, input.agreedBreakup ? JSON.stringify(input.agreedBreakup) : null]);
   const allComponents = [...calc.earningsAnnual, ...calc.deductionsAnnual];
   for (const component of allComponents) {
     await query(
@@ -280,6 +287,7 @@ export function toCalcInputFromStructure(structure: any): SalaryCalcInput {
     employeePfEnabled: Boolean(structure.employee_pf_enabled),
     healthInsuranceEnabled: Boolean(structure.health_insurance_enabled),
     healthInsuranceAnnual: Number(structure.health_insurance_annual || 0),
+    agreedBreakup: structure.agreed_breakup || null,
   };
 }
 

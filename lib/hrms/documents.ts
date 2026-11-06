@@ -30,6 +30,10 @@ export async function listEmployeeDocuments(params: {
   } else if (params.role === "hiring_manager" || params.role === "manager") {
     where = "WHERE u.reporting_manager_user_id = $1";
     values.push(params.actorUserId);
+    if (params.employeeId && Number(params.employeeId) > 0) {
+      where += " AND d.user_id = $2";
+      values.push(Number(params.employeeId));
+    }
   } else if (params.employeeId && Number(params.employeeId) > 0) {
     where = "WHERE d.user_id = $1";
     values.push(Number(params.employeeId));

@@ -25,6 +25,7 @@ export type PayslipPdfPayload = {
   netSalary: number;
   netSalaryInWords: string;
   taxSheetSnapshot?: PayslipTaxSheetSnapshot | null;
+  simple?: boolean;
 };
 
 const PAGE_W = 595;
@@ -382,6 +383,30 @@ function estimateHeight(payload: PayslipPdfPayload, s: ScaleBand) {
   return personal + earnDed + tax + signs + topMeta;
 }
 
+function drawSimpleAmounts(page: any, bold: PDFFont, font: PDFFont, y: number, payload: PayslipPdfPayload, s: ScaleBand) {
+  const x = PAGE_MARGIN_X, w = PAGE_W - 2 * x, rowH = 25;
+  const columns = [x, x + w * 0.31, x + w * 0.5, x + w * 0.81, x + w];
+  const rows = Math.max(payload.earnings.length, payload.deductions.length);
+  const height = (rows + 2) * rowH;
+  page.drawRectangle({ x, y: y - height, width: w, height, borderWidth: 1, borderColor: BORDER });
+  for (const cx of columns.slice(1, -1)) page.drawLine({ start: { x: cx, y }, end: { x: cx, y: y - height }, thickness: 0.6, color: BORDER });
+  for (let i = 1; i < rows + 2; i++) page.drawLine({ start: { x, y: y - i * rowH }, end: { x: x + w, y: y - i * rowH }, thickness: 0.6, color: BORDER });
+  const cell = (text: string, column: number, row: number, strong = false) => drawCellText(page, font, text,
+    columns[column] + 5, y - row * rowH - 16, columns[column + 1] - columns[column] - 10, 8.5, strong, bold);
+  ["EARNINGS", "AMOUNT (Rs.)", "DEDUCTIONS", "AMOUNT (Rs.)"].forEach((label, i) => cell(label, i, 0, true));
+  for (let i = 0; i < rows; i++) {
+    const e = payload.earnings[i], d = payload.deductions[i];
+    if (e) { cell(e.name, 0, i + 1); cell(inr(e.amountForMonth), 1, i + 1); }
+    if (d) { cell(d.name, 2, i + 1); cell(inr(d.amountForMonth), 3, i + 1); }
+  }
+  cell("Total earnings", 0, rows + 1, true); cell(inr(payload.grossSalary), 1, rows + 1, true);
+  cell("Total deductions", 2, rows + 1, true); cell(inr(payload.totalDeductions), 3, rows + 1, true);
+  const netY = y - height - 28;
+  page.drawText(`NET PAY: Rs. ${inr(payload.netSalary)}`, { x, y: netY, size: 12, font: bold, color: TEXT });
+  page.drawText(payload.netSalaryInWords, { x, y: netY - 17, size: 8.5, font, color: TEXT, maxWidth: w, lineHeight: 12 });
+  return netY - s.sectionGap - 32;
+}
+
 export async function buildPayslipPdf(payload: PayslipPdfPayload) {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -407,8 +432,8 @@ export async function buildPayslipPdf(payload: PayslipPdfPayload) {
   // Keep body safely within template white content area.
   let cursorY = PAGE_H - 162;
   cursorY = drawPersonalDetailsBlock(page, bold, font, cursorY, payload, scale);
-  cursorY = drawEarningsDeductionsBlock(page, bold, font, cursorY, payload, scale);
-  cursorY = drawTaxDeductionDetailsBlock(page, bold, font, cursorY, payload, scale);
+  cursorY = payload.simple ? drawSimpleAmounts(page, bold, font, cursorY, payload, scale) : drawEarningsDeductionsBlock(page, bold, font, cursorY, payload, scale);
+  if (!payload.simple) cursorY = drawTaxDeductionDetailsBlock(page, bold, font, cursorY, payload, scale);
   drawSignatures(page, bold, font, Math.max(cursorY - 3, 108), payload, scale);
 
   return Buffer.from(await pdf.save());
