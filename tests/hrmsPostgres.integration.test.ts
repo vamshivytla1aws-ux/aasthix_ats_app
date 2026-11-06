@@ -75,7 +75,7 @@ describe("core HRMS with PostgreSQL storage and numbered migrations", () => {
   it("generates the agreed payments and keeps historical employee details and PDF bytes after later edits", async () => {
     await salary();
     let originalId = 0;
-    for (const [month, paidDays, lopDays, actualNetPaid, expected] of [[5, 14, 1, 60598, 60598], [6, 30, 0, undefined, 134183], [7, 31, 1, undefined, 129854], [8, 31, 0, undefined, 134183]]) {
+    for (const [month, paidDays, lopDays, actualNetPaid, expected] of [[5, 14, 1, 60598, 60598], [6, 30, 0, undefined, 134183], [7, 31, 1, undefined, 129854], [8, 31, 0, undefined, 134183], [11, 30, 0, undefined, 134183]]) {
       const response = await generate(request({ employeeId: state.employeeId, year: 2026, month, paidDays, lopDays, actualNetPaid }));
       const result = await response.json();
       expect(response.status, JSON.stringify(result)).toBe(200);
