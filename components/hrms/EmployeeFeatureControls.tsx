@@ -27,5 +27,12 @@ export default function EmployeeFeatureControls({ employeeId, features, canManag
       </label>)}
     </div>
     {message && <p role="status" className="mt-3 text-sm">{message}</p>}
+    <section aria-label="Employee access preview" className="mt-4 rounded-lg border border-[var(--ats-border)] p-3">
+      <h3 className="font-semibold">Employee access preview</h3>
+      <p className="mt-1 text-sm text-[var(--ats-text-muted)]">Sections this employee can open after signing in with an active account.</p>
+      <ul className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        {features.map(feature => <li key={feature.id}>{feature.label} · {feature.enabled ? "Visible" : "Hidden"}</li>)}
+      </ul>
+    </section>
   </section>;
 }

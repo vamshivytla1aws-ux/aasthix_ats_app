@@ -4,6 +4,7 @@ import { createCtcVersion } from "@/lib/salary/service";
 import type { SalaryCalcInput } from "@/lib/salary/types";
 import { getPayrollRunByMonthYear } from "@/lib/hrms/payroll";
 import { writeAuditLog } from "@/lib/auditLog";
+import { canAccessSalaryEmployee } from "@/lib/salary/access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,12 +19,15 @@ export async function POST(request: Request) {
   try {
     const auth = await requirePermission("salary.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    if (auth.access.role === "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = (await request.json().catch(() => null)) as SalaryCalcInput | null;
     if (!body) return NextResponse.json({ operation_status: "blocked", user_message: "Invalid payload." }, { status: 400 });
     if (!Number.isFinite(Number(body.employeeId)) || Number(body.employeeId) <= 0) {
       return NextResponse.json({ operation_status: "blocked", user_message: "Valid employee is required." }, { status: 400 });
     }
+    if (!await canAccessSalaryEmployee(auth.access, Number(body.employeeId))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (body.packageReview) return NextResponse.json({ error: "Save reviewed packages from the employee’s Salary & Payslips tab." }, { status: 400 });
     if (!body.salaryMonth) {
       return NextResponse.json({ operation_status: "blocked", user_message: "Effective salary month is required." }, { status: 400 });
     }

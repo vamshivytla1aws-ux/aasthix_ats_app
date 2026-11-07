@@ -1,24 +1,14 @@
 import { NextResponse } from "next/server";
-import { getAuthAccess, requirePermission } from "@/lib/rbac";
+import { requirePermission } from "@/lib/rbac";
 import { getEmployeeCtcByMonth, updateCtcVersion } from "@/lib/salary/service";
 import { getPayrollRunByMonthYear } from "@/lib/hrms/payroll";
 import { writeAuditLog } from "@/lib/auditLog";
 import { query } from "@/lib/db";
+import { canAccessSalaryEmployee } from "@/lib/salary/access";
+import { employeeSalaryOverview } from "@/lib/salary/overview";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-async function canAccessEmployee(access: NonNullable<Awaited<ReturnType<typeof getAuthAccess>>>, employeeId: number) {
-  if (access.role === "admin" || access.permissions["salary.manage"] || access.permissions["employee_directory.view_all"]) return true;
-  if (access.role === "employee" || access.permissions["salary.view"]) {
-    if (employeeId === access.user_id) return true;
-  }
-  if (access.role === "hiring_manager" || access.role === "manager" || access.permissions["employee_directory.view_team"]) {
-    const res = await query(`SELECT 1 FROM users WHERE id = $1 AND reporting_manager_user_id = $2 LIMIT 1`, [employeeId, access.user_id]);
-    return res.rowCount > 0;
-  }
-  return false;
-}
 
 function parseMonthYear(url: URL) {
   const month = Number(url.searchParams.get("month") || 0);
@@ -34,7 +24,7 @@ export async function GET(request: Request, { params }: { params: { employeeId: 
   if (!Number.isFinite(employeeId) || employeeId <= 0) {
     return NextResponse.json({ operation_status: "blocked", user_message: "Invalid employee id." }, { status: 400 });
   }
-  const allowed = await canAccessEmployee(auth.access, employeeId);
+  const allowed = await canAccessSalaryEmployee(auth.access, employeeId);
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const period = parseMonthYear(new URL(request.url));
@@ -43,13 +33,14 @@ export async function GET(request: Request, { params }: { params: { employeeId: 
   }
   const data = await getEmployeeCtcByMonth(employeeId, period.month, period.year);
   if (!data) return NextResponse.json({ operation_status: "blocked", user_message: "No CTC found for selected period." }, { status: 404 });
-  return NextResponse.json({ operation_status: "success", data });
+  return NextResponse.json({ operation_status: "success", data: auth.access.role === "employee" ? employeeSalaryOverview(data) : data });
 }
 
 export async function PATCH(request: Request, { params }: { params: { employeeId: string } }) {
   try {
     const auth = await requirePermission("salary.manage");
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    if (auth.access.role === "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const versionId = Number(params.employeeId);
     if (!Number.isFinite(versionId) || versionId <= 0) {
       return NextResponse.json({ operation_status: "blocked", user_message: "Invalid CTC version id." }, { status: 400 });
@@ -58,15 +49,23 @@ export async function PATCH(request: Request, { params }: { params: { employeeId
     if (!body || !Number.isFinite(Number(body.ctcAnnual)) || Number(body.ctcAnnual) <= 0) {
       return NextResponse.json({ operation_status: "blocked", user_message: "Valid CTC annual amount is required." }, { status: 400 });
     }
+    const existing = (await query("SELECT employee_id, effective_from::text, agreed_breakup, package_review FROM salary_structures WHERE id = $1", [versionId])).rows[0];
+    if (!existing) return NextResponse.json({ error: "CTC version not found." }, { status: 404 });
+    if (!await canAccessSalaryEmployee(auth.access, Number(existing.employee_id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (existing.agreed_breakup || existing.package_review) {
+      return NextResponse.json({ error: "Edit the agreed or reviewed breakup in the employee’s Salary & Payslips tab." }, { status: 409 });
+    }
     const effectiveFrom = body.effectiveFrom ? String(body.effectiveFrom) : null;
-    const targetDate = effectiveFrom || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-01`;
+    const targetDate = effectiveFrom || existing.effective_from;
     const dt = new Date(targetDate);
     if (Number.isNaN(dt.getTime())) {
       return NextResponse.json({ operation_status: "blocked", user_message: "Invalid effective month." }, { status: 400 });
     }
 
-    const run = await getPayrollRunByMonthYear(dt.getMonth() + 1, dt.getFullYear());
-    if (run?.status === "locked") {
+    const originalDate = new Date(existing.effective_from);
+    const run = await getPayrollRunByMonthYear(dt.getUTCMonth() + 1, dt.getUTCFullYear());
+    const originalRun = targetDate === existing.effective_from ? run : await getPayrollRunByMonthYear(originalDate.getUTCMonth() + 1, originalDate.getUTCFullYear());
+    if (run?.status === "locked" || originalRun?.status === "locked") {
       await writeAuditLog({
         actorUserId: auth.access.user_id,
         action: "hrms.ctc.update_blocked_locked_month",

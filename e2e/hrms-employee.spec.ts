@@ -109,9 +109,9 @@ test("read-only HR cannot see editing actions and a failed directory load can be
 test("employee without a saved salary sees guidance instead of an endless loading message", async ({ page, context }) => {
   await context.addCookies([{ name: "ats_token", value: "mock", url: "http://127.0.0.1:3000" }]);
   await fixtures(page);
-  await page.route("**/api/salary-structures/12", route => route.fulfill({ json: { structure: null } }));
+  await page.route("**/api/salary-structures/12?*", route => route.fulfill({ status: 404, json: { error: "Salary structure not found" } }));
   await page.goto("/salary");
-  await expect(page.getByText("Salary details are not available. Contact HR if your setup is missing.", { exact: true })).toBeVisible();
+  await expect(page.getByText("No salary setup applies to the current month.", { exact: true })).toBeVisible();
   await expect(page.getByText("Loading salary details…", { exact: true })).toHaveCount(0);
 });
 
@@ -129,7 +129,9 @@ async function fixtures(page: Page, overrides: Record<string, boolean> = {}) {
       headers["set-cookie"] = "ats_token=mock-ui-test-only; Path=/; SameSite=Lax";
       body = { user: employee };
     } else if (path === "/api/hrms/profile/me") body = { profile: { ...employee, employee_code: "EMP-12", designation: "SDE II", department: "Engineering", reporting_manager_name: "Sample Manager", work_location: "Bangalore" } };
-    else if (path === "/api/salary-structures/12") body = { structure: { ctc_annual: 1800000, pan: "ABCDE1234F", bank_account_number: "12345678", uan_number: "123456789012", pf_number: "PF-12" } };
+    else if (path === "/api/salary-structures/12") body = { structure: { ctc_annual: 1800000, mode: "Reviewed package", effective_from: "2026-05-01",
+      pan: "••••234F", bank_account_number: "••••5678", uan_number: "••••9012", pf_number: "••••" },
+      components: [{ key: "basic", type: "earning", name: "Basic Salary", monthly: 45000 }] };
     else if (path === "/api/payslips/12") body = { payslips: [{ id: 101, month: 5, year: 2026, paid_days: 13, net_salary: 60598, gross_monthly: 67230.94 }] };
     else if (path === "/api/payslips/annual") body = { financial_years: [], statement: null };
     else if (path === "/api/hrms/documents") body = { documents: [{ id: 201, user_id: 12, file_name: "Offer letter.pdf", category: "offer_letter" }] };
@@ -163,8 +165,10 @@ for (const width of [1440, 390]) {
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: `test-results/hrms-employee-${width}.png`, fullPage: true });
     await nav.getByRole("link", { name: "My Payslips", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "My Salary Details" })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText("12345678", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "My salary breakup" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("••••5678", { exact: true })).toBeVisible();
+    await expect(page.getByText("12345678", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Basic Salary", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "PDF", exact: true })).toHaveAttribute("href", "/api/payslips/101/download");
     await nav.getByRole("link", { name: "My Documents", exact: true }).click();
     await expect(page.getByText("Offer letter.pdf", { exact: true })).toBeVisible();
@@ -212,6 +216,8 @@ test("HR sets employee login from the employee record", async ({ page, context }
     let body: unknown = {};
     if (path === "/api/auth/me") body = { user: { id: 1, full_name: "Sample HR", role: "hr" }, permissions: { "dashboard.view": true, "employee_directory.manage": true, "employee_directory.view_all": true, "salary.view": true } };
     else if (path === "/api/hrms/employees" || path === "/api/salary-structures") body = { employees: [employee] };
+    else if (path === "/api/hrms/employees/12/setup") body = { items: [], canManageAccess: false,
+      features: [{ id: "profile", label: "Profile", enabled: true }, { id: "leave", label: "Leave", enabled: false }] };
     else if (path === "/api/hrms/employees/12/login") {
       if (route.request().method() === "POST") {
         expect(route.request().postDataJSON()).toEqual({ joiningDate: "2026-05-13" });
@@ -222,6 +228,10 @@ test("HR sets employee login from the employee record", async ({ page, context }
   });
   await page.goto("/hrms/employees/12");
   await page.getByRole("navigation", { name: "Employee profile sections" }).getByRole("button", { name: "Login & Access", exact: true }).click();
+  const preview = page.getByRole("region", { name: "Employee access preview", exact: true });
+  await expect(preview).toContainText("Profile · Visible");
+  await expect(preview).toContainText("Leave · Hidden");
+  await expect(page.getByRole("checkbox", { name: "Profile access", exact: true })).toBeDisabled();
   await expect(page.getByText("Password not set", { exact: false })).toBeVisible();
   await page.getByLabel("Date of joining", { exact: true }).fill("2026-05-13");
   await page.getByRole("button", { name: "Set joining date password", exact: true }).click();

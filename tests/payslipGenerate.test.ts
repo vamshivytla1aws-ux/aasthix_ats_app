@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OFFER_BREAKUP } from "@/lib/salary/agreed";
 
 vi.mock("@/lib/rbac", () => ({ requirePermission: vi.fn(async () => ({ ok: true, access: { user_id: 9 } })) }));
-vi.mock("@/lib/db", () => ({ query: vi.fn(async () => ({ rows: [{ id: 7 }], rowCount: 1 })) }));
+vi.mock("@/lib/db", () => {
+  const query = vi.fn(async () => ({ rows: [{ id: 7 }], rowCount: 1 }));
+  return { query, pool: { connect: async () => ({ query, release() {} }) } };
+});
 vi.mock("@/lib/leave", () => ({ getMonthlyApprovedLopDays: vi.fn(async () => 1) }));
 vi.mock("@/lib/hrms/payroll", () => ({ getPayrollRunByMonthYear: vi.fn(async () => null) }));
 vi.mock("@/lib/pdf/payslipExport", () => ({ buildPayslipPdf: vi.fn(async () => Buffer.from("pdf")) }));

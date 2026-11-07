@@ -10,6 +10,7 @@ import EmployeeProfileEditor, { type EditableEmployee } from "@/components/hrms/
 import EmployeeFeatureControls from "@/components/hrms/EmployeeFeatureControls";
 import EmployeeDocumentsPanel from "@/components/hrms/EmployeeDocumentsPanel";
 import EmployeeMonthlyRecords from "@/components/hrms/EmployeeMonthlyRecords";
+import CorrectionRequests from "@/components/hrms/CorrectionRequests";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import type { EmployeeSetup } from "@/lib/hrms/employeeSetup";
 import { UI } from "@/lib/ui";
@@ -62,6 +63,7 @@ export default function Employee360ProfilePage({ params }: { params: { id: strin
             {[["Name", employee.full_name], ["Email", employee.email], ["Employee code", employee.employee_code], ["Phone", employee.phone], ["Department", employee.department], ["Designation", employee.designation], ["Employment type", employee.employment_type], ["Date of joining", employee.joining_date], ["Work location", employee.work_location], ["Reporting manager", employee.reporting_manager_name], ["Employment status", employee.employment_status]].map(([label, value]) => <div key={label}><p className="text-xs text-[var(--ats-text-muted)]">{label}</p><p className="mt-1 text-sm font-medium">{value || "Not added"}</p></div>)}
           </div>
         </section>
+        {activeTab === "details" && <CorrectionRequests key={employeeId} category="profile" employeeId={employeeId} canClose={permissions["employee_directory.manage"] === true} />}
       </div>
       <div hidden={activeTab !== "login"}>
         <EmployeeLoginSetup key={employeeId} employeeId={employeeId} expanded />
@@ -69,6 +71,10 @@ export default function Employee360ProfilePage({ params }: { params: { id: strin
       </div>
       {permissions["salary.view"] && <div hidden={activeTab !== "salary"}>
         <Employee360SalaryTab key={employeeId} employeeId={employeeId} employee={{ ...employee, role: employee.role || "employee" }} canManage={permissions["salary.manage"] === true} />
+        {activeTab === "salary" && <div key={employeeId} className="grid gap-4 lg:grid-cols-2">
+          <CorrectionRequests category="salary" employeeId={employeeId} canClose={permissions["salary.manage"] === true} />
+          <CorrectionRequests category="payslip" employeeId={employeeId} canClose={permissions["salary.manage"] === true} />
+        </div>}
       </div>}
       {permissions["documents.view_all"] && <div hidden={activeTab !== "documents"}><EmployeeDocumentsPanel key={employeeId} employeeId={employeeId} canManage={permissions["documents.manage"] === true} /></div>}
       <div hidden={activeTab !== "attendance"}><EmployeeMonthlyRecords key={employeeId} employeeId={employeeId} enabled={activeTab === "attendance"} /></div>

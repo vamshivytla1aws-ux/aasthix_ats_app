@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getAuthAccess, requirePermission } from "@/lib/rbac";
 import { query } from "@/lib/db";
 import { withEmployeeSnapshot } from "@/lib/salary/employeeSnapshot";
+import { canAccessSalaryEmployee } from "@/lib/salary/access";
+import { getPayrollRunByMonthYear } from "@/lib/hrms/payroll";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,7 +68,7 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
     return NextResponse.json({ error: "Invalid payslip id" }, { status: 400 });
   }
 
-  const exists = await query(`SELECT id FROM payslips WHERE id = $1 LIMIT 1`, [payslipId]);
+  const exists = await query(`SELECT employee_id, month, year FROM payslips WHERE id = $1 LIMIT 1`, [payslipId]);
   if (exists.rowCount === 0) {
     return NextResponse.json(
       {
@@ -75,6 +77,11 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
       },
       { status: 404 },
     );
+  }
+  const payslip = exists.rows[0];
+  if (!await canAccessSalaryEmployee(auth.access, Number(payslip.employee_id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if ((await getPayrollRunByMonthYear(Number(payslip.month), Number(payslip.year)))?.status === "locked") {
+    return NextResponse.json({ error: "Payroll month is locked. The payslip cannot be deleted." }, { status: 409 });
   }
 
   await query(`DELETE FROM payslip_line_items WHERE payslip_id = $1`, [payslipId]);

@@ -6,6 +6,7 @@ import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
+import CorrectionRequests from "@/components/hrms/CorrectionRequests";
 
 type SelfProfile = {
   employee_code: string;
@@ -28,7 +29,7 @@ function renderValue(value: string | null | undefined) {
 }
 
 export default function HrmsMyProfilePage() {
-  const { data } = useSWR<{ profile: SelfProfile }>("/api/hrms/profile/me", dashboardFetcher, {
+  const { data, error } = useSWR<{ profile: SelfProfile }>("/api/hrms/profile/me", dashboardFetcher, {
     revalidateOnFocus: false,
   });
   const profile = data?.profile;
@@ -40,7 +41,7 @@ export default function HrmsMyProfilePage() {
         subtitle="Read-only HRMS summary for your employee record."
         metrics={<StatusBadge status="View Only" />}
       >
-        <div className="grid gap-4 xl:grid-cols-3">
+        {error ? <p role="alert">Unable to load your profile. Please try again.</p> : !profile ? <p>Loading profile…</p> : <div className="grid gap-4 xl:grid-cols-3">
           <section className={UI.card + " p-4 xl:col-span-2"}>
             <div className="grid gap-3 md:grid-cols-2">
               <div className={UI.sectionCard + " p-3"}>
@@ -102,7 +103,8 @@ export default function HrmsMyProfilePage() {
               </div>
             </div>
           </aside>
-        </div>
+        </div>}
+        <CorrectionRequests category="profile" />
       </ModulePageFrame>
     </AccessGate>
   );

@@ -15,7 +15,7 @@ export async function loadEmployeeSnapshot(employeeId: number, structure: Record
   return { version: 1, employeeName: value(employee.full_name), employeeCode: value(employee.employee_code), department: value(employee.department),
     designation: value(employee.designation), dateOfJoining: value(employee.joining_date), workLocation: value(employee.work_location),
     pan: value(structure.pan), uanNumber: value(structure.uan_number), pfNumber: value(structure.pf_number),
-    bankAccountNumber: value(structure.bank_account_number), ctcAnnual: Number(structure.ctc_annual || 0), simple: Boolean(structure.agreed_breakup) };
+    bankAccountNumber: value(structure.bank_account_number), ctcAnnual: Number(structure.ctc_annual || 0), simple: Boolean(structure.agreed_breakup || structure.package_review) };
 }
 
 export function readEmployeeSnapshot(value: unknown): EmployeePayslipSnapshot | null {

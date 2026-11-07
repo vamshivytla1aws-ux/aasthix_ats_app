@@ -40,7 +40,7 @@ for (const width of [1440, 390]) {
     });
     await page.goto("/hrms/employees/1?tab=salary");
     const method = page.getByRole("region", { name: "Saved salary calculation", exact: true });
-    await expect(method).toContainText("Automatic salary and tax rules");
+    await expect(method).toContainText("Automatic calculation");
     await expect(method).toContainText("net pay of ₹1,34,183");
     expect(saves).toBe(0);
     await page.getByLabel("Salary month", { exact: true }).fill("2026-11");
@@ -55,15 +55,15 @@ for (const width of [1440, 390]) {
     await expect(page.getByText("Net pay: ₹1,34,183.00", { exact: true })).toBeVisible();
     await expect(page.getByText("Deductions: ₹15,817.00", { exact: true })).toBeVisible();
     await page.reload();
-    await expect(method).toContainText("Automatic salary and tax rules");
+    await expect(method).toContainText("Automatic calculation");
     await page.getByLabel("Salary month", { exact: true }).fill("2026-11");
     await expect(method).toContainText("Agreed offer breakup");
     await page.getByRole("button", { name: "Preview payslip", exact: true }).click();
     await expect(page.getByText("Net pay: ₹1,34,183.00", { exact: true })).toBeVisible();
     // October still has an older automatic structure even though the latest November setup is agreed.
     await page.getByLabel("Salary month", { exact: true }).fill("2026-10");
-    await expect(method).toContainText("Automatic salary and tax rules");
-    await expect(method).toContainText("Applies to October 2026");
+    await expect(method).toContainText("Automatic calculation");
+    await expect(method).toContainText("Effective month 2026-10");
     await expect(page.getByLabel("Amount already paid (optional)", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Review supplied ₹18 lakh offer", exact: true }).click();
     await page.getByRole("button", { name: "Save Structure", exact: true }).click();

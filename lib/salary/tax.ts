@@ -38,17 +38,26 @@ function defaultConfigForRegime(regime: TaxRegime): TaxConfig {
 
 export async function loadActiveTaxConfig(regime: TaxRegime): Promise<TaxConfig> {
   if (regime === "manual_tds") return DEFAULT_NEW_REGIME;
+  return (await loadTaxConfig(regime)) ?? defaultConfigForRegime(regime);
+}
+
+export function loadVerifiedTaxConfig(regime: TaxRegime, financialYear: string) {
+  return regime === "manual_tds" ? Promise.resolve(null) : loadTaxConfig(regime, financialYear);
+}
+
+async function loadTaxConfig(regime: TaxRegime, verifiedYear?: string): Promise<TaxConfig | null> {
   const cfgRes = await query(
     `
     SELECT id, financial_year, regime, standard_deduction, rebate_threshold, cess_percent
     FROM tax_configs
     WHERE regime = $1 AND is_active = TRUE
+    ${verifiedYear ? "AND financial_year = $2 AND payroll_verified_at >= updated_at" : ""}
     ORDER BY updated_at DESC, id DESC
     LIMIT 1
     `,
-    [regime]
+    verifiedYear ? [regime, verifiedYear] : [regime]
   );
-  if (cfgRes.rowCount === 0) return defaultConfigForRegime(regime);
+  if (cfgRes.rowCount === 0) return null;
   const row = cfgRes.rows[0] as any;
   const slabRes = await query(
     `
@@ -64,6 +73,7 @@ export async function loadActiveTaxConfig(regime: TaxRegime): Promise<TaxConfig>
     maxAmount: s.max_amount == null ? null : Number(s.max_amount),
     ratePercent: Number(s.rate_percent || 0),
   }));
+  if (verifiedYear && !slabs.length) return null;
   return {
     financialYear: String(row.financial_year || "FY 2025-26"),
     regime: row.regime === "old_regime" ? "old_regime" : "new_regime",

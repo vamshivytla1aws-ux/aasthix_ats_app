@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { calculateSalaryStructure } from "@/lib/salary/engine";
 import { amountToRupeesWords } from "@/lib/salary/numberToWords";
-import { applyPayslipProration, getLatestSalaryStructure, getSalaryStructureForMonth, toCalcInputFromStructure } from "@/lib/salary/service";
+import { applyPayslipProration, getSalaryStructureForMonth, toCalcInputFromStructure } from "@/lib/salary/service";
 import { buildPayslipPdf } from "@/lib/pdf/payslipExport";
 import { loadActiveTaxConfig, calculateAnnualTaxFromConfig } from "@/lib/salary/tax";
 import type { PayslipTaxSheetSnapshot } from "@/lib/salary/types";
@@ -122,8 +122,7 @@ export async function POST(request: Request) {
       // Scheduled generation must not replace a reviewed or manually generated payslip.
       const existing = await query(`SELECT id FROM payslips WHERE employee_id = $1 AND month = $2 AND year = $3`, [employeeId, month, year]);
       if (existing.rows.length) continue;
-      const byMonth = await getSalaryStructureForMonth(employeeId, month, year);
-      const latest = byMonth || (await getLatestSalaryStructure(employeeId));
+      const latest = await getSalaryStructureForMonth(employeeId, month, year);
       if (!latest) continue;
       const input = toCalcInputFromStructure(latest.structure);
       const paidDaysResolved = getMonthDays(year, month);
@@ -132,7 +131,7 @@ export async function POST(request: Request) {
       input.totalPaidDays = paidDaysResolved;
       input.lopDays = 0;
       // Partial-month attendance needs explicit review in the simple generator.
-      if (input.agreedBreakup) { manualReviewRequired += 1; continue; }
+      if (input.agreedBreakup || input.packageReview) { manualReviewRequired += 1; continue; }
       const employeeSnapshot = await loadEmployeeSnapshot(employeeId, latest.structure);
       const calc = await calculateSalaryStructure(input);
       const prorated = applyPayslipProration(calc, paidDaysResolved, 0);

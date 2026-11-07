@@ -8,6 +8,7 @@ import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
 import ModernPayslipView from "./ModernPayslipView";
 import SelfServiceSalaryDetails from "./SelfServiceSalaryDetails";
+import CorrectionRequests from "./CorrectionRequests";
 
 function PayslipModal({ payslipId, onClose }: { payslipId: number; onClose: () => void }) {
   const { data, error } = useSWR<any>(`/api/payslips/${payslipId}/data`, dashboardFetcher);
@@ -127,6 +128,7 @@ export default function SelfServiceSalaryView() {
       metrics={<StatusBadge status="Self Service" />}
     >
       <div className="mb-5"><SelfServiceSalaryDetails employeeId={employeeId} /></div>
+      <div className="mb-5"><CorrectionRequests category="salary" /></div>
       <section className={UI.card + " p-4 sm:p-5"}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -181,6 +183,7 @@ export default function SelfServiceSalaryView() {
           </table>
         </div>
       </section>
+      <CorrectionRequests category="payslip" payslipMonths={payslips.map(row => `${row.year}-${String(row.month).padStart(2, "0")}`)} />
 
       {viewingPayslip && (
         <PayslipModal payslipId={viewingPayslip} onClose={() => setViewingPayslip(null)} />

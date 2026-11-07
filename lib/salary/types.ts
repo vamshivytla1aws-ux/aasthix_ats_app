@@ -26,6 +26,16 @@ export type SalaryCalcInput = {
   healthInsuranceEnabled: boolean;
   healthInsuranceAnnual?: number | null;
   agreedBreakup?: AgreedSalaryBreakup | null;
+  packageReview?: PackageReview | null;
+};
+
+export type PackageReview = {
+  employerPfInCtc: boolean;
+  employerPf: number;
+  employeePf: number;
+  professionalTax: number;
+  tds: number;
+  regime: TaxRegime;
 };
 
 export type AgreedSalaryBreakup = {

@@ -7,11 +7,11 @@ import ModulePageFrame from "@/components/enterprise/ModulePageFrame";
 import SelfServiceSalaryView from "@/components/hrms/SelfServiceSalaryView";
 import StatusBadge from "@/components/enterprise/StatusBadge";
 import Toast from "@/components/Toast";
-import { apiFetchJson } from "@/lib/apiClient";
+import { ApiError, apiFetchJson } from "@/lib/apiClient";
+import PackageSalarySetup from "./PackageSalarySetup";
 import { dashboardFetcher } from "@/lib/swrFetcher";
 import { UI } from "@/lib/ui";
-import { DatePicker } from "@/components/ui/DateTimeFields";
-import { getMonthDaysFromDateString } from "@/lib/salary/monthDays";
+import { currentPayrollMonth, getMonthDaysFromDateString } from "@/lib/salary/monthDays";
 import ModernPayslipView from "./ModernPayslipView";
 import { OFFER_BREAKUP } from "@/lib/salary/agreed";
 import type { AgreedSalaryBreakup } from "@/lib/salary/types";
@@ -66,18 +66,20 @@ function inr(n: number) {
 }
 
 function todayMonthDate() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  return `${currentPayrollMonth()}-01`;
 }
 
 export default function Employee360SalaryTab({ employeeId, employee, canManage = false }: { employeeId: number; employee?: EmployeeOption; canManage?: boolean }) {
   const { mutate: refresh } = useSWRConfig();
   const [toast, setToast] = React.useState<{ message: string; variant?: "success" | "error" | "blocked" | "info" } | null>(null);
   const [calculation, setCalculation] = React.useState<SalaryCalculation | null>(null);
+  const [setupPreview, setSetupPreview] = React.useState<SalaryCalculation | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [viewingPayslip, setViewingPayslip] = React.useState<number | null>(null);
   const [agreedBreakup, setAgreedBreakup] = React.useState<AgreedSalaryBreakup | null>(null);
   const [setupDirty, setSetupDirty] = React.useState(false);
+  const [reviewPackage, setReviewPackage] = React.useState(false);
+  const [replaceReviewed, setReplaceReviewed] = React.useState(false);
   const [actualNetPaid, setActualNetPaid] = React.useState("");
   const setupRef = React.useRef<HTMLDetailsElement>(null);
   const generatorRef = React.useRef<HTMLElement>(null);
@@ -110,22 +112,19 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
     dashboardFetcher,
     { revalidateOnFocus: false }
   );
-  const structureSwr = useSWR<{ structure: any }>(
-    employeeId > 0 ? `/api/salary-structures/${employeeId}` : null,
-    dashboardFetcher,
-    { revalidateOnFocus: false }
-  );
   const monthStructureSwr = useSWR<{ structure: any }>(
     employeeId > 0 && salaryMonth ? `/api/salary-structures/${employeeId}?month=${salaryMonth.slice(0, 7)}` : null,
     dashboardFetcher,
     { revalidateOnFocus: false }
   );
   const monthStructure = monthStructureSwr.data?.structure;
+  const missingSetup = monthStructureSwr.error instanceof ApiError && monthStructureSwr.error.status === 404;
 
   const selectedEmployee = employee;
 
   function reviewSuppliedOffer() {
-    setAgreedBreakup({ ...OFFER_BREAKUP }); setCtcAnnual("1800000"); setCalculation(null); setSetupDirty(true);
+    setReplaceReviewed(true);
+    setAgreedBreakup({ ...OFFER_BREAKUP }); setCtcAnnual("1800000"); setCalculation(null); setSetupPreview(null); setSetupDirty(true);
     if (setupRef.current) setupRef.current.open = true;
     window.requestAnimationFrame(() => setupRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
@@ -140,25 +139,39 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
   }, [employeeId, selectedEmployee]);
 
   React.useEffect(() => {
-    const structure = structureSwr.data?.structure;
-    if (!structure || employeeId <= 0) return;
+    if ((!monthStructure && !missingSetup) || employeeId <= 0) return;
+    const structure = monthStructure ?? {};
     setPan(String(structure.pan || ""));
     setUanNumber(String(structure.uan_number || ""));
     setPfNumber(String(structure.pf_number || ""));
     setBankAccountNumber(String(structure.bank_account_number || ""));
-    setCtcAnnual(String(Number(structure.ctc_annual || 0)));
+    setCtcAnnual(structure.ctc_annual == null ? "" : String(Number(structure.ctc_annual)));
     setAgreedBreakup(structure.agreed_breakup || null);
     setSetupDirty(false);
     setActualNetPaid("");
     setTaxRegime((String(structure.tax_regime || "new_regime") as "new_regime" | "old_regime" | "manual_tds"));
     setManualTdsAnnual(structure.manual_tds_annual == null ? "" : String(Number(structure.manual_tds_annual)));
-    setProfessionalTaxMonthly(String(Number(structure.professional_tax_monthly || 200)));
+    setProfessionalTaxMonthly(String(Number(structure.professional_tax_monthly ?? 200)));
     setPfEnabled(Boolean(structure.pf_enabled));
     setEmployerPfIncludedInCtc(Boolean(structure.employer_pf_included_in_ctc));
     setEmployeePfEnabled(Boolean(structure.employee_pf_enabled));
     setHealthInsuranceEnabled(Boolean(structure.health_insurance_enabled));
     setHealthInsuranceAnnual(String(Number(structure.health_insurance_annual || 0)));
-  }, [employeeId, structureSwr.data?.structure]);
+  }, [employeeId, missingSetup, monthStructure]);
+
+  async function refreshSavedSetup() {
+    await refresh(key => typeof key === "string" && key.startsWith(`/api/salary-structures/${employeeId}?month=`));
+    await refresh(`/api/hrms/employees/${employeeId}/setup`);
+    setSetupDirty(false);
+    setActualNetPaid("");
+  }
+
+  function selectMonth(month: string) {
+    const value = month ? `${month}-01` : "";
+    const days = String(getMonthDaysFromDateString(value));
+    setSalaryMonth(value); setDefinedWorkDays(days); setTotalPaidDays(days); setLopDays("0");
+    setActualNetPaid(""); setCalculation(null); setSetupPreview(null); setReplaceReviewed(false);
+  }
 
   const payload = React.useMemo(
     () => ({
@@ -226,7 +239,7 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      setCalculation(data.calculation);
+      setSetupPreview(data.calculation);
     } catch (error) {
       setToast({ message: error instanceof Error ? error.message : "Failed to calculate", variant: "error" });
     } finally {
@@ -238,18 +251,14 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
     if (employeeId <= 0) return setToast({ message: "Please select employee", variant: "blocked" });
     setBusy(true);
     try {
-      const data = await apiFetchJson<{ calculation: SalaryCalculation }>("/api/salary-structures", {
+      await apiFetchJson("/api/salary-structures", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      setCalculation(data.calculation);
+      setSetupPreview(null);
       setToast({ message: "Salary structure saved.", variant: "success" });
-      await structureSwr.mutate();
-      await refresh(key => typeof key === "string" && key.startsWith(`/api/salary-structures/${employeeId}?month=`));
-      await refresh(`/api/hrms/employees/${employeeId}/setup`);
-      setSetupDirty(false);
-      setActualNetPaid("");
+      await refreshSavedSetup();
       if (setupRef.current) setupRef.current.open = false;
       window.requestAnimationFrame(() => generatorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (error) {
@@ -326,25 +335,26 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
 
       <section ref={generatorRef} className={UI.card + " scroll-mt-40 p-4 sm:p-5"}>
         <h2 className="text-base font-semibold">Generate payslip</h2>
-        <p className="mt-1 text-sm text-[var(--ats-text-muted)]">Choose the salary month, not the bank payment date. Uses the saved salary setup.</p>
-        {monthStructureSwr.error ? <p role="alert" className="mt-3 text-sm">Unable to load this month&apos;s salary setup. Save a salary setup first, or <button type="button" className="underline" onClick={() => void monthStructureSwr.mutate()}>try again</button>.</p> : salaryMonth && !monthStructure ? <p className="mt-3 text-sm">Loading salary setup for the selected month…</p> : null}
+        <p className="mt-1 text-sm text-[var(--ats-text-muted)]">Choose the month the employee earned the salary. Payslips use the setup saved for that period.</p>
+        {missingSetup ? <p className="mt-3 text-sm"><strong>Not saved.</strong> Save a salary setup for this month before previewing or generating a payslip.</p>
+          : monthStructureSwr.error ? <p role="alert" className="mt-3 text-sm">Unable to load this month&apos;s salary setup. <button type="button" className="underline" onClick={() => void monthStructureSwr.mutate()}>Try again</button>.</p>
+          : salaryMonth && !monthStructure ? <p className="mt-3 text-sm">Loading salary setup for the selected month…</p> : null}
         {monthStructure && <section aria-label="Saved salary calculation" className="mt-3 rounded-lg border border-[var(--ats-border)] p-3 text-sm">
-          <p className="font-semibold">Saved calculation: {monthStructure.agreed_breakup ? "Agreed offer breakup" : "Automatic salary and tax rules"}</p>
-          <p className="mt-1 text-xs text-[var(--ats-text-muted)]">Applies to {new Date(`${salaryMonth.slice(0, 7)}-01T00:00:00Z`).toLocaleString("en-IN", { month: "long", year: "numeric", timeZone: "Asia/Kolkata" })}.</p>
-          {!monthStructure.agreed_breakup && Number(monthStructure.ctc_annual) === 1800000 && <>
+          <p className="font-semibold">Saved calculation: {monthStructure.package_review ? "Reviewed package" : monthStructure.agreed_breakup ? "Agreed offer breakup" : "Automatic calculation"}</p>
+          <p className="mt-1 text-xs text-[var(--ats-text-muted)]">Effective month {String(monthStructure.effective_from ?? monthStructure.salary_month ?? "").slice(0, 7) || "unavailable"}.</p>
+          {!monthStructure.package_review && !monthStructure.agreed_breakup && Number(monthStructure.ctc_annual) === 1800000 && <>
             <p className="mt-2">The supplied ₹18 lakh offer is not saved for this salary month. That offer gives full-month earnings of ₹1,50,000, deductions of ₹15,817 and net pay of ₹1,34,183.</p>
             {canManage && <button type="button" className={UI.secondaryButton + " mt-3"} disabled={busy} onClick={reviewSuppliedOffer}>Review supplied ₹18 lakh offer</button>}
             <p className="mt-2 text-xs text-[var(--ats-text-muted)]">Review the breakup and select Save Structure once to use it for future payslips. Existing PDFs remain unchanged.</p>
           </>}
         </section>}
+        {canManage && <button type="button" className={UI.secondaryButton + " mt-3"} disabled={busy || reviewPackage} onClick={() => setReviewPackage(true)}>
+          {monthStructure?.package_review ? "Edit reviewed package" : "Review annual package"}
+        </button>}
         {setupDirty && <p className="mt-2 text-sm text-amber-700">Save your salary setup changes before generating.</p>}
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <label className={UI.label}>Salary month
-            <input type="month" className={UI.input} disabled={busy} value={salaryMonth.slice(0, 7)} onChange={e => {
-              const value = e.target.value ? `${e.target.value}-01` : "";
-              setSalaryMonth(value); setDefinedWorkDays(String(getMonthDaysFromDateString(value)));
-              setTotalPaidDays(String(getMonthDaysFromDateString(value))); setLopDays("0"); setActualNetPaid(""); setCalculation(null);
-            }} />
+            <input type="month" className={UI.input} disabled={busy || reviewPackage} value={salaryMonth.slice(0, 7)} onChange={e => selectMonth(e.target.value)} />
           </label>
           <label className={UI.label}>Eligible days before absence
             <input type="number" className={UI.input} disabled={busy} min={0} max={Number(definedWorkDays)} value={totalPaidDays} onChange={e => { setTotalPaidDays(e.target.value); setCalculation(null); }} />
@@ -359,15 +369,23 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
           </label>
           <p className="mt-1 text-xs text-[var(--ats-text-muted)]">For past payments. Any difference is shown as a payment adjustment.</p>
         </div>}
-        <p className="mt-3 text-sm text-[var(--ats-text-muted)]">{Math.max(0, Number(totalPaidDays) - Number(lopDays))} payable days out of {definedWorkDays}. {monthStructure?.agreed_breakup ? "Agreed earnings and deductions are prorated once. Net pay is rounded down to whole rupees." : "Uses this month's saved salary calculation. Save an agreed breakup below to match the offer."}</p>
+        <p className="mt-3 text-sm text-[var(--ats-text-muted)]">{Math.max(0, Number(totalPaidDays) - Number(lopDays))} payable days out of {definedWorkDays}. {monthStructure?.package_review ? "Reviewed cash earnings and deductions are prorated together." : monthStructure?.agreed_breakup ? "Agreed earnings and deductions are prorated once. Net pay is rounded down to whole rupees." : "Uses the automatic calculation when that setup is saved."}</p>
         <div className="mt-4 flex flex-wrap gap-3">
-          <button type="button" className={UI.secondaryButton} disabled={busy || setupDirty || !salaryMonth || !canManage || !monthStructure || !!monthStructureSwr.error} onClick={() => void generatePayslip(true)}>Preview payslip</button>
-          <button type="button" className={UI.primaryButton} disabled={busy || setupDirty || !salaryMonth || !canManage || !monthStructure || !!monthStructureSwr.error} onClick={() => void generatePayslip()}>Generate payslip</button>
+          <button type="button" className={UI.secondaryButton} disabled={busy || reviewPackage || setupDirty || !salaryMonth || !canManage || !monthStructure || !!monthStructureSwr.error} onClick={() => void generatePayslip(true)}>Preview payslip</button>
+          <button type="button" className={UI.primaryButton} disabled={busy || reviewPackage || setupDirty || !salaryMonth || !canManage || !monthStructure || !!monthStructureSwr.error} onClick={() => void generatePayslip()}>Generate payslip</button>
         </div>
         {calculation && <div className="mt-4 flex flex-wrap gap-6 text-sm"><span>Earnings: ₹{inr(calculation.grossMonthlySalary)}</span><span>Deductions: ₹{inr(calculation.totalMonthlyDeductions)}</span><strong>Net pay: ₹{inr(calculation.netMonthlySalary)}</strong></div>}
         {calculation && [...calculation.earningsAnnual, ...calculation.deductionsAnnual].filter(row => row.key === "payment_adjustment").map(row => <p key={row.key} className="mt-2 text-sm">{row.name}: {row.type === "earning" ? "+" : "−"}₹{inr(row.amountForMonth || 0)}</p>)}
       </section>
 
+      {reviewPackage && <PackageSalarySetup employeeId={employeeId} initialMonth={salaryMonth.slice(0, 7)} onCancel={() => setReviewPackage(false)}
+        onSaved={async month => {
+          selectMonth(month);
+          await refreshSavedSetup();
+          setReviewPackage(false);
+          setToast({ message: "Reviewed package saved. Preview the payslip for this month.", variant: "success" });
+          generatorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }} />}
       {/* Generated Payslips */}
       <section className={UI.card + " p-4 sm:p-5"}>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -435,9 +453,13 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
       )}
 
       {/* Salary Configuration Form */}
-      <details ref={setupRef} className={UI.card + " scroll-mt-40 p-4 sm:p-5"} onChangeCapture={() => { setSetupDirty(true); setCalculation(null); }}>
+      <details ref={setupRef} className={UI.card + " scroll-mt-40 p-4 sm:p-5"} onChangeCapture={() => { setSetupDirty(true); setCalculation(null); setSetupPreview(null); }}>
         <summary className="cursor-pointer font-semibold">Salary setup and employee details</summary>
-        <fieldset disabled={!canManage || busy}>
+        {monthStructure?.package_review && !replaceReviewed && <div className="mt-3 text-sm">
+          <p>This month uses a reviewed package. Edit it above or choose a different calculation here.</p>
+          {canManage && <button type="button" className={UI.secondaryButton + " mt-2"} onClick={() => setReplaceReviewed(true)}>Change calculation type</button>}
+        </div>}
+        <fieldset disabled={!canManage || busy || reviewPackage || (!monthStructure && !missingSetup) || (Boolean(monthStructure?.package_review) && !replaceReviewed)}>
         <p className="mt-3 text-sm text-[var(--ats-text-muted)]">Personal and employment details come from the Details section. Set salary amounts and payroll identity details here.</p>
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ats-border)] pb-3 mb-4">
           <div>
@@ -448,7 +470,7 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
         
         <div className="mt-4 flex flex-wrap gap-3">
           <button type="button" className={UI.secondaryButton} onClick={reviewSuppliedOffer}>Use supplied ₹18 lakh offer breakup</button>
-          {agreedBreakup && <button type="button" className={UI.secondaryButton} onClick={() => { setAgreedBreakup(null); setCalculation(null); setSetupDirty(true); }}>Use automatic calculation</button>}
+          {agreedBreakup && <button type="button" className={UI.secondaryButton} onClick={() => { setAgreedBreakup(null); setCalculation(null); setSetupPreview(null); setSetupDirty(true); }}>Use automatic calculation</button>}
         </div>
         {agreedBreakup && <div className="mt-4">
           <p className="text-sm text-[var(--ats-text-muted)]">Agreed annual amounts. Monthly values are rounded to whole rupees; no tax-rate recalculation.</p>
@@ -471,17 +493,9 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
               placeholder="e.g. 1600000"
             />
           </div>
-          <div>
-            <label className={UI.label}>Target Salary Month</label>
-            <DatePicker
-              value={salaryMonth}
-              onChange={(d) => {
-                setSalaryMonth(d);
-                setDefinedWorkDays(String(getMonthDaysFromDateString(d)));
-                setTotalPaidDays(String(getMonthDaysFromDateString(d)));
-              }}
-            />
-          </div>
+          <label className={UI.label}>Effective salary month
+            <input className={UI.input} type="month" value={salaryMonth.slice(0, 7)} onChange={event => selectMonth(event.target.value)} />
+          </label>
           <div>
             <label className={UI.label}>Defined Work Days</label>
             <input
@@ -524,7 +538,7 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
           <button type="button" className={UI.primaryButton + " py-2 px-6"} onClick={() => void saveStructure()} disabled={busy}>Save Structure</button>
         </div>
 
-        {calculation && (
+        {setupPreview && (
           <div className="mt-8 pt-6 border-t border-[var(--ats-border)] animate-in fade-in">
             <h3 className="text-lg font-bold text-[var(--ats-text)] mb-6">Payslip Preview</h3>
             <ModernPayslipView 
@@ -543,7 +557,7 @@ export default function Employee360SalaryTab({ employeeId, employee, canManage =
                 workLocation,
                 paidDays: Number(totalPaidDays),
                 lopDays: Number(lopDays),
-                calculation,
+                calculation: setupPreview,
               }}
             />
           </div>
